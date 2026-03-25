@@ -1,9 +1,9 @@
-.PHONY: build test clean icon app run sign notarize fix install release
+.PHONY: build test clean icon app run sign notarize fix install release bump
 
 # === Config ===
 APP_NAME     := SmartDock
 BUNDLE_ID    := com.smartdock.app
-VERSION      := 1.2.0
+VERSION      := 1.1.1
 BUILD_DIR    := .build/release
 APP_DIR      := build/$(APP_NAME).app
 CONTENTS     := $(APP_DIR)/Contents
@@ -94,6 +94,21 @@ notarize: dmg
 	@echo "📌 Stapling notarization ticket..."
 	xcrun stapler staple build/$(APP_NAME)-$(VERSION).dmg
 	@echo "✅ Notarized and stapled"
+
+# === Version Bump ===
+# Usage: make bump V=1.3.0
+
+bump:
+ifndef V
+	$(error Usage: make bump V=1.3.0)
+endif
+	@echo "📌 Bumping version to $(V)..."
+	sed -i '' 's/^VERSION      := .*/VERSION      := $(V)/' Makefile
+	sed -i '' '/CFBundleShortVersionString/{n;s|<string>.*</string>|<string>$(V)</string>|;}' Resources/Info.plist
+	@BUILD=$$(sed -n '/CFBundleVersion/{n;s/.*<string>\(.*\)<\/string>.*/\1/p;}' Resources/Info.plist) && \
+		NEW_BUILD=$$(( $$BUILD + 1 )) && \
+		sed -i '' "/CFBundleVersion/{n;s|<string>.*</string>|<string>$$NEW_BUILD</string>|;}" Resources/Info.plist
+	@echo "✅ Version: $(V), Build: $$(sed -n '/CFBundleVersion/{n;s/.*<string>\(.*\)<\/string>.*/\1/p;}' Resources/Info.plist)"
 
 # === Release ===
 
