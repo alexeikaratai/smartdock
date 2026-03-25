@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:smartdock}",
+            "name": "Debug SmartDock",
+            "target": "SmartDock",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug SmartDock"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:smartdock}",
+            "name": "Release SmartDock",
+            "target": "SmartDock",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release SmartDock"
+        }
+    ]
+}

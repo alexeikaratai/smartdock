@@ -43,6 +43,12 @@ public final class DisplayMonitor: DisplayMonitoring {
     /// Track the last known external display count to filter spurious callbacks.
     private var lastExternalCount: Int = -1
 
+    /// Debounce: CG fires callbacks during space transitions (Mission Control,
+    /// fullscreen enter/exit). The display count can fluctuate transiently.
+    /// We wait for callbacks to stop arriving before checking the count.
+    private var pendingCheck: DispatchWorkItem?
+    private let settleDelay: TimeInterval = 1.0
+
     public init() {}
 
     deinit {
@@ -108,14 +114,23 @@ public final class DisplayMonitor: DisplayMonitoring {
     // MARK: - Internal (called from C callback on main queue)
 
     /// Called by the C callback after display reconfiguration completes.
-    /// Only fires `onConfigurationChanged` if the external display count changed.
+    /// Debounces: waits for callbacks to stop arriving, then checks if the
+    /// external display count actually changed. This prevents reacting to
+    /// transient fluctuations during Mission Control / fullscreen transitions.
     fileprivate func handleReconfiguration() {
-        let current = externalDisplayCount()
-        if current != lastExternalCount {
-            Log.displayChange("External display count changed: \(lastExternalCount) → \(current)")
-            lastExternalCount = current
-            onConfigurationChanged?()
+        pendingCheck?.cancel()
+
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            let current = self.externalDisplayCount()
+            if current != self.lastExternalCount {
+                Log.displayChange("External display count changed: \(self.lastExternalCount) → \(current)")
+                self.lastExternalCount = current
+                self.onConfigurationChanged?()
+            }
         }
+        pendingCheck = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + settleDelay, execute: work)
     }
 }
 
@@ -124,6 +139,12 @@ public final class DisplayMonitor: DisplayMonitoring {
 /// CoreGraphics calls the callback twice: with the beginConfigurationChange flag
 /// and then without it (completion). We react only to completion,
 /// when the new configuration is already applied.
+///
+/// We also filter by flags: only react to actual display add/remove/enable/disable
+/// events. This avoids reacting to space transitions (Mission Control, fullscreen
+/// enter/exit) which fire `kCGDisplayDesktopShapeChangedFlag` or
+/// `kCGDisplaySetModeFlag` — re-applying dock config during these transitions
+/// can interfere with macOS's normal dock show/hide behavior.
 private func displayReconfigurationCallback(
     _ display: CGDirectDisplayID,
     _ flags: CGDisplayChangeSummaryFlags,
@@ -131,6 +152,18 @@ private func displayReconfigurationCallback(
 ) {
     // Ignore the start of reconfiguration — react only to completion.
     guard !flags.contains(CGDisplayChangeSummaryFlags(rawValue: 1)) else { return }
+
+    // Only react to actual display topology changes (add/remove/enable/disable).
+    // Ignore mode changes, moves, and desktop shape changes — these fire during
+    // Mission Control and fullscreen transitions and would cause spurious
+    // dock config re-application.
+    let addRemoveFlags = CGDisplayChangeSummaryFlags(rawValue:
+        0x10 |   // kCGDisplayAddFlag
+        0x20 |   // kCGDisplayRemoveFlag
+        0x100 |  // kCGDisplayEnabledFlag
+        0x200    // kCGDisplayDisabledFlag
+    )
+    guard !flags.isDisjoint(with: addRemoveFlags) else { return }
 
     guard let userInfo = userInfo else { return }
     let monitor = Unmanaged<DisplayMonitor>.fromOpaque(userInfo).takeUnretainedValue()

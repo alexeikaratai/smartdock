@@ -1,9 +1,9 @@
-.PHONY: build test clean icon app run sign notarize
+.PHONY: build test clean icon app run sign notarize fix install release
 
 # === Config ===
 APP_NAME     := SmartDock
 BUNDLE_ID    := com.smartdock.app
-VERSION      := 1.1.0
+VERSION      := 1.2.0
 BUILD_DIR    := .build/release
 APP_DIR      := build/$(APP_NAME).app
 CONTENTS     := $(APP_DIR)/Contents
@@ -94,6 +94,36 @@ notarize: dmg
 	@echo "📌 Stapling notarization ticket..."
 	xcrun stapler staple build/$(APP_NAME)-$(VERSION).dmg
 	@echo "✅ Notarized and stapled"
+
+# === Release ===
+
+release: app
+	@echo "🚀 Releasing v$(VERSION)..."
+	@# Commit version bump
+	git add -A
+	git commit -m "v$(VERSION)" || true
+	@# Zip the app
+	cd build && zip -r $(APP_NAME)-$(VERSION).zip $(APP_NAME).app
+	@# Create GitHub release
+	gh release create v$(VERSION) \
+		build/$(APP_NAME)-$(VERSION).zip \
+		--title "$(APP_NAME) $(VERSION)" \
+		--generate-notes
+	@echo "✅ Released v$(VERSION)"
+
+# === Install & Fix ===
+
+install: app
+	@echo "📲 Installing to /Applications..."
+	@rm -rf /Applications/$(APP_NAME).app
+	cp -R $(APP_DIR) /Applications/$(APP_NAME).app
+	@echo "✅ Installed to /Applications/$(APP_NAME).app"
+
+fix:
+	@echo "🔧 Fixing Gatekeeper quarantine..."
+	xattr -cr /Applications/$(APP_NAME).app
+	codesign --force --deep --sign - /Applications/$(APP_NAME).app
+	@echo "✅ Fixed. Run: open /Applications/$(APP_NAME).app"
 
 # === Clean ===
 

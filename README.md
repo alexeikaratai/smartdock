@@ -76,8 +76,13 @@ On first launch, SmartDock checks for Accessibility permission and shows a dialo
 Download `SmartDock.app` from [Releases](https://github.com/alexkaratai/smartdock/releases). macOS will block unsigned apps downloaded from the internet. To open:
 
 ```bash
-xattr -cr SmartDock.app
-open SmartDock.app
+# If already in /Applications:
+make fix
+
+# Or manually:
+xattr -cr /Applications/SmartDock.app
+codesign --force --deep --sign - /Applications/SmartDock.app
+open /Applications/SmartDock.app
 ```
 
 Or: right-click → Open → Open in the dialog.
