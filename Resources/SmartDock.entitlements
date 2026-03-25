@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Hardened Runtime (required for notarization) -->
+    <key>com.apple.security.app-sandbox</key>
+    <false/>
+
+    <!-- Required for NSAppleScript → System Events -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+
+    <!-- Hardened Runtime: allow AppleScript -->
+    <key>com.apple.security.scripting-targets</key>
+    <dict>
+        <key>com.apple.systemevents</key>
+        <array>
+            <string>com.apple.systemevents.dock.preferences</string>
+        </array>
+    </dict>
+</dict>
+</plist>
