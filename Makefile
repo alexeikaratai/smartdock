@@ -3,7 +3,7 @@
 # === Config ===
 APP_NAME     := SmartDock
 BUNDLE_ID    := com.smartdock.app
-VERSION      := 1.0.0
+VERSION      := 1.1.0
 BUILD_DIR    := .build/release
 APP_DIR      := build/$(APP_NAME).app
 CONTENTS     := $(APP_DIR)/Contents
@@ -43,7 +43,14 @@ app: build icon
 		cp Resources/AppIcon.icns $(RESOURCES)/AppIcon.icns; \
 	fi
 
-	@echo "✅ $(APP_DIR) created"
+	@# Ad-hoc sign (free, no Developer ID needed)
+	@# Required for macOS to allow opening the app
+	codesign --force --deep \
+		--entitlements Resources/SmartDock.entitlements \
+		--sign - \
+		$(APP_DIR)
+
+	@echo "✅ $(APP_DIR) created (ad-hoc signed)"
 	@echo "   Run: open $(APP_DIR)"
 
 # === Run ===

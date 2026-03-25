@@ -69,6 +69,26 @@ Sources/
 
 On first launch, SmartDock checks for Accessibility permission and shows a dialog with a direct link to System Settings → Privacy & Security → Accessibility. This is required to control Dock preferences via System Events.
 
+## Installation
+
+### From GitHub Release (unsigned)
+
+Download `SmartDock.app` from [Releases](https://github.com/alexkaratai/smartdock/releases). macOS will block unsigned apps downloaded from the internet. To open:
+
+```bash
+xattr -cr SmartDock.app
+open SmartDock.app
+```
+
+Or: right-click → Open → Open in the dialog.
+
+### From Homebrew
+
+```bash
+brew tap alexkaratai/tap
+brew install smartdock
+```
+
 ## Distribution
 
 ### Notarized DMG (recommended for sharing)

@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 make build          # swift build -c release
 make test           # swift test --parallel
-make app            # build + generate icon + create .app bundle
+make app            # build + generate icon + create .app bundle (ad-hoc signed)
 make run            # build + create bundle + open app
 make clean          # remove build artifacts
 ```
@@ -23,26 +23,28 @@ Swift Package (swift-tools-version 6.0) with two targets: **SmartDockCore** (tes
 
 ### Core layer (`Sources/SmartDockCore/`)
 
+- **DockConfiguration** — value type for full Dock preferences: position (bottom/left/right), autohide, icon size, magnification, magnification size. Also contains `UserPreferences` for persisting per-mode configs via UserDefaults.
 - **DisplayMonitor** — detects external monitor connect/disconnect via `CGDisplayRegisterReconfigurationCallback` (event-driven, no polling). Conforms to `DisplayMonitoring` protocol. `@MainActor`.
-- **DockController** — toggles Dock autohide via precompiled cached `NSAppleScript` targeting System Events. Conforms to `DockControlling` protocol.
-- **SmartDockService** — orchestrator: when external display is detected, disables Dock autohide; when only built-in display remains, enables autohide. Has a `SmartDockServiceDelegate` for notifying the UI layer. `@MainActor`.
-- **Log** — centralized logging via `Logger` API (macOS 14+). Subsystem `com.smartdock.app`, categories: general, display, dock.
+- **DockController** — applies `DockConfiguration` via `NSAppleScript` targeting System Events. Each property (position, autohide, size, magnification) is set in a separate AppleScript `tell` block so individual failures don't block others. Also reads current system config via `UserDefaults(suiteName: "com.apple.dock")`. Conforms to `DockControlling` protocol.
+- **SmartDockService** — orchestrator: reads `UserPreferences` to determine which `DockConfiguration` to apply based on external/built-in display state. Has `SmartDockServiceDelegate`. `@MainActor`.
+- **Log** — centralized logging via `Logger` API (macOS 14+). Subsystem `com.smartdock.app`.
 
 ### App layer (`Sources/SmartDock/`)
 
-- **App.swift** — `@main @MainActor` AppDelegate with explicit `static func main()` for manual `NSApplication` run loop (no storyboards/nibs). Sets `.accessory` activation policy (menu bar only, no Dock icon).
-- **StatusBarController** — menu bar icon (`dock.rectangle` SF Symbol with programmatic fallback) with dropdown: version header, status, enable/disable toggle, refresh, settings, quit. Implements `NSMenuDelegate` for dynamic state updates and `SmartDockServiceDelegate`.
-- **SettingsWindow** — NSWindow built entirely with Auto Layout. Shows app icon, name, version, creator (Alex Karatai), and settings: Enable SmartDock toggle + Launch at Login checkbox.
+- **App.swift** — `@main @MainActor` AppDelegate with explicit `static func main()` for manual `NSApplication` run loop (no storyboards/nibs). Checks Accessibility permission on launch.
+- **StatusBarController** — menu bar icon (`dock.rectangle` SF Symbol with programmatic fallback) with dropdown: version header, status, enable/disable, refresh, settings (⌘,), quit. Implements `NSMenuDelegate` and `SmartDockServiceDelegate`.
+- **SettingsWindow** — Auto Layout NSWindow with glass effect (`NSVisualEffectView`), segmented control (External Monitor / Built-in Only). Each mode has: position icon picker (programmatic drawing), autohide checkbox, icon size slider, magnification toggle + slider. General section: Launch at Login, Sync from System. Slider saves on mouseUp only (not during drag). Only applies to Dock if edited mode matches current display state.
 - **LaunchAtLogin** — wraps `SMAppService.mainApp` for login item registration.
-- **AccessibilityChecker** — checks `AXIsProcessTrusted()` on launch, prompts user to grant Accessibility permission with direct link to System Settings.
+- **AccessibilityChecker** — checks `AXIsProcessTrusted()` on launch. Uses `AXIsProcessTrustedWithOptions` for system trust dialog. Only prompts if not already granted.
 
 ### Key patterns
 
 - Protocols (`DisplayMonitoring`, `DockControlling`) enable dependency injection; tests use `MockDisplayMonitor` and `MockDockController` from `Tests/SmartDockTests/Mocks.swift`.
-- All core and UI types are `@MainActor`-isolated (Swift 6 strict concurrency). The CG display callback dispatches back to main queue with `@MainActor` annotation.
-- Tests are `@MainActor`-annotated to match production code isolation.
-- The app requires Accessibility permission to send AppleEvents to System Events for Dock control.
-- `DockController` caches two precompiled `NSAppleScript` instances (show/hide) to avoid repeated compilation overhead.
+- All core and UI types are `@MainActor`-isolated (Swift 6 strict concurrency).
+- Two-mode preferences: `UserPreferences.shared.externalConfig` and `.builtinConfig` persist per-mode dock settings.
+- `DockController.apply(_:)` sets each Dock property via its own AppleScript `tell` block (isolated failure) — no `killall Dock` needed.
+- `DisplayMonitor` filters spurious CG reconfiguration callbacks by tracking `lastExternalCount` — only fires `onConfigurationChanged` when the external display count actually changes.
+- `make app` includes ad-hoc codesigning (`codesign --sign -`) so the app opens without Gatekeeper issues.
 
 ## Entitlements & Permissions
 
@@ -56,6 +58,7 @@ Swift Package (swift-tools-version 6.0) with two targets: **SmartDockCore** (tes
 ```
 Sources/
 ├── SmartDockCore/
+│   ├── DockConfiguration.swift   # DockConfiguration model + UserPreferences
 │   ├── DisplayMonitor.swift
 │   ├── DockController.swift
 │   ├── SmartDockService.swift

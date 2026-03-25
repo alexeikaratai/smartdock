@@ -2,55 +2,35 @@ import Foundation
 
 // MARK: - Protocol
 
-/// Managing Dock auto-hide functionality.
+/// Managing Dock preferences: autohide, position, icon size, magnification.
 public protocol DockControlling {
     /// Current autohide state
     func isAutoHideEnabled() -> Bool
 
-    /// Set the autohide state.
-    /// Returns `true` on success.
+    /// Set the autohide state. Returns true on success.
     @discardableResult
     func setAutoHide(_ enabled: Bool) -> Bool
-}
 
-// MARK: - Errors
+    /// Apply a full dock configuration.
+    @discardableResult
+    func apply(_ config: DockConfiguration) -> Bool
 
-public enum DockControllerError: Error, CustomStringConvertible {
-    case appleScriptFailed(String)
-    case preferencesUnavailable
-
-    public var description: String {
-        switch self {
-        case .appleScriptFailed(let message):
-            return "AppleScript error: \(message)"
-        case .preferencesUnavailable:
-            return "Could not read com.apple.dock preferences"
-        }
-    }
+    /// Read the current system dock configuration.
+    func readSystemConfig() -> DockConfiguration
 }
 
 // MARK: - Implementation
 
-/// Manages Dock auto-hide through System Events (AppleScript).
+/// Manages Dock preferences via AppleScript → System Events.
 ///
-/// Why AppleScript instead of `defaults write` + `killall Dock`:
-/// - Smooth animation instead of restarting the Dock
-/// - Instant application without icon flickering
-/// - Same mechanism used by System Preferences
+/// Each property is set in its own `tell` block so that a failure in one
+/// (e.g. magnification size when magnification is off) does not prevent
+/// the others from being applied. This avoids the need for `killall Dock`
+/// entirely — System Events tells the Dock to update itself gracefully.
 public final class DockController: DockControlling {
 
-    /// Dock preferences domain
+    /// Dock preferences domain (for reading current config)
     private let dockDefaults: UserDefaults?
-
-    /// Cached compiled AppleScripts.
-    /// Compiling NSAppleScript is an expensive operation, so we cache both variants.
-    private lazy var showDockScript: NSAppleScript? = {
-        compileScript(autoHide: false)
-    }()
-
-    private lazy var hideDockScript: NSAppleScript? = {
-        compileScript(autoHide: true)
-    }()
 
     public init() {
         self.dockDefaults = UserDefaults(suiteName: "com.apple.dock")
@@ -64,39 +44,132 @@ public final class DockController: DockControlling {
 
     @discardableResult
     public func setAutoHide(_ enabled: Bool) -> Bool {
-        // Don't touch the Dock if it's already in the desired state
-        guard isAutoHideEnabled() != enabled else { return true }
+        runAppleScript("""
+            tell application "System Events"
+                tell dock preferences
+                    set autohide to \(enabled)
+                end tell
+            end tell
+            """
+        )
+    }
 
-        let script = enabled ? hideDockScript : showDockScript
+    /// Read current dock settings directly from the system.
+    public func readSystemConfig() -> DockConfiguration {
+        guard let d = dockDefaults else { return DockConfiguration() }
+        let orientationRaw = d.string(forKey: "orientation") ?? "bottom"
+        let tilesize = d.integer(forKey: "tilesize")
+        let largesize = d.integer(forKey: "largesize")
 
-        var errorInfo: NSDictionary?
-        script?.executeAndReturnError(&errorInfo)
+        return DockConfiguration(
+            autohide: d.bool(forKey: "autohide"),
+            position: DockPosition(rawValue: orientationRaw) ?? .bottom,
+            iconSize: tilesize > 0 ? tilesize : 48,
+            magnification: d.bool(forKey: "magnification"),
+            magnificationSize: largesize > 0 ? largesize : 64
+        )
+    }
 
-        if let errorInfo = errorInfo {
-            let message = errorInfo[NSAppleScript.errorMessage] as? String ?? "unknown"
-            Log.error("Failed to set dock autohide: \(message)")
-            return false
+    @discardableResult
+    public func apply(_ config: DockConfiguration) -> Bool {
+        // Each property in its own AppleScript call.
+        // System Events updates the Dock gracefully — no killall needed.
+        // If one property fails, the others still apply.
+
+        let positionStr = config.position.appleScriptValue
+        let dockSize = Self.pixelsToAppleScriptScale(config.iconSize)
+        let magSize = Self.pixelsToAppleScriptScale(config.magnificationSize)
+
+        var allOk = true
+
+        // Position — use tell block so multi-word values parse correctly
+        if !runAppleScript("""
+            tell application "System Events"
+                tell dock preferences
+                    set screen edge to \(positionStr)
+                end tell
+            end tell
+            """) { allOk = false }
+
+        // Autohide
+        if !runAppleScript("""
+            tell application "System Events"
+                tell dock preferences
+                    set autohide to \(config.autohide)
+                end tell
+            end tell
+            """) { allOk = false }
+
+        // Icon size
+        if !runAppleScript("""
+            tell application "System Events"
+                tell dock preferences
+                    set dock size to \(dockSize)
+                end tell
+            end tell
+            """) { allOk = false }
+
+        // Magnification on/off
+        if !runAppleScript("""
+            tell application "System Events"
+                tell dock preferences
+                    set magnification to \(config.magnification)
+                end tell
+            end tell
+            """) { allOk = false }
+
+        // Magnification size
+        if config.magnification {
+            if !runAppleScript("""
+                tell application "System Events"
+                    tell dock preferences
+                        set magnification size to \(magSize)
+                    end tell
+                end tell
+                """) { allOk = false }
         }
 
-        Log.info("Dock autohide → \(enabled)")
-        return true
+        Log.info("Dock config applied via AppleScript: position=\(config.position.rawValue) " +
+                 "autohide=\(config.autohide) size=\(config.iconSize) " +
+                 "magnification=\(config.magnification) magSize=\(config.magnificationSize)" +
+                 (allOk ? "" : " [some properties failed]"))
+
+        return allOk
+    }
+
+    // MARK: - Scale Conversion
+
+    /// Converts pixel size (16–128) to AppleScript dock size scale (0.0–1.0).
+    /// System Events uses a normalized float; the actual pixel range is 16–128.
+    static func pixelsToAppleScriptScale(_ pixels: Int) -> Double {
+        let clamped = Double(Swift.max(16, Swift.min(128, pixels)))
+        return (clamped - 16.0) / (128.0 - 16.0)
     }
 
     // MARK: - Private
 
-    private func compileScript(autoHide: Bool) -> NSAppleScript? {
-        let source = """
-            tell application "System Events"
-                set autohide of dock preferences to \(autoHide)
-            end tell
-            """
+    @discardableResult
+    private func runAppleScript(_ source: String) -> Bool {
         let script = NSAppleScript(source: source)
-        // Compile in advance — executeAndReturnError will be faster
-        var compileError: NSDictionary?
-        script?.compileAndReturnError(&compileError)
-        if let err = compileError {
-            Log.error("Failed to compile AppleScript: \(err)")
+        var error: NSDictionary?
+        script?.executeAndReturnError(&error)
+        if let error = error {
+            Log.error("AppleScript error: \(error[NSAppleScript.errorMessage] ?? "unknown") — script: \(source)")
+            return false
         }
-        return script
+        return true
+    }
+}
+
+// MARK: - Position Helpers
+
+private extension DockPosition {
+    /// Value for AppleScript `screen edge` property
+    var appleScriptValue: String {
+        switch self {
+        case .bottom: return "bottom"
+        case .left:   return "left"
+        case .right:  return "right"
+        }
     }
 }

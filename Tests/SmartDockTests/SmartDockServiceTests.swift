@@ -9,8 +9,7 @@ final class SmartDockServiceTests: XCTestCase {
     private var delegate: MockServiceDelegate!
     private var service: SmartDockService!
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
         monitor = MockDisplayMonitor()
         dock = MockDockController()
         delegate = MockServiceDelegate()
@@ -18,9 +17,8 @@ final class SmartDockServiceTests: XCTestCase {
         service.delegate = delegate
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         service.stop()
-        super.tearDown()
     }
 
     // MARK: - Start / Stop
@@ -51,52 +49,41 @@ final class SmartDockServiceTests: XCTestCase {
         XCTAssertEqual(monitor.stopCallCount, 1)
     }
 
-    // MARK: - Display Change → Dock State
+    // MARK: - Display Change → Dock Config Applied
 
-    func testStartWithNoExternalHidesDock() {
+    func testStartAppliesConfig() {
         monitor.mockExternalCount = 0
         service.start()
 
-        XCTAssertTrue(dock.autoHideState, "Dock should autohide when no external display")
-        XCTAssertEqual(dock.lastAutoHideValue, true)
+        XCTAssertEqual(dock.applyCallCount, 1, "Should apply config on start")
+        XCTAssertNotNil(dock.lastAppliedConfig)
     }
 
-    func testStartWithExternalShowsDock() {
-        monitor.mockExternalCount = 1
-        service.start()
-
-        XCTAssertFalse(dock.autoHideState, "Dock should be visible with external display")
-        XCTAssertEqual(dock.lastAutoHideValue, false)
-    }
-
-    func testExternalConnectedShowsDock() {
+    func testExternalConnectedAppliesExternalConfig() {
         monitor.mockExternalCount = 0
         service.start()
 
-        // Connect monitor
         monitor.simulateDisplayChange(externalCount: 1)
 
-        XCTAssertFalse(dock.autoHideState)
         XCTAssertTrue(service.hasExternalDisplay)
+        XCTAssertEqual(dock.applyCallCount, 2) // start + change
     }
 
-    func testExternalDisconnectedHidesDock() {
+    func testExternalDisconnectedAppliesBuiltinConfig() {
         monitor.mockExternalCount = 1
         service.start()
 
-        // Disconnect monitor
         monitor.simulateDisplayChange(externalCount: 0)
 
-        XCTAssertTrue(dock.autoHideState)
         XCTAssertFalse(service.hasExternalDisplay)
+        XCTAssertEqual(dock.applyCallCount, 2)
     }
 
-    func testMultipleExternalsStillShowsDock() {
+    func testMultipleExternalsStillAppliesConfig() {
         monitor.mockExternalCount = 0
         service.start()
 
         monitor.simulateDisplayChange(externalCount: 3)
-        XCTAssertFalse(dock.autoHideState)
         XCTAssertTrue(service.hasExternalDisplay)
     }
 
@@ -128,23 +115,23 @@ final class SmartDockServiceTests: XCTestCase {
     func testChangesIgnoredWhenDisabled() {
         monitor.mockExternalCount = 0
         service.start()
-        let callsAfterStart = dock.setAutoHideCallCount
+        let callsAfterStart = dock.applyCallCount
 
         service.stop()
         monitor.simulateDisplayChange(externalCount: 1)
 
-        XCTAssertEqual(dock.setAutoHideCallCount, callsAfterStart,
+        XCTAssertEqual(dock.applyCallCount, callsAfterStart,
                        "Dock should not be touched when service is disabled")
     }
 
     // MARK: - Refresh
 
-    func testRefreshReappliesState() {
+    func testRefreshReappliesConfig() {
         monitor.mockExternalCount = 0
         service.start()
-        let callsBefore = dock.setAutoHideCallCount
+        let callsBefore = dock.applyCallCount
 
         service.refresh()
-        XCTAssertGreaterThanOrEqual(dock.setAutoHideCallCount, callsBefore)
+        XCTAssertEqual(dock.applyCallCount, callsBefore + 1)
     }
 }

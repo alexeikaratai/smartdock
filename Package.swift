@@ -21,6 +21,7 @@ let package = Package(
             path: "Sources/SmartDock",
             linkerSettings: [
                 .linkedFramework("Cocoa"),
+                .linkedFramework("ServiceManagement"),
             ]
         ),
         .testTarget(

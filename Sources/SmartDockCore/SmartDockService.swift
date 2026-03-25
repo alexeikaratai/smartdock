@@ -12,8 +12,8 @@ public protocol SmartDockServiceDelegate: AnyObject {
 
 /// Main application service.
 /// Links DisplayMonitor and DockController:
-/// shows the Dock when an external monitor appears,
-/// hides it when disconnected.
+/// applies the appropriate DockConfiguration based on whether
+/// an external monitor is connected or not.
 @MainActor
 public final class SmartDockService {
 
@@ -26,19 +26,23 @@ public final class SmartDockService {
     public private(set) var hasExternalDisplay: Bool = false
 
     private let displayMonitor: DisplayMonitoring
-    private let dockController: DockControlling
+    public let dockController: DockControlling
+    private let prefs: UserPreferences
 
     // MARK: - Init
 
     /// - Parameters:
     ///   - displayMonitor: Display monitoring object (injectable for tests)
     ///   - dockController: Dock management object (injectable for tests)
+    ///   - prefs: User preferences for dock configuration per mode
     public init(
         displayMonitor: DisplayMonitoring = DisplayMonitor(),
-        dockController: DockControlling = DockController()
+        dockController: DockControlling = DockController(),
+        prefs: UserPreferences = .shared
     ) {
         self.displayMonitor = displayMonitor
         self.dockController = dockController
+        self.prefs = prefs
 
         self.displayMonitor.onConfigurationChanged = { [weak self] in
             self?.handleDisplayChange()
@@ -64,7 +68,7 @@ public final class SmartDockService {
         Log.info("SmartDock service stopped")
     }
 
-    /// Forcefully recalculate and apply state
+    /// Recalculate and apply state (called from Settings when user changes a preference)
     public func refresh() {
         applyCurrentState()
     }
@@ -81,14 +85,16 @@ public final class SmartDockService {
         let externalCount = displayMonitor.externalDisplayCount()
         hasExternalDisplay = external
 
+        let config: DockConfiguration
         if external {
-            Log.displayChange("External display connected (\(externalCount) external)")
-            dockController.setAutoHide(false)
+            config = prefs.externalConfig
+            Log.displayChange("External display connected (\(externalCount) external) — applying external config")
         } else {
-            Log.displayChange("No external displays — built-in only")
-            dockController.setAutoHide(true)
+            config = prefs.builtinConfig
+            Log.displayChange("No external displays — applying built-in config")
         }
 
+        dockController.apply(config)
         delegate?.serviceDidUpdateState(self, hasExternal: external)
     }
 }

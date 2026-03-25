@@ -40,6 +40,9 @@ final class MockDockController: DockControlling {
     var autoHideState: Bool = false
     var setAutoHideCallCount = 0
     var lastAutoHideValue: Bool?
+    var applyCallCount = 0
+    var lastAppliedConfig: DockConfiguration?
+    var mockSystemConfig = DockConfiguration()
 
     func isAutoHideEnabled() -> Bool {
         autoHideState
@@ -51,6 +54,18 @@ final class MockDockController: DockControlling {
         lastAutoHideValue = enabled
         autoHideState = enabled
         return true
+    }
+
+    @discardableResult
+    func apply(_ config: DockConfiguration) -> Bool {
+        applyCallCount += 1
+        lastAppliedConfig = config
+        autoHideState = config.autohide
+        return true
+    }
+
+    func readSystemConfig() -> DockConfiguration {
+        mockSystemConfig
     }
 }
 
