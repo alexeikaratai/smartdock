@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/version-1.1.1-blue?style=flat-square" alt="Version 1.1.1"/>
   <img src="https://img.shields.io/badge/macOS-14.0%2B-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS 14+"/>
   <img src="https://img.shields.io/badge/Swift-6.0-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 6.0"/>
-  <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License"/>
+  <img src="https://img.shields.io/badge/license-All%20Rights%20Reserved-red?style=flat-square" alt="All Rights Reserved"/>
 </p>
 
 ---
@@ -179,4 +179,8 @@ Uses `com.apple.security.automation.apple-events` (allowed with justification in
 
 ## 📄 License
 
-MIT
+Copyright (c) 2024-2026 Alex Karatai. All rights reserved.
+
+This source code is provided for reference and personal use only. You may not copy, modify, distribute, sublicense, or use this software or any part of it in commercial or non-commercial projects without prior written permission from the author.
+
+For licensing inquiries, contact: alex.karatai@gmail.com

@@ -1,21 +1,20 @@
-MIT License
+Copyright (c) 2024-2026 Alex Karatai. All rights reserved.
 
-Copyright (c) 2026 Alexei Karatai
+PROPRIETARY SOFTWARE LICENSE
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This software and its source code are the exclusive property of Alex Karatai.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+Permission is NOT granted to any person or organization to:
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+- Copy, reproduce, or duplicate this software or any portion of it
+- Modify, adapt, or create derivative works based on this software
+- Distribute, sublicense, sell, or transfer this software to third parties
+- Use this software or its source code in any commercial or non-commercial project
+
+This source code is made available on GitHub for reference and portfolio
+purposes only. Viewing the code does not grant any rights to use it.
+
+Any unauthorized use, reproduction, or distribution of this software
+is strictly prohibited and may result in legal action.
+
+For licensing inquiries, contact: alex.karatai@gmail.com
