@@ -21,7 +21,7 @@ swift test --filter SmartDockTests.SmartDockServiceTests/testStartBeginsMonitori
 
 ```bash
 make bump V=1.3.0   # update version in Makefile + Info.plist, increment build number
-make release        # commit + build + zip + gh release create (uses --generate-notes)
+make release        # build + zip + gh release create (working tree must be clean)
 make install        # copy .app to /Applications
 make fix            # xattr -cr + codesign (fix Gatekeeper quarantine)
 ```
@@ -38,19 +38,19 @@ Swift Package (swift-tools-version 6.0), two targets: **SmartDockCore** (testabl
 
 | File | Responsibility |
 |---|---|
-| `DockConfiguration.swift` | `DockConfiguration` value type (position, autohide, icon size, magnification). `UserPreferences` persists per-mode configs via UserDefaults. `DockPosition` enum. |
-| `DisplayMonitor.swift` | Detects external monitor connect/disconnect via `CGDisplayRegisterReconfigurationCallback`. Debounces (1s settle delay). Filters by add/remove/enable/disable CG flags only — ignores space transitions. Conforms to `DisplayMonitoring`. |
-| `DockController.swift` | Applies `DockConfiguration` via `NSAppleScript` → System Events. Each property in its own `tell` block (isolated failure). Reads current config via `UserDefaults(suiteName: "com.apple.dock")`. Conforms to `DockControlling`. |
-| `SmartDockService.swift` | Orchestrator: reads `UserPreferences`, applies appropriate config based on display state. Has `SmartDockServiceDelegate`. |
-| `Log.swift` | Centralized `Logger` API. Subsystem `com.smartdock.app`. |
+| `DockConfiguration.swift` | `DockConfiguration` value type (position, autohide, icon size, magnification). `UserPreferences` persists per-mode configs via UserDefaults. `DockPosition` enum. First-launch: `initializeDefaultsIfNeeded(from:)` reads system config, sets external=autohide off, builtin=autohide on. |
+| `DisplayMonitor.swift` | Detects external monitor connect/disconnect via `CGDisplayRegisterReconfigurationCallback`. Debounces (1s settle delay). Filters by add/remove/enable/disable CG flags only. Also observes `didWakeNotification`, `screensDidWakeNotification` (2s delay re-check). No space change observer — AppleScript triggers space notifications causing feedback loops. Conforms to `DisplayMonitoring`. |
+| `DockController.swift` | Applies `DockConfiguration` via `NSAppleScript` → System Events. Diff-based: reads current system config via fresh `UserDefaults(suiteName: "com.apple.dock")` and only applies properties that actually differ. Conforms to `DockControlling`. |
+| `SmartDockService.swift` | Orchestrator: reads `UserPreferences`, applies appropriate config based on display state. Has `SmartDockServiceDelegate`. Posts `Notification.Name.smartDockStateDidChange` on every state change. |
+| `Log.swift` | Centralized `Logger` API. Subsystem `com.smartdock.app`. Categories: `general`, `display`. |
 
 ### App layer (`Sources/SmartDock/`)
 
 | File | Responsibility |
 |---|---|
-| `App.swift` | `@main` AppDelegate with manual `NSApplication` run loop (no storyboards). Checks Accessibility on launch. |
-| `StatusBarController.swift` | Menu bar icon (`dock.rectangle` SF Symbol) + dropdown menu. Implements `NSMenuDelegate`, `SmartDockServiceDelegate`. |
-| `SettingsWindow.swift` | Glass NSWindow (`NSVisualEffectView`), segmented control for External/Built-in modes. Position icon picker, sliders (save on mouseUp only), autohide, magnification. General: Launch at Login, Sync from System. |
+| `App.swift` | `@main` AppDelegate with manual `NSApplication` run loop (no storyboards). Checks Accessibility on launch. `applicationShouldHandleReopen` opens Settings when re-launched from /Applications. |
+| `StatusBarController.swift` | Menu bar icon (`dock.rectangle` SF Symbol) + dropdown menu. Implements `NSMenuDelegate`, `SmartDockServiceDelegate`. Exposes `showSettings()` for re-open handling. |
+| `SettingsWindow.swift` | Glass NSWindow (`NSVisualEffectView`), segmented control for External/Built-in modes. Position icon picker (Rectangle-style icons), sliders, autohide, magnification. **Apply button** — changes are not applied until user clicks Apply (or Enter). Dirty state tracking via `markDirty()`. Auto-saves before tab switch and display change. General: Launch at Login, Sync from System, Quit. Observes `smartDockStateDidChange` to refresh UI. |
 | `LaunchAtLogin.swift` | `SMAppService.mainApp` wrapper. |
 | `AccessibilityChecker.swift` | `AXIsProcessTrusted()` check + `AXIsProcessTrustedWithOptions` prompt. |
 
@@ -119,7 +119,7 @@ Swift Package (swift-tools-version 6.0), two targets: **SmartDockCore** (testabl
 - **Delegate pattern** — `SmartDockServiceDelegate` with `weak var delegate`. Delegate methods prefixed with subject: `serviceDidUpdateState(_:hasExternal:)`.
 - **Value types for configuration** — `DockConfiguration` is a `struct`, immutable after init. Create new instance to change values.
 - **Singleton via static let** — `UserPreferences.shared` with `private init()`. Only for app-wide state, never for testable services.
-- **Extensions for helpers** — `private extension Int { func clamped(to:) }`, `private extension Bundle { var shortVersion }`. Keep helpers close to usage, private when single-file.
+- **Extensions for helpers** — `private extension Int { func clamped(to:) }`, `extension Bundle { var shortVersion }` (internal, shared across SmartDock target). Keep helpers close to usage, private when single-file.
 - **`lazy var`** for expensive one-time setup — `lazy var settingsWindow`, `lazy var cachedIcon`
 
 ## Swift & macOS Conventions
@@ -136,7 +136,7 @@ Swift Package (swift-tools-version 6.0), two targets: **SmartDockCore** (testabl
 - Menu bar app: `NSApp.setActivationPolicy(.accessory)` + `LSUIElement = true`. No Dock icon.
 - Glass/vibrancy: `NSVisualEffectView` with `.hudWindow` (window) or `.popover` (cards) material.
 - Use `NSLayoutConstraint.activate([...])` for batch constraint activation — never `constraint.isActive = true` one by one.
-- Slider values: update label during drag (`isContinuous = true`), but save/apply only on `mouseUp` (check `NSApp.currentEvent?.type == .leftMouseUp`).
+- Slider values: update label during drag (`isContinuous = true`), mark dirty state. Changes apply only when user clicks Apply button — no auto-save on mouseUp.
 - SF Symbols: always provide programmatic fallback for icons. Set `isTemplate = true` for menu bar icons.
 
 ### AppleScript / System Events
@@ -152,10 +152,21 @@ Swift Package (swift-tools-version 6.0), two targets: **SmartDockCore** (testabl
 - Track `lastExternalCount` — only fire `onConfigurationChanged` when the external display count **actually** changes.
 - `CGDisplayIsBuiltin()` distinguishes built-in from external displays.
 
+### Wake & Space Change Observers
+- `NSWorkspace.didWakeNotification` + `screensDidWakeNotification` — after macOS sleep/wake, force re-check with 2-second delay (longer than CG debounce). Uses separate `pendingWakeCheck` work item so CG callbacks can't cancel it. Always re-applies config regardless of count change.
+- `NSWorkspace.activeSpaceDidChangeNotification` — **NOT observed**. AppleScript dock changes (especially autohide) trigger space change notifications, causing infinite feedback loops. Mission Control and fullscreen dock behavior is left to macOS. If dock gets stuck, user can use "Refresh Now" from the menu bar.
+
+### Diff-Based Dock Application
+- `DockController.apply()` reads current system config via fresh `UserDefaults(suiteName: "com.apple.dock")` before applying.
+- Only runs AppleScript for properties that actually differ from system state.
+- If nothing changed → no AppleScript runs → no dock flash/appearance.
+- This makes frequent re-apply calls (wake, space change) safe — they're no-ops when config matches.
+
 ### UserDefaults
 - App preferences: `UserDefaults.standard` with `com.smartdock.` prefix.
-- Reading system Dock config: `UserDefaults(suiteName: "com.apple.dock")` — read-only, never write to this domain.
+- Reading system Dock config: create fresh `UserDefaults(suiteName: "com.apple.dock")` each time — do not cache the instance, as AppleScript changes are made by the Dock process and cached instances may return stale data.
 - Use `defaults.object(forKey:) != nil` to check if a key exists (`.bool(forKey:)` returns `false` for missing keys).
+- First launch: `UserPreferences.initializeDefaultsIfNeeded(from:)` reads current system config, saves external mode (autohide=off) and builtin mode (autohide=on). Only runs once (`isConfigured` check).
 
 ### Testing
 - Always use protocol-based dependency injection — never instantiate `DisplayMonitor` or `DockController` directly in tests.
@@ -164,7 +175,7 @@ Swift Package (swift-tools-version 6.0), two targets: **SmartDockCore** (testabl
 - Tests use `swift test --parallel` — ensure tests are independent with no shared mutable state.
 
 ### Logging
-- Use `Log.info()`, `Log.error()`, `Log.displayChange()` — never `print()`.
+- Use `Log.info()`, `Log.error()`, `Log.displayChange()` — never `print()`. Categories: `general`, `display`.
 - All log output goes through `Logger` API (visible in Console.app, filter by `com.smartdock.app`).
 
 ## Entitlements & Permissions

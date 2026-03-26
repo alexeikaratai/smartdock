@@ -8,8 +8,6 @@ public enum Log {
 
     private static let general = Logger(subsystem: subsystem, category: "general")
     private static let display = Logger(subsystem: subsystem, category: "display")
-    private static let dock    = Logger(subsystem: subsystem, category: "dock")
-
     // MARK: - General
 
     public static func info(_ message: String) {
@@ -24,11 +22,5 @@ public enum Log {
 
     public static func displayChange(_ message: String) {
         display.info("\(message, privacy: .public)")
-    }
-
-    // MARK: - Dock
-
-    public static func dockAction(_ message: String) {
-        dock.info("\(message, privacy: .public)")
     }
 }

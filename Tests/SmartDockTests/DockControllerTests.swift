@@ -128,4 +128,45 @@ final class DockControllerTests: XCTestCase {
 
         XCTAssertEqual(dock.applyCallCount, 2)
     }
+
+    // MARK: - readSystemConfig
+
+    func testMockReadSystemConfig() {
+        let dock = MockDockController()
+        let custom = DockConfiguration(autohide: true, position: .right, iconSize: 64,
+                                        magnification: true, magnificationSize: 96)
+        dock.mockSystemConfig = custom
+
+        let read = dock.readSystemConfig()
+        XCTAssertEqual(read, custom)
+    }
+
+    func testRealControllerReadsSystemConfig() {
+        let dock = DockController()
+        let config = dock.readSystemConfig()
+        // Should return valid values within range
+        XCTAssertTrue((16...128).contains(config.iconSize))
+        XCTAssertTrue((16...128).contains(config.magnificationSize))
+        XCTAssertTrue(DockPosition.allCases.contains(config.position))
+    }
+
+    // MARK: - DockConfiguration Edge Cases
+
+    func testConfigAllPositions() {
+        for pos in DockPosition.allCases {
+            let config = DockConfiguration(position: pos)
+            XCTAssertEqual(config.position, pos)
+            XCTAssertFalse(pos.displayName.isEmpty)
+        }
+    }
+
+    func testConfigBoundaryValues() {
+        let minConfig = DockConfiguration(iconSize: 16, magnificationSize: 16)
+        XCTAssertEqual(minConfig.iconSize, 16)
+        XCTAssertEqual(minConfig.magnificationSize, 16)
+
+        let maxConfig = DockConfiguration(iconSize: 128, magnificationSize: 128)
+        XCTAssertEqual(maxConfig.iconSize, 128)
+        XCTAssertEqual(maxConfig.magnificationSize, 128)
+    }
 }

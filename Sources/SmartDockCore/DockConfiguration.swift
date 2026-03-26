@@ -54,17 +54,51 @@ public final class UserPreferences {
 
     private init() {}
 
+    // MARK: - First Launch
+
+    /// On first launch (no saved preferences), read the current system dock
+    /// config and set sensible defaults: external = autohide off, built-in = autohide on.
+    /// Other properties (position, size, magnification) are taken from the current system config.
+    public func initializeDefaultsIfNeeded(from systemConfig: DockConfiguration) {
+        guard !isConfigured else { return }
+
+        externalConfig = DockConfiguration(
+            autohide: false,
+            position: systemConfig.position,
+            iconSize: systemConfig.iconSize,
+            magnification: systemConfig.magnification,
+            magnificationSize: systemConfig.magnificationSize
+        )
+        builtinConfig = DockConfiguration(
+            autohide: true,
+            position: systemConfig.position,
+            iconSize: systemConfig.iconSize,
+            magnification: systemConfig.magnification,
+            magnificationSize: systemConfig.magnificationSize
+        )
+
+        Log.info("First launch — initialized defaults from system config: "
+                 + "position=\(systemConfig.position.rawValue) size=\(systemConfig.iconSize) "
+                 + "(external: autohide=false, builtin: autohide=true)")
+    }
+
+    /// Whether any preferences have been saved (either mode).
+    public var isConfigured: Bool {
+        defaults.object(forKey: "\(prefix).external.autohide") != nil
+            || defaults.object(forKey: "\(prefix).builtin.autohide") != nil
+    }
+
     // MARK: - External Monitor Config
 
     public var externalConfig: DockConfiguration {
-        get { load(key: "external") ?? DockConfiguration(autohide: false) }
+        get { load(key: "external") ?? DockConfiguration() }
         set { save(newValue, key: "external") }
     }
 
     // MARK: - Built-in Only Config
 
     public var builtinConfig: DockConfiguration {
-        get { load(key: "builtin") ?? DockConfiguration(autohide: true) }
+        get { load(key: "builtin") ?? DockConfiguration() }
         set { save(newValue, key: "builtin") }
     }
 

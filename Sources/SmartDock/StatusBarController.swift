@@ -44,7 +44,7 @@ final class StatusBarController: NSObject {
         menu.delegate = self
 
         // Title + version
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
+        let version = Bundle.main.shortVersion
         let headerItem = NSMenuItem(title: "SmartDock v\(version)", action: nil, keyEquivalent: "")
         headerItem.isEnabled = false
         let attrs: [NSAttributedString.Key: Any] = [
@@ -118,8 +118,12 @@ final class StatusBarController: NSObject {
         service.refresh()
     }
 
-    @objc private func openSettings() {
+    func showSettings() {
         settingsWindow.show()
+    }
+
+    @objc private func openSettings() {
+        showSettings()
     }
 
     @objc private func quit() {

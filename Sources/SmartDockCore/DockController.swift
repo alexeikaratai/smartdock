@@ -29,17 +29,12 @@ public protocol DockControlling {
 /// entirely — System Events tells the Dock to update itself gracefully.
 public final class DockController: DockControlling {
 
-    /// Dock preferences domain (for reading current config)
-    private let dockDefaults: UserDefaults?
-
-    public init() {
-        self.dockDefaults = UserDefaults(suiteName: "com.apple.dock")
-    }
+    public init() {}
 
     // MARK: - DockControlling
 
     public func isAutoHideEnabled() -> Bool {
-        dockDefaults?.bool(forKey: "autohide") ?? false
+        readSystemConfig().autohide
     }
 
     @discardableResult
@@ -55,8 +50,12 @@ public final class DockController: DockControlling {
     }
 
     /// Read current dock settings directly from the system.
+    /// Creates a fresh UserDefaults instance to avoid stale cached values
+    /// after AppleScript changes dock preferences via System Events.
     public func readSystemConfig() -> DockConfiguration {
-        guard let d = dockDefaults else { return DockConfiguration() }
+        guard let d = UserDefaults(suiteName: "com.apple.dock") else {
+            return DockConfiguration()
+        }
         let orientationRaw = d.string(forKey: "orientation") ?? "bottom"
         let tilesize = d.integer(forKey: "tilesize")
         let largesize = d.integer(forKey: "largesize")
@@ -72,54 +71,62 @@ public final class DockController: DockControlling {
 
     @discardableResult
     public func apply(_ config: DockConfiguration) -> Bool {
-        // Each property in its own AppleScript call.
-        // System Events updates the Dock gracefully — no killall needed.
-        // If one property fails, the others still apply.
-
-        let positionStr = config.position.appleScriptValue
-        let dockSize = Self.pixelsToAppleScriptScale(config.iconSize)
-        let magSize = Self.pixelsToAppleScriptScale(config.magnificationSize)
+        // Read current system state and only apply properties that differ.
+        // Each AppleScript poke can cause the Dock to briefly flash — skipping
+        // unchanged properties avoids spurious dock appearances.
+        let current = readSystemConfig()
 
         var allOk = true
+        var changed: [String] = []
 
-        // Position — use tell block so multi-word values parse correctly
-        if !runAppleScript("""
-            tell application "System Events"
-                tell dock preferences
-                    set screen edge to \(positionStr)
+        if config.position != current.position {
+            changed.append("position=\(config.position.rawValue)")
+            if !runAppleScript("""
+                tell application "System Events"
+                    tell dock preferences
+                        set screen edge to \(config.position.appleScriptValue)
+                    end tell
                 end tell
-            end tell
-            """) { allOk = false }
+                """) { allOk = false }
+        }
 
-        // Autohide
-        if !runAppleScript("""
-            tell application "System Events"
-                tell dock preferences
-                    set autohide to \(config.autohide)
+        if config.autohide != current.autohide {
+            changed.append("autohide=\(config.autohide)")
+            if !runAppleScript("""
+                tell application "System Events"
+                    tell dock preferences
+                        set autohide to \(config.autohide)
+                    end tell
                 end tell
-            end tell
-            """) { allOk = false }
+                """) { allOk = false }
+        }
 
-        // Icon size
-        if !runAppleScript("""
-            tell application "System Events"
-                tell dock preferences
-                    set dock size to \(dockSize)
+        if config.iconSize != current.iconSize {
+            changed.append("size=\(config.iconSize)")
+            let dockSize = Self.pixelsToAppleScriptScale(config.iconSize)
+            if !runAppleScript("""
+                tell application "System Events"
+                    tell dock preferences
+                        set dock size to \(dockSize)
+                    end tell
                 end tell
-            end tell
-            """) { allOk = false }
+                """) { allOk = false }
+        }
 
-        // Magnification on/off
-        if !runAppleScript("""
-            tell application "System Events"
-                tell dock preferences
-                    set magnification to \(config.magnification)
+        if config.magnification != current.magnification {
+            changed.append("magnification=\(config.magnification)")
+            if !runAppleScript("""
+                tell application "System Events"
+                    tell dock preferences
+                        set magnification to \(config.magnification)
+                    end tell
                 end tell
-            end tell
-            """) { allOk = false }
+                """) { allOk = false }
+        }
 
-        // Magnification size
-        if config.magnification {
+        if config.magnification && config.magnificationSize != current.magnificationSize {
+            changed.append("magSize=\(config.magnificationSize)")
+            let magSize = Self.pixelsToAppleScriptScale(config.magnificationSize)
             if !runAppleScript("""
                 tell application "System Events"
                     tell dock preferences
@@ -129,8 +136,12 @@ public final class DockController: DockControlling {
                 """) { allOk = false }
         }
 
-        let status = allOk ? "" : " [some properties failed]"
-        Log.info("Dock config applied via AppleScript: position=\(config.position.rawValue) autohide=\(config.autohide) size=\(config.iconSize) magnification=\(config.magnification) magSize=\(config.magnificationSize)\(status)")
+        if changed.isEmpty {
+            Log.info("Dock config unchanged — skipped AppleScript")
+        } else {
+            let status = allOk ? "" : " [some failed]"
+            Log.info("Dock config applied: \(changed.joined(separator: " "))\(status)")
+        }
 
         return allOk
     }
@@ -161,7 +172,7 @@ public final class DockController: DockControlling {
 
 // MARK: - Position Helpers
 
-private extension DockPosition {
+fileprivate extension DockPosition {
     /// Value for AppleScript `screen edge` property
     var appleScriptValue: String {
         switch self {

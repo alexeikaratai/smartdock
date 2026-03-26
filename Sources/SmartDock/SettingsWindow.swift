@@ -41,6 +41,7 @@ final class SettingsWindow: NSObject {
     private var magnificationCheckbox: NSButton!
     private var magSizeSlider: NSSlider!
     private var magSizeLabel: NSTextField!
+    private var applyButton: NSButton!
     private var launchAtLoginCheckbox: NSButton!
     private var statusLabel: NSTextField!
 
@@ -49,6 +50,13 @@ final class SettingsWindow: NSObject {
     init(service: SmartDockService) {
         self.service = service
         super.init()
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleStateChange),
+            name: .smartDockStateDidChange,
+            object: nil
+        )
     }
 
     // MARK: - Public
@@ -73,7 +81,7 @@ final class SettingsWindow: NSObject {
 
     private func makeWindow() -> NSWindow {
         let w = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 570),
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 610),
             styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -112,7 +120,7 @@ final class SettingsWindow: NSObject {
     // MARK: - UI Construction
 
     private func buildUI(in container: NSView) {
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
+        let version = Bundle.main.shortVersion
         let margin: CGFloat = 24
 
         // --- App Header ---
@@ -192,6 +200,15 @@ final class SettingsWindow: NSObject {
         magSizeLabel.alignment = .right
         card.addSubview(magSizeLabel)
 
+        // --- Apply Button ---
+        applyButton = NSButton(title: "Apply", target: self, action: #selector(applySettings))
+        applyButton.translatesAutoresizingMaskIntoConstraints = false
+        applyButton.bezelStyle = .rounded
+        applyButton.controlSize = .regular
+        applyButton.keyEquivalent = "\r" // Enter key
+        applyButton.isEnabled = false
+        container.addSubview(applyButton)
+
         // --- Separator ---
         let sep = NSBox()
         sep.translatesAutoresizingMaskIntoConstraints = false
@@ -214,6 +231,13 @@ final class SettingsWindow: NSObject {
         syncButton.bezelStyle = .rounded
         syncButton.controlSize = .small
         container.addSubview(syncButton)
+
+        // Quit button
+        let quitButton = NSButton(title: "Quit SmartDock", target: self, action: #selector(quitApp))
+        quitButton.translatesAutoresizingMaskIntoConstraints = false
+        quitButton.bezelStyle = .rounded
+        quitButton.controlSize = .small
+        container.addSubview(quitButton)
 
         // Status
         statusLabel = makeLabel(text: statusText(), font: .systemFont(ofSize: 11))
@@ -285,8 +309,12 @@ final class SettingsWindow: NSObject {
             magSizeSlider.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14),
             magSizeSlider.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -14),
 
+            // Apply button
+            applyButton.topAnchor.constraint(equalTo: card.bottomAnchor, constant: 12),
+            applyButton.trailingAnchor.constraint(equalTo: card.trailingAnchor),
+
             // Separator
-            sep.topAnchor.constraint(equalTo: card.bottomAnchor, constant: 16),
+            sep.topAnchor.constraint(equalTo: applyButton.bottomAnchor, constant: 12),
             sep.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
             sep.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
 
@@ -300,6 +328,10 @@ final class SettingsWindow: NSObject {
             // Sync button
             syncButton.topAnchor.constraint(equalTo: launchAtLoginCheckbox.bottomAnchor, constant: 12),
             syncButton.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
+
+            // Quit button — next to Sync
+            quitButton.centerYAnchor.constraint(equalTo: syncButton.centerYAnchor),
+            quitButton.leadingAnchor.constraint(equalTo: syncButton.trailingAnchor, constant: 8),
 
             // Status
             statusLabel.topAnchor.constraint(equalTo: syncButton.bottomAnchor, constant: 10),
@@ -365,8 +397,8 @@ final class SettingsWindow: NSObject {
 
             imageView.centerXAnchor.constraint(equalTo: btn.centerXAnchor),
             imageView.topAnchor.constraint(equalTo: btn.topAnchor, constant: 8),
-            imageView.widthAnchor.constraint(equalToConstant: 36),
-            imageView.heightAnchor.constraint(equalToConstant: 28),
+            imageView.widthAnchor.constraint(equalToConstant: 44),
+            imageView.heightAnchor.constraint(equalToConstant: 32),
 
             label.centerXAnchor.constraint(equalTo: btn.centerXAnchor),
             label.topAnchor.constraint(equalTo: imageView.bottomAnchor, constant: 4),
@@ -386,37 +418,73 @@ final class SettingsWindow: NSObject {
         }
     }
 
-    /// Draws a monitor outline with a highlighted dock bar at the correct edge.
+    /// Draws a Rectangle-style icon: rounded monitor outline with a dock bar
+    /// and small app icon squares on the correct edge.
     private func drawPositionIcon(for position: DockPosition, selected: Bool) -> NSImage {
-        let size = NSSize(width: 36, height: 28)
+        let size = NSSize(width: 44, height: 32)
         return NSImage(size: size, flipped: true) { rect in
-            let monitorRect = rect.insetBy(dx: 2, dy: 2)
+            let monitorRect = rect.insetBy(dx: 3, dy: 3)
+            let accentColor = NSColor.controlAccentColor
 
-            // Monitor outline
-            let outline = NSBezierPath(roundedRect: monitorRect, xRadius: 3, yRadius: 3)
-            let strokeColor = selected ? NSColor.controlAccentColor : NSColor.tertiaryLabelColor
-            strokeColor.setStroke()
-            outline.lineWidth = 1.5
+            // Monitor outline — rounded rect with subtle fill
+            let outline = NSBezierPath(roundedRect: monitorRect, xRadius: 4, yRadius: 4)
+            if selected {
+                accentColor.withAlphaComponent(0.08).setFill()
+                outline.fill()
+                accentColor.withAlphaComponent(0.6).setStroke()
+            } else {
+                NSColor.tertiaryLabelColor.withAlphaComponent(0.5).setStroke()
+            }
+            outline.lineWidth = 1.2
             outline.stroke()
 
-            // Dock bar — thick colored bar on the correct edge
-            let fillColor = selected ? NSColor.controlAccentColor : NSColor.secondaryLabelColor
-            fillColor.setFill()
+            // Dock bar + app icon dots
+            let barColor = selected ? accentColor : NSColor.secondaryLabelColor
+            let dotColor = selected
+                ? accentColor.withAlphaComponent(0.5)
+                : NSColor.tertiaryLabelColor
 
-            let bar: NSRect
-            let r: CGFloat = 1.5
+            // Dock bar rect depends on position
+            let barRect: NSRect
             switch position {
             case .bottom:
-                bar = NSRect(x: monitorRect.minX + 6, y: monitorRect.maxY - 5,
-                             width: monitorRect.width - 12, height: 3)
+                barRect = NSRect(x: monitorRect.minX + 5, y: monitorRect.maxY - 6,
+                                 width: monitorRect.width - 10, height: 3.5)
             case .left:
-                bar = NSRect(x: monitorRect.minX + 2, y: monitorRect.minY + 4,
-                             width: 3, height: monitorRect.height - 8)
+                barRect = NSRect(x: monitorRect.minX + 2, y: monitorRect.minY + 4,
+                                 width: 3.5, height: monitorRect.height - 8)
             case .right:
-                bar = NSRect(x: monitorRect.maxX - 5, y: monitorRect.minY + 4,
-                             width: 3, height: monitorRect.height - 8)
+                barRect = NSRect(x: monitorRect.maxX - 5.5, y: monitorRect.minY + 4,
+                                 width: 3.5, height: monitorRect.height - 8)
             }
-            NSBezierPath(roundedRect: bar, xRadius: r, yRadius: r).fill()
+
+            barColor.setFill()
+            NSBezierPath(roundedRect: barRect, xRadius: 1.5, yRadius: 1.5).fill()
+
+            // App icon dots along the bar
+            let isHorizontal = position == .bottom
+            let dotCount = isHorizontal ? 4 : 3
+            let dotSize: CGFloat = 2
+            let dotSpacing: CGFloat = isHorizontal ? 4 : 3.5
+            let totalSpan = CGFloat(dotCount) * dotSize + CGFloat(dotCount - 1) * dotSpacing
+
+            dotColor.setFill()
+            for i in 0..<dotCount {
+                let offset = CGFloat(i) * (dotSize + dotSpacing)
+                let dotRect: NSRect
+                if isHorizontal {
+                    let startX = barRect.midX - totalSpan / 2
+                    let dotY = barRect.minY + (barRect.height - dotSize) / 2
+                    dotRect = NSRect(x: startX + offset, y: dotY,
+                                     width: dotSize, height: dotSize)
+                } else {
+                    let dotX = barRect.minX + (barRect.width - dotSize) / 2
+                    let startY = barRect.midY - totalSpan / 2
+                    dotRect = NSRect(x: dotX, y: startY + offset,
+                                     width: dotSize, height: dotSize)
+                }
+                NSBezierPath(roundedRect: dotRect, xRadius: 0.5, yRadius: 0.5).fill()
+            }
 
             return true
         }
@@ -425,7 +493,10 @@ final class SettingsWindow: NSObject {
     // MARK: - Actions
 
     @objc private func modeChanged(_ sender: NSSegmentedControl) {
-        // Just switch the UI to the other mode — no need to save or apply
+        // Auto-save unsaved changes before switching tab
+        if applyButton.isEnabled {
+            saveAndApply()
+        }
         selectedMode = Mode(rawValue: sender.selectedSegment) ?? .external
         loadCurrentMode()
     }
@@ -435,11 +506,25 @@ final class SettingsWindow: NSObject {
         guard idx >= 0, idx < DockPosition.allCases.count else { return }
         selectedPosition = DockPosition.allCases[idx]
         updatePositionSelection()
-        saveCurrentMode()
+        markDirty()
     }
 
     @objc private func settingChanged(_ sender: Any) {
-        saveCurrentMode()
+        magSizeSlider.isEnabled = magnificationCheckbox.state == .on
+        markDirty()
+    }
+
+    @objc private func sliderChanged(_ sender: NSSlider) {
+        if sender === iconSizeSlider {
+            iconSizeLabel.stringValue = "\(Int(sender.doubleValue)) px"
+        } else if sender === magSizeSlider {
+            magSizeLabel.stringValue = "\(Int(sender.doubleValue)) px"
+        }
+        markDirty()
+    }
+
+    @objc private func applySettings(_ sender: Any) {
+        saveAndApply()
     }
 
     @objc private func syncFromSystem(_ sender: NSButton) {
@@ -450,30 +535,32 @@ final class SettingsWindow: NSObject {
             prefs.builtinConfig = systemConfig
         }
         loadCurrentMode()
-    }
-
-    @objc private func sliderChanged(_ sender: NSSlider) {
-        // Update label immediately for live feedback
-        if sender === iconSizeSlider {
-            iconSizeLabel.stringValue = "\(Int(sender.doubleValue)) px"
-        } else if sender === magSizeSlider {
-            magSizeLabel.stringValue = "\(Int(sender.doubleValue)) px"
-        }
-
-        // Only save & apply when the user releases the slider (not while dragging).
-        // NSEvent.current is nil or mouseUp when the slider sends its final value.
-        guard let event = NSApp.currentEvent else {
-            saveCurrentMode()
-            return
-        }
-        if event.type == .leftMouseUp {
-            saveCurrentMode()
-        }
+        applyButton.isEnabled = false
     }
 
     @objc private func toggleLaunchAtLogin(_ sender: NSButton) {
         LaunchAtLogin.toggle()
         sender.state = LaunchAtLogin.isEnabled ? .on : .off
+    }
+
+    @objc private func quitApp(_ sender: Any) {
+        NSApp.terminate(nil)
+    }
+
+    /// Display state changed (monitor connected/disconnected) — refresh Settings UI.
+    @objc private func handleStateChange(_ notification: Notification) {
+        guard window?.isVisible == true else { return }
+        if applyButton.isEnabled {
+            saveAndApply()
+        }
+        loadCurrentMode()
+    }
+
+    // MARK: - Dirty State
+
+    /// Mark that unsaved changes exist — enable the Apply button.
+    private func markDirty() {
+        applyButton.isEnabled = true
     }
 
     // MARK: - Load / Save
@@ -495,7 +582,8 @@ final class SettingsWindow: NSObject {
         updateStatus()
     }
 
-    private func saveCurrentMode() {
+    /// Save current UI state to preferences and apply to dock if this is the active mode.
+    private func saveAndApply() {
         let config = DockConfiguration(
             autohide: autohideCheckbox.state == .on,
             position: selectedPosition,
@@ -510,11 +598,7 @@ final class SettingsWindow: NSObject {
             prefs.builtinConfig = config
         }
 
-        magSizeSlider.isEnabled = config.magnification
-
-        // Only apply to the Dock if the edited mode matches the current display state.
-        // Editing "Built-in Only" while an external monitor is connected should just
-        // save the preference without touching the Dock (and vice versa).
+        // Apply to dock if editing the currently active mode.
         let editingActiveMode = (selectedMode == .external && service.hasExternalDisplay)
             || (selectedMode == .builtin && !service.hasExternalDisplay)
 
@@ -522,6 +606,7 @@ final class SettingsWindow: NSObject {
             service.refresh()
         }
 
+        applyButton.isEnabled = false
         updateStatus()
     }
 

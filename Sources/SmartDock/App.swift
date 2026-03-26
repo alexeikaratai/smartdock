@@ -33,6 +33,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Log.info("SmartDock launched (v\(Bundle.main.shortVersion))")
     }
 
+    /// Called when user re-opens the app (e.g. clicks icon in /Applications while already running).
+    /// Opens Settings so the app is accessible even if the status bar icon isn't visible.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        statusBarController.showSettings()
+        return false
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         service.stop()
     }
@@ -40,7 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 // MARK: - Bundle Helpers
 
-private extension Bundle {
+extension Bundle {
     var shortVersion: String {
         infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
     }

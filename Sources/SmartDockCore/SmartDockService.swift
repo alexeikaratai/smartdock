@@ -1,5 +1,17 @@
 import Foundation
 
+// MARK: - Notifications
+
+public extension Notification.Name {
+    /// Posted when the service applies a new dock configuration.
+    /// `userInfo` contains `SmartDockService.hasExternalKey` (Bool).
+    static let smartDockStateDidChange = Notification.Name("com.smartdock.stateDidChange")
+}
+
+public extension SmartDockService {
+    static let hasExternalKey = "hasExternal"
+}
+
 // MARK: - Delegate
 
 /// Delegate for receiving state change notifications.
@@ -55,6 +67,11 @@ public final class SmartDockService {
     public func start() {
         guard !isEnabled else { return }
         isEnabled = true
+
+        // On first launch, snapshot current system dock config as the default
+        // so we don't override the user's settings until they configure SmartDock.
+        prefs.initializeDefaultsIfNeeded(from: dockController.readSystemConfig())
+
         displayMonitor.start()
         applyCurrentState()
         Log.info("SmartDock service started")
@@ -75,20 +92,27 @@ public final class SmartDockService {
 
     // MARK: - Private
 
+    /// Guard against re-entrant calls. Applying dock config via AppleScript
+    /// can trigger `activeSpaceDidChangeNotification` (dock show/hide changes
+    /// the space), which calls back into `applyCurrentState()` → infinite loop.
+    private var isApplying = false
+
     private func handleDisplayChange() {
         guard isEnabled else { return }
         applyCurrentState()
     }
 
     private func applyCurrentState() {
+        guard !isApplying else { return }
+        isApplying = true
+        defer { isApplying = false }
         let external = displayMonitor.hasExternalDisplay()
-        let externalCount = displayMonitor.externalDisplayCount()
         hasExternalDisplay = external
 
         let config: DockConfiguration
         if external {
             config = prefs.externalConfig
-            Log.displayChange("External display connected (\(externalCount) external) — applying external config")
+            Log.displayChange("External display detected — applying external config")
         } else {
             config = prefs.builtinConfig
             Log.displayChange("No external displays — applying built-in config")
@@ -96,5 +120,11 @@ public final class SmartDockService {
 
         dockController.apply(config)
         delegate?.serviceDidUpdateState(self, hasExternal: external)
+
+        NotificationCenter.default.post(
+            name: .smartDockStateDidChange,
+            object: self,
+            userInfo: [SmartDockService.hasExternalKey: external]
+        )
     }
 }
