@@ -1,5 +1,6 @@
 import Foundation
 import CoreGraphics
+import Cocoa
 
 // MARK: - Protocol
 
@@ -49,6 +50,9 @@ public final class DisplayMonitor: DisplayMonitoring {
     private var pendingCheck: DispatchWorkItem?
     private let settleDelay: TimeInterval = 1.0
 
+    /// Separate work item for wake rechecks — must not be cancelled by CG callbacks.
+    private var pendingWakeCheck: DispatchWorkItem?
+
     public init() {}
 
     deinit {
@@ -59,6 +63,9 @@ public final class DisplayMonitor: DisplayMonitoring {
             displayReconfigurationCallback,
             Unmanaged.passUnretained(self).toOpaque()
         )
+        // Can't call @MainActor removeWakeObservers() from nonisolated deinit,
+        // so remove observer directly. NSNotificationCenter.removeObserver is thread-safe.
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
     }
 
     // MARK: - Public
@@ -98,7 +105,10 @@ public final class DisplayMonitor: DisplayMonitoring {
 
         if result != .success {
             isRunning = false
+            return
         }
+
+        addWakeObservers()
     }
 
     public func stop() {
@@ -109,6 +119,7 @@ public final class DisplayMonitor: DisplayMonitoring {
             displayReconfigurationCallback,
             Unmanaged.passUnretained(self).toOpaque()
         )
+        removeWakeObservers()
     }
 
     // MARK: - Internal (called from C callback on main queue)
@@ -131,6 +142,62 @@ public final class DisplayMonitor: DisplayMonitoring {
         }
         pendingCheck = work
         DispatchQueue.main.asyncAfter(deadline: .now() + settleDelay, execute: work)
+    }
+
+    // MARK: - Wake Observers
+
+    /// After macOS sleep/wake, CG display callbacks may not fire or may report
+    /// stale state. We subscribe to system wake notifications and force a
+    /// re-check of external display count after a short settle delay.
+    private func addWakeObservers() {
+        let center = NSWorkspace.shared.notificationCenter
+        center.addObserver(
+            self,
+            selector: #selector(handleWake(_:)),
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
+        center.addObserver(
+            self,
+            selector: #selector(handleWake(_:)),
+            name: NSWorkspace.screensDidWakeNotification,
+            object: nil
+        )
+        Log.info("Wake observers registered")
+    }
+
+    private func removeWakeObservers() {
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
+    }
+
+    /// On wake, force re-check display state after a settle delay.
+    /// CG may report incorrect display count immediately after wake,
+    /// so we wait for the system to stabilize.
+    @objc private func handleWake(_ notification: Notification) {
+        guard isRunning else { return }
+        Log.info("System wake detected (\(notification.name.rawValue)) — scheduling display re-check")
+        forceRecheck()
+    }
+
+    /// Force a display state re-check. Unlike handleReconfiguration(), this
+    /// always fires the callback regardless of whether the count changed,
+    /// because after sleep the dock may be in an incorrect state even if
+    /// the display count is the same.
+    ///
+    /// Uses a separate `pendingWakeCheck` so CG callbacks can't cancel it.
+    private func forceRecheck() {
+        pendingWakeCheck?.cancel()
+
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            let current = self.externalDisplayCount()
+            Log.displayChange("Wake re-check: external displays = \(current) (was \(self.lastExternalCount))")
+            self.lastExternalCount = current
+            self.onConfigurationChanged?()
+        }
+        pendingWakeCheck = work
+        // Longer delay after wake — system needs more time to stabilize displays
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: work)
     }
 }
 
