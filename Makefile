@@ -114,9 +114,11 @@ endif
 
 release: app
 	@echo "🚀 Releasing v$(VERSION)..."
-	@# Commit version bump
-	git add -A
-	git commit -m "v$(VERSION)" || true
+	@# Ensure working tree is clean — commit changes before releasing
+	@if [ -n "$$(git status --porcelain)" ]; then \
+		echo "❌ Uncommitted changes. Run: /commit then make release"; \
+		exit 1; \
+	fi
 	@# Zip the app
 	cd build && zip -r $(APP_NAME)-$(VERSION).zip $(APP_NAME).app
 	@# Create GitHub release

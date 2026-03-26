@@ -5,28 +5,9 @@ import SmartDockCore
 /// Segmented control switches between External Monitor / Built-in Only modes.
 /// Each mode has: position (icon picker), autohide, icon size, magnification.
 @MainActor
-final class SettingsWindow: NSObject, NSWindowDelegate {
+final class SettingsWindow: NSObject {
 
-    private var window: NSWindow?
-    private let service: SmartDockService
-    private let prefs = UserPreferences.shared
-
-    // Current mode
-    private var selectedMode: Mode = .external
-
-    // Controls
-    private var segmentedControl: NSSegmentedControl!
-    private var positionButtons: [DockPosition: NSButton] = [:]
-    private var autohideCheckbox: NSButton!
-    private var iconSizeSlider: NSSlider!
-    private var iconSizeLabel: NSTextField!
-    private var magnificationCheckbox: NSButton!
-    private var magSizeSlider: NSSlider!
-    private var magSizeLabel: NSTextField!
-    private var launchAtLoginCheckbox: NSButton!
-    private var statusLabel: NSTextField!
-
-    private var selectedPosition: DockPosition = .bottom
+    // MARK: - Types
 
     enum Mode: Int {
         case external = 0
@@ -39,6 +20,31 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
             }
         }
     }
+
+    // MARK: - Properties
+
+    private var window: NSWindow?
+    private let service: SmartDockService
+    private let prefs = UserPreferences.shared
+
+    private var selectedMode: Mode = .external
+    private var selectedPosition: DockPosition = .bottom
+
+    // Controls
+    private var segmentedControl: NSSegmentedControl!
+    private var positionButtons: [DockPosition: NSButton] = [:]
+    private var positionImageViews: [DockPosition: NSImageView] = [:]
+    private var positionLabels: [DockPosition: NSTextField] = [:]
+    private var autohideCheckbox: NSButton!
+    private var iconSizeSlider: NSSlider!
+    private var iconSizeLabel: NSTextField!
+    private var magnificationCheckbox: NSButton!
+    private var magSizeSlider: NSSlider!
+    private var magSizeLabel: NSTextField!
+    private var launchAtLoginCheckbox: NSButton!
+    private var statusLabel: NSTextField!
+
+    // MARK: - Init
 
     init(service: SmartDockService) {
         self.service = service
@@ -322,10 +328,6 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         return stack
     }
 
-    /// Position picker button tags to image/label views mapping
-    private var positionImageViews: [DockPosition: NSImageView] = [:]
-    private var positionLabels: [DockPosition: NSTextField] = [:]
-
     /// Creates a clickable view with centered icon + label for a dock position.
     private func makePositionButton(for position: DockPosition) -> NSButton {
         // Use a plain push-style button as clickable container
@@ -532,12 +534,6 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         return "Current: \(mode)"
     }
 
-    // MARK: - NSWindowDelegate
-
-    func windowWillClose(_ notification: Notification) {
-        window = nil
-    }
-
     // MARK: - Helpers
 
     private func makeLabel(text: String, font: NSFont) -> NSTextField {
@@ -560,5 +556,13 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         card.layer?.borderWidth = 0.5
         card.layer?.borderColor = NSColor.white.withAlphaComponent(0.15).cgColor
         return card
+    }
+}
+
+// MARK: - NSWindowDelegate
+
+extension SettingsWindow: NSWindowDelegate {
+    func windowWillClose(_ notification: Notification) {
+        window = nil
     }
 }

@@ -1,79 +1,97 @@
-# SmartDock
+<p align="center">
+  <img src="assets/app-icon.png" width="128" alt="SmartDock icon"/>
+</p>
 
-Menu bar app for macOS that automatically toggles Dock visibility based on external monitors:
+<h1 align="center">SmartDock</h1>
 
-- **External monitor connected** → Dock is always visible
-- **No external monitors** → Dock auto-hides
+<p align="center">
+  <strong>Automatic Dock manager for macOS — different Dock settings for different displays</strong>
+</p>
 
-Event-driven — no timers, no polling. Uses `CGDisplayRegisterReconfigurationCallback` for instant detection.
+<p align="center">
+  <img src="https://img.shields.io/badge/version-1.1.1-blue?style=flat-square" alt="Version 1.1.1"/>
+  <img src="https://img.shields.io/badge/macOS-14.0%2B-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS 14+"/>
+  <img src="https://img.shields.io/badge/Swift-6.0-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 6.0"/>
+  <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License"/>
+</p>
 
-## Requirements
+---
 
-- macOS 14.0+ (Sonoma)
-- Swift 6.0+
-- Xcode 16+ / Command Line Tools (`xcode-select --install`)
+SmartDock lives in your menu bar and automatically switches Dock configuration when you connect or disconnect an external monitor. Configure separate settings for each mode — position, icon size, magnification, autohide — and SmartDock applies them instantly.
 
-## Quick Start
+## ✨ Features
+
+| | Feature | Details |
+|---|---|---|
+| 🖥️ | **Two-mode Dock profiles** | Separate settings for external monitor vs. built-in display |
+| 📍 | **Position control** | Bottom, Left, or Right — per mode |
+| 📐 | **Icon size & magnification** | Independent size sliders for each mode |
+| 👁️ | **Autohide toggle** | Show/hide Dock per mode |
+| ⚡ | **Instant detection** | Event-driven via `CGDisplayRegisterReconfigurationCallback` — no polling |
+| 🎨 | **Glass UI** | Translucent settings window with `NSVisualEffectView` |
+| 🔄 | **Sync from System** | One-click import of current Dock settings |
+| 🚀 | **Launch at Login** | Native `SMAppService` integration |
+| 🛡️ | **Smooth transitions** | Per-property AppleScript — no Dock restart needed |
+
+## 📸 How It Works
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                                                         │
+│   🖥️ External Monitor Connected                         │
+│   ┌─────────────────────┐                               │
+│   │  Dock: Bottom        │  ← Your "external" profile   │
+│   │  Size: 64px          │                               │
+│   │  Autohide: Off       │                               │
+│   │  Magnification: On   │                               │
+│   └─────────────────────┘                               │
+│                                                         │
+│   💻 Built-in Display Only                               │
+│   ┌─────────────────────┐                               │
+│   │  Dock: Left          │  ← Your "built-in" profile   │
+│   │  Size: 36px          │                               │
+│   │  Autohide: On        │                               │
+│   │  Magnification: Off  │                               │
+│   └─────────────────────┘                               │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+## 🚀 Quick Start
 
 ```bash
 # Build and run
 make run
 
 # Or step by step
-make build      # Compile
+make build      # Compile release binary
 make icon       # Generate app icon
-make app        # Create .app bundle
+make app        # Create .app bundle (ad-hoc signed)
 open build/SmartDock.app
 ```
 
-## Run Tests
+## 🧪 Run Tests
 
 ```bash
 make test
+
+# Single test
+swift test --filter SmartDockTests.SmartDockServiceTests/testStartBeginsMonitoring
 ```
 
-## Features
+## 📦 Installation
 
-- **Menu bar icon** — `dock.rectangle` SF Symbol, adapts to light/dark theme
-- **Settings window** (⌘,) — Enable/Disable, Launch at Login, version info, about section
-- **Launch at Login** — via `SMAppService` (Apple's recommended API)
-- **Accessibility check** — prompts on first launch if permission not granted
-- **No Dock icon** — lives entirely in the menu bar (`LSUIElement = true`)
+### From Source
 
-## Architecture
-
-```
-Sources/
-├── SmartDockCore/                # Testable business logic
-│   ├── DisplayMonitor.swift          # CGDisplay callback — detects monitor changes
-│   ├── DockController.swift          # AppleScript — toggles Dock autohide smoothly
-│   ├── SmartDockService.swift        # Orchestrates monitor → dock logic
-│   └── Log.swift                     # Logger API wrapper (macOS 14+)
-└── SmartDock/                    # App layer
-    ├── App.swift                     # @main entry point
-    ├── StatusBarController.swift     # Menu bar icon & dropdown menu
-    ├── SettingsWindow.swift          # Settings window (Auto Layout)
-    ├── LaunchAtLogin.swift           # SMAppService wrapper
-    └── AccessibilityChecker.swift    # Permission check & prompt
+```bash
+git clone https://github.com/alexeikaratai/smartdock.git
+cd smartdock
+make run
 ```
 
-**Key design decisions:**
-- Swift 6 with strict concurrency — `@MainActor` on all UI and service types
-- Protocols (`DisplayMonitoring`, `DockControlling`) for testability via dependency injection
-- `CGDisplayRegisterReconfigurationCallback` instead of `NSNotification` — lower level, more reliable
-- `NSAppleScript` with precompiled cached scripts — smooth animation, no Dock restart
-- `SMAppService` for Launch at Login — Apple's recommended API since macOS 13
-- `Logger` API for logging — visible in Console.app, filter by `com.smartdock.app`
+### From GitHub Release
 
-## Permissions
-
-On first launch, SmartDock checks for Accessibility permission and shows a dialog with a direct link to System Settings → Privacy & Security → Accessibility. This is required to control Dock preferences via System Events.
-
-## Installation
-
-### From GitHub Release (unsigned)
-
-Download `SmartDock.app` from [Releases](https://github.com/alexkaratai/smartdock/releases). macOS will block unsigned apps downloaded from the internet. To open:
+Download `SmartDock.app` from [Releases](https://github.com/alexeikaratai/smartdock/releases). To open unsigned app:
 
 ```bash
 # If already in /Applications:
@@ -94,29 +112,71 @@ brew tap alexkaratai/tap
 brew install smartdock
 ```
 
-## Distribution
+## 🏗️ Architecture
 
-### Notarized DMG (recommended for sharing)
+```
+Sources/
+├── SmartDockCore/                    # Testable business logic
+│   ├── DockConfiguration.swift       # DockConfiguration model + UserPreferences
+│   ├── DisplayMonitor.swift          # CG callback + debounce for display changes
+│   ├── DockController.swift          # Per-property AppleScript via System Events
+│   ├── SmartDockService.swift        # Orchestrator: display state → dock config
+│   └── Log.swift                     # Logger API (macOS 14+)
+└── SmartDock/                        # AppKit UI layer
+    ├── App.swift                     # @main entry, manual NSApplication run loop
+    ├── StatusBarController.swift     # Menu bar icon & dropdown
+    ├── SettingsWindow.swift          # Glass settings window (Auto Layout)
+    ├── LaunchAtLogin.swift           # SMAppService wrapper
+    └── AccessibilityChecker.swift    # Permission check & prompt
+```
+
+### Key Design Decisions
+
+| Decision | Why |
+|---|---|
+| **AppleScript via System Events** | Graceful Dock updates without `killall Dock` — no visual glitch, no restart |
+| **Per-property `tell` blocks** | Each setting applied independently — one failure doesn't block others |
+| **Debounced display callbacks** | 1s settle delay filters transient CG callbacks during Mission Control / fullscreen transitions |
+| **Swift 6 strict concurrency** | `@MainActor` on all UI and service types — no data races |
+| **Protocol-based DI** | `DisplayMonitoring` / `DockControlling` protocols enable mock-based testing |
+| **Event-driven detection** | `CGDisplayRegisterReconfigurationCallback` — no timers, no polling |
+
+## 🔐 Permissions
+
+On first launch, SmartDock checks for **Accessibility** permission and shows a dialog linking to **System Settings → Privacy & Security → Accessibility**. This is required for AppleScript control of Dock preferences via System Events.
+
+### Entitlements
+
+- `com.apple.security.automation.apple-events` — NSAppleScript → System Events
+- `com.apple.security.scripting-targets` scoped to `com.apple.systemevents.dock.preferences`
+- Sandbox: **off** (`com.apple.security.app-sandbox = false`)
+- `LSUIElement = true` — no Dock icon, menu bar only
+
+## 📤 Distribution
+
+### Notarized DMG (recommended)
 
 ```bash
-# Set your signing identity
 export TEAM_ID=ABCDE12345
 export SIGN_ID="Developer ID Application: Your Name (ABCDE12345)"
-
 make notarize
-# → build/SmartDock-1.0.0.dmg (signed + notarized)
+# → build/SmartDock-1.1.1.dmg (signed + notarized)
 ```
 
 ### App Store
 
-This app uses `com.apple.security.automation.apple-events` which is allowed with justification in App Store review. The `NSAppleEventsUsageDescription` in Info.plist explains why.
+Uses `com.apple.security.automation.apple-events` (allowed with justification in App Store review). Note: App Store requires sandbox — test that AppleScript works within sandbox constraints.
 
-Note: App Store requires sandbox (`com.apple.security.app-sandbox = true` in entitlements). You'll need to test that AppleScript still works within the sandbox, or switch to an alternative mechanism.
+## 🛠️ Requirements
 
-## Author
+- macOS 14.0+ (Sonoma)
+- Swift 6.0+
+- Xcode 16+ / Command Line Tools (`xcode-select --install`)
 
-Alex Karatai
+## 👤 Author
 
-## License
+**Alex Karatai**
+
+## 📄 License
 
 MIT

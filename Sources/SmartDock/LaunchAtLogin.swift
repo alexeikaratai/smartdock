@@ -4,7 +4,10 @@ import SmartDockCore
 
 /// Wrapper over SMAppService for managing auto-launch.
 /// macOS 13+ — Apple's recommended method instead of LaunchAgents.
+@MainActor
 enum LaunchAtLogin {
+
+    // MARK: - Properties
 
     private static var service: SMAppService {
         SMAppService.mainApp
@@ -13,6 +16,8 @@ enum LaunchAtLogin {
     static var isEnabled: Bool {
         service.status == .enabled
     }
+
+    // MARK: - Public
 
     static func enable() {
         do {

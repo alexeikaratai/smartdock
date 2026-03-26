@@ -129,10 +129,8 @@ public final class DockController: DockControlling {
                 """) { allOk = false }
         }
 
-        Log.info("Dock config applied via AppleScript: position=\(config.position.rawValue) " +
-                 "autohide=\(config.autohide) size=\(config.iconSize) " +
-                 "magnification=\(config.magnification) magSize=\(config.magnificationSize)" +
-                 (allOk ? "" : " [some properties failed]"))
+        let status = allOk ? "" : " [some properties failed]"
+        Log.info("Dock config applied via AppleScript: position=\(config.position.rawValue) autohide=\(config.autohide) size=\(config.iconSize) magnification=\(config.magnification) magSize=\(config.magnificationSize)\(status)")
 
         return allOk
     }

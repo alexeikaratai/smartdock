@@ -17,6 +17,8 @@ final class StatusBarController: NSObject {
     private var statusMenuItem: NSMenuItem!
     private var toggleMenuItem: NSMenuItem!
 
+    // MARK: - Init
+
     init(service: SmartDockService) {
         self.service = service
         super.init()
