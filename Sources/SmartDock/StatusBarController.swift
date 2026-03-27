@@ -10,8 +10,9 @@ final class StatusBarController: NSObject {
     private let service: SmartDockService
     private lazy var settingsWindow = SettingsWindow(service: service)
 
-    // Cached icon — created once, reused on every state update
-    private lazy var cachedIcon: NSImage = makeIcon()
+    // Cached icons for dock visible / hidden states
+    private lazy var iconDockVisible: NSImage = makeIcon(dockVisible: true)
+    private lazy var iconDockHidden: NSImage = makeIcon(dockVisible: false)
 
     // Menu items that are updated dynamically
     private var statusMenuItem: NSMenuItem!
@@ -32,7 +33,7 @@ final class StatusBarController: NSObject {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
 
         if let button = statusItem.button {
-            button.image = cachedIcon
+            button.image = iconDockVisible
             button.toolTip = "SmartDock"
         }
 
@@ -138,7 +139,8 @@ final class StatusBarController: NSObject {
         toggleMenuItem.title = service.isEnabled ? "Disable" : "Enable"
 
         if let button = statusItem.button {
-            button.image = cachedIcon
+            let isDockVisible = !service.dockController.isAutoHideEnabled()
+            button.image = isDockVisible ? iconDockVisible : iconDockHidden
         }
     }
 
@@ -151,24 +153,10 @@ final class StatusBarController: NSObject {
             : "Status: Built-in display only"
     }
 
-    /// Generates the menu bar icon.
-    /// Tries SF Symbol first, falls back to a custom drawn icon.
-    private func makeIcon() -> NSImage {
-        // Try SF Symbol first
-        if let symbol = NSImage(systemSymbolName: "dock.rectangle", accessibilityDescription: "SmartDock") {
-            let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
-            let configured = symbol.withSymbolConfiguration(config) ?? symbol
-            configured.isTemplate = true
-            return configured
-        }
-
-        // Fallback: draw a dock bar icon programmatically
-        return drawFallbackIcon()
-    }
-
-    /// Programmatic dock icon — a rectangle with dots at the bottom.
-    /// Used when SF Symbols are unavailable.
-    private func drawFallbackIcon() -> NSImage {
+    /// Draws a menu bar icon: monitor outline with or without a dock bar.
+    /// - `dockVisible: true` → monitor with dock bar at bottom (autohide off)
+    /// - `dockVisible: false` → monitor outline only (autohide on / dock hidden)
+    private func makeIcon(dockVisible: Bool) -> NSImage {
         let size: CGFloat = 18
         let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { _ in
             let rect = NSRect(x: 1, y: 2, width: size - 2, height: size - 4)
@@ -177,20 +165,21 @@ final class StatusBarController: NSObject {
             path.lineWidth = 1.2
             path.stroke()
 
-            // Bottom dock bar
-            let barY: CGFloat = 3.5
-            let barRect = NSRect(x: 3, y: barY, width: size - 6, height: 3)
-            let barPath = NSBezierPath(roundedRect: barRect, xRadius: 1, yRadius: 1)
-            NSColor.black.setFill()
-            barPath.fill()
+            if dockVisible {
+                // Dock bar at bottom with dots
+                let barY: CGFloat = 3.5
+                let barRect = NSRect(x: 3, y: barY, width: size - 6, height: 3)
+                NSColor.black.setFill()
+                NSBezierPath(roundedRect: barRect, xRadius: 1, yRadius: 1).fill()
 
-            // Dots on the bar
-            for i in 0..<3 {
-                let dotX = 5.0 + CGFloat(i) * 3.5
-                let dotRect = NSRect(x: dotX, y: barY + 0.5, width: 2, height: 2)
-                NSColor.white.setFill()
-                NSBezierPath(ovalIn: dotRect).fill()
+                for i in 0..<3 {
+                    let dotX = 5.0 + CGFloat(i) * 3.5
+                    let dotRect = NSRect(x: dotX, y: barY + 0.5, width: 2, height: 2)
+                    NSColor.white.setFill()
+                    NSBezierPath(ovalIn: dotRect).fill()
+                }
             }
+
             return true
         }
         image.isTemplate = true

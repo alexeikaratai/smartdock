@@ -1,21 +1,26 @@
 cask "smartdock" do
-  version "1.0.0"
-  sha256 "REPLACE_WITH_ACTUAL_SHA256"
+  version "1.2.1"
+  sha256 "REPLACE_AFTER_RELEASE"
 
-  url "https://github.com/alexkaratai/smartdock/releases/download/v#{version}/SmartDock-#{version}.dmg"
+  url "https://github.com/alexeikaratai/smartdock/releases/download/v#{version}/SmartDock-#{version}.zip"
   name "SmartDock"
-  desc "Automatically toggle Dock visibility based on external monitors"
-  homepage "https://github.com/alexkaratai/smartdock"
+  desc "Automatically switch Dock settings when external monitor connects"
+  homepage "https://github.com/alexeikaratai/smartdock"
 
   depends_on macos: ">= :sonoma"
 
   app "SmartDock.app"
 
   postflight do
-    # Remind user about Accessibility permission
+    # Remove quarantine so unsigned app opens without Gatekeeper warnings
+    system_command "/usr/bin/xattr",
+                   args: ["-cr", "#{appdir}/SmartDock.app"]
+
     ohai "SmartDock needs Accessibility permission to control the Dock."
-    ohai "Grant it in System Settings → Privacy & Security → Accessibility."
+    ohai "Grant it in: System Settings → Privacy & Security → Accessibility"
   end
+
+  uninstall quit: "com.smartdock.app"
 
   zap trash: [
     "~/Library/Preferences/com.smartdock.app.plist",

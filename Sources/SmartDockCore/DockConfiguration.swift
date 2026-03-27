@@ -91,14 +91,14 @@ public final class UserPreferences {
     // MARK: - External Monitor Config
 
     public var externalConfig: DockConfiguration {
-        get { load(key: "external") ?? DockConfiguration() }
+        get { load(key: "external") ?? DockConfiguration(autohide: false) }
         set { save(newValue, key: "external") }
     }
 
     // MARK: - Built-in Only Config
 
     public var builtinConfig: DockConfiguration {
-        get { load(key: "builtin") ?? DockConfiguration() }
+        get { load(key: "builtin") ?? DockConfiguration(autohide: true) }
         set { save(newValue, key: "builtin") }
     }
 
