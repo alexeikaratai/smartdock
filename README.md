@@ -121,6 +121,8 @@ Sources/
 | **Swift 6 strict concurrency** | `@MainActor` on all UI and service types — no data races |
 | **Protocol-based DI** | `DisplayMonitoring` / `DockControlling` protocols enable mock-based testing |
 | **Event-driven detection** | `CGDisplayRegisterReconfigurationCallback` — no timers, no polling |
+| **Diff-based apply** | Only runs AppleScript for properties that actually changed — no dock flash |
+| **Wake recovery** | Re-applies config after sleep/wake to fix macOS resetting dock state |
 
 ## 🔐 Permissions
 
