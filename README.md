@@ -57,29 +57,27 @@ SmartDock lives in your menu bar and automatically switches Dock configuration w
 └─────────────────────────────────────────────────────────┘
 ```
 
-## 🚀 Quick Start
-
-```bash
-# Build and run
-make run
-
-# Or step by step
-make build      # Compile release binary
-make icon       # Generate app icon
-make app        # Create .app bundle (ad-hoc signed)
-open build/SmartDock.app
-```
-
-## 🧪 Run Tests
-
-```bash
-make test
-
-# Single test
-swift test --filter SmartDockTests.SmartDockServiceTests/testStartBeginsMonitoring
-```
-
 ## 📦 Installation
+
+### From Homebrew
+
+```bash
+brew install --cask alexeikaratai/tap/smartdock
+```
+
+After install, grant Accessibility permission in **System Settings → Privacy & Security → Accessibility**.
+
+### From GitHub Release
+
+Download `SmartDock.app` from [Releases](https://github.com/alexeikaratai/smartdock/releases). To open unsigned app:
+
+```bash
+xattr -cr /Applications/SmartDock.app
+codesign --force --deep --sign - /Applications/SmartDock.app
+open /Applications/SmartDock.app
+```
+
+Or: right-click → Open → Open in the dialog.
 
 ### From Source
 
@@ -89,27 +87,10 @@ cd smartdock
 make run
 ```
 
-### From GitHub Release
-
-Download `SmartDock.app` from [Releases](https://github.com/alexeikaratai/smartdock/releases). To open unsigned app:
+## 🧪 Run Tests
 
 ```bash
-# If already in /Applications:
-make fix
-
-# Or manually:
-xattr -cr /Applications/SmartDock.app
-codesign --force --deep --sign - /Applications/SmartDock.app
-open /Applications/SmartDock.app
-```
-
-Or: right-click → Open → Open in the dialog.
-
-### From Homebrew
-
-```bash
-brew tap alexkaratai/tap
-brew install smartdock
+make test
 ```
 
 ## 🏗️ Architecture
