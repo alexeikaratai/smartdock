@@ -44,10 +44,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create ${{ github.ref_name }} \
-            build/SmartDock-${{ steps.version.outputs.VERSION }}.zip \
-            --title "SmartDock ${{ steps.version.outputs.VERSION }}" \
-            --generate-notes
+          if gh release view ${{ github.ref_name }} &>/dev/null; then
+            echo "Release exists — uploading asset"
+            gh release upload ${{ github.ref_name }} \
+              build/SmartDock-${{ steps.version.outputs.VERSION }}.zip --clobber
+          else
+            gh release create ${{ github.ref_name }} \
+              build/SmartDock-${{ steps.version.outputs.VERSION }}.zip \
+              --title "SmartDock ${{ steps.version.outputs.VERSION }}" \
+              --generate-notes
+          fi
 
       - name: Setup SSH for Homebrew tap
         run: |
