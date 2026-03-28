@@ -9,10 +9,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.4.4-blue?style=flat-square" alt="Version 1.4.4"/>
+  <img src="https://img.shields.io/badge/version-1.4.5-blue?style=flat-square" alt="Version 1.4.5"/>
   <img src="https://img.shields.io/badge/macOS-14.0%2B-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS 14+"/>
   <img src="https://img.shields.io/badge/Swift-6.0-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 6.0"/>
-  <img src="https://img.shields.io/badge/license-All%20Rights%20Reserved-red?style=flat-square" alt="All Rights Reserved"/>
+  <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License"/>
 </p>
 
 ---
@@ -140,8 +140,4 @@ On first launch, SmartDock checks for **Accessibility** permission and shows a d
 
 ## 📄 License
 
-Copyright (c) 2024-2026 Alex Karatai. All rights reserved.
-
-**Source-available, non-commercial.** Free to use the app for personal purposes. Copying, modifying, redistributing the source code, or any commercial use is prohibited. See [LICENSE](LICENSE) for details.
-
-For commercial licensing: alex.karatai@gmail.com
+MIT License. See [LICENSE](LICENSE) for details.
