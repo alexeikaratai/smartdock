@@ -44,18 +44,21 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create ${{ github.ref_name }} \
-            build/SmartDock-${{ steps.version.outputs.VERSION }}.zip \
-            --title "SmartDock ${{ steps.version.outputs.VERSION }}" \
-            --generate-notes
+          if gh release view ${{ github.ref_name }} &>/dev/null; then
+            echo "Release exists — uploading asset"
+            gh release upload ${{ github.ref_name }} \
+              build/SmartDock-${{ steps.version.outputs.VERSION }}.zip --clobber
+          else
+            gh release create ${{ github.ref_name }} \
+              build/SmartDock-${{ steps.version.outputs.VERSION }}.zip \
+              --title "SmartDock ${{ steps.version.outputs.VERSION }}" \
+              --generate-notes
+          fi
 
       - name: Setup SSH for Homebrew tap
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.TAP_DEPLOY_KEY }}" > ~/.ssh/tap_key
-          chmod 600 ~/.ssh/tap_key
-          ssh-keyscan github.com >> ~/.ssh/known_hosts
-          echo -e "Host github.com-tap\n  HostName github.com\n  IdentityFile ~/.ssh/tap_key\n  StrictHostKeyChecking no" >> ~/.ssh/config
+        uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.TAP_DEPLOY_KEY }}
 
       - name: Update Homebrew tap
         run: |
@@ -63,14 +66,14 @@ jobs:
           ZIP_URL="https://github.com/${{ github.repository }}/releases/download/v${VERSION}/SmartDock-${VERSION}.zip"
 
           # Wait for release asset to be available
-          sleep 5
+          sleep 10
 
           # Compute sha256
           ZIP_SHA=$(curl -sL "${ZIP_URL}" | shasum -a 256 | cut -d' ' -f1)
           echo "SHA256: ${ZIP_SHA}"
 
           # Clone tap repo via SSH deploy key
-          git clone git@github.com-tap:alexeikaratai/homebrew-tap.git /tmp/tap
+          git clone git@github.com:alexeikaratai/homebrew-tap.git /tmp/tap
           cd /tmp/tap
 
           # Update Cask
