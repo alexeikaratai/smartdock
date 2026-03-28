@@ -1,0 +1,89 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode 16
+        run: sudo xcode-select -s /Applications/Xcode_16.2.app
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Run tests
+        run: swift test --parallel
+
+      - name: Update version in project files
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          sed -i '' "s/^VERSION      := .*/VERSION      := ${VERSION}/" Makefile
+          sed -i '' "/CFBundleShortVersionString/{n;s|<string>.*</string>|<string>${VERSION}</string>|;}" Resources/Info.plist
+          # Increment build number
+          BUILD=$(sed -n '/CFBundleVersion/{n;s/.*<string>\(.*\)<\/string>.*/\1/p;}' Resources/Info.plist)
+          NEW_BUILD=$(( BUILD + 1 ))
+          sed -i '' "/CFBundleVersion/{n;s|<string>.*</string>|<string>${NEW_BUILD}</string>|;}" Resources/Info.plist
+
+      - name: Build app bundle
+        run: make app
+
+      - name: Create release zip
+        run: cd build && zip -r SmartDock-${{ steps.version.outputs.VERSION }}.zip SmartDock.app
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create ${{ github.ref_name }} \
+            build/SmartDock-${{ steps.version.outputs.VERSION }}.zip \
+            --title "SmartDock ${{ steps.version.outputs.VERSION }}" \
+            --generate-notes
+
+      - name: Setup SSH for Homebrew tap
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.TAP_DEPLOY_KEY }}" > ~/.ssh/tap_key
+          chmod 600 ~/.ssh/tap_key
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          echo -e "Host github.com-tap\n  HostName github.com\n  IdentityFile ~/.ssh/tap_key\n  StrictHostKeyChecking no" >> ~/.ssh/config
+
+      - name: Update Homebrew tap
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          ZIP_URL="https://github.com/${{ github.repository }}/releases/download/v${VERSION}/SmartDock-${VERSION}.zip"
+
+          # Wait for release asset to be available
+          sleep 5
+
+          # Compute sha256
+          ZIP_SHA=$(curl -sL "${ZIP_URL}" | shasum -a 256 | cut -d' ' -f1)
+          echo "SHA256: ${ZIP_SHA}"
+
+          # Clone tap repo via SSH deploy key
+          git clone git@github.com-tap:alexeikaratai/homebrew-tap.git /tmp/tap
+          cd /tmp/tap
+
+          # Update Cask
+          sed -i '' "s/version \".*\"/version \"${VERSION}\"/" Casks/smartdock.rb
+          sed -i '' "s/sha256 \".*\"/sha256 \"${ZIP_SHA}\"/" Casks/smartdock.rb
+
+          # Update Formula
+          sed -i '' "s|/v[0-9]*\.[0-9]*\.[0-9]*/|/v${VERSION}/|g" Formula/smartdock.rb
+          TAR_SHA=$(curl -sL "https://github.com/${{ github.repository }}/archive/refs/tags/v${VERSION}.tar.gz" | shasum -a 256 | cut -d' ' -f1)
+          sed -i '' "s/sha256 \".*\"/sha256 \"${TAR_SHA}\"/" Formula/smartdock.rb
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Update SmartDock to v${VERSION}"
+          git push
