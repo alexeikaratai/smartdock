@@ -128,28 +128,6 @@ Sources/
 
 On first launch, SmartDock checks for **Accessibility** permission and shows a dialog linking to **System Settings → Privacy & Security → Accessibility**. This is required for AppleScript control of Dock preferences via System Events.
 
-### Entitlements
-
-- `com.apple.security.automation.apple-events` — NSAppleScript → System Events
-- `com.apple.security.scripting-targets` scoped to `com.apple.systemevents.dock.preferences`
-- Sandbox: **off** (`com.apple.security.app-sandbox = false`)
-- `LSUIElement = true` — no Dock icon, menu bar only
-
-## 📤 Distribution
-
-### Notarized DMG (recommended)
-
-```bash
-export TEAM_ID=ABCDE12345
-export SIGN_ID="Developer ID Application: Your Name (ABCDE12345)"
-make notarize
-# → build/SmartDock-1.4.1.dmg (signed + notarized)
-```
-
-### App Store
-
-Uses `com.apple.security.automation.apple-events` (allowed with justification in App Store review). Note: App Store requires sandbox — test that AppleScript works within sandbox constraints.
-
 ## 🛠️ Requirements
 
 - macOS 14.0+ (Sonoma)

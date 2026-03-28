@@ -1,4 +1,4 @@
-.PHONY: build test clean icon app run sign notarize fix install release bump brew
+.PHONY: build test clean icon app run sign notarize fix install release bump
 
 # === Config ===
 APP_NAME     := SmartDock
@@ -141,30 +141,6 @@ fix:
 	xattr -cr /Applications/$(APP_NAME).app
 	codesign --force --deep --sign - /Applications/$(APP_NAME).app
 	@echo "✅ Fixed. Run: open /Applications/$(APP_NAME).app"
-
-# === Homebrew ===
-# Update sha256 in Cask and Formula after a GitHub release exists
-# Usage: make release && make brew
-
-GITHUB_REPO  := alexeikaratai/smartdock
-ZIP_URL      := https://github.com/$(GITHUB_REPO)/releases/download/v$(VERSION)/$(APP_NAME)-$(VERSION).zip
-TAR_URL      := https://github.com/$(GITHUB_REPO)/archive/refs/tags/v$(VERSION).tar.gz
-
-brew:
-	@echo "🍺 Updating Homebrew formulas for v$(VERSION)..."
-	@# Compute sha256 for the release zip (Cask)
-	@ZIP_SHA=$$(curl -sL $(ZIP_URL) | shasum -a 256 | cut -d' ' -f1) && \
-		echo "   Cask  sha256: $$ZIP_SHA" && \
-		sed -i '' "s/sha256 \".*\"/sha256 \"$$ZIP_SHA\"/" Casks/smartdock.rb
-	@# Compute sha256 for the source tarball (Formula)
-	@TAR_SHA=$$(curl -sL $(TAR_URL) | shasum -a 256 | cut -d' ' -f1) && \
-		echo "   Formula sha256: $$TAR_SHA" && \
-		sed -i '' "s/sha256 \".*\"/sha256 \"$$TAR_SHA\"/" Formula/smartdock.rb
-	@# Update version strings in both formulas
-	@sed -i '' 's/version ".*"/version "$(VERSION)"/' Casks/smartdock.rb
-	@sed -i '' 's|/v[0-9]*\.[0-9]*\.[0-9]*/|/v$(VERSION)/|g' Formula/smartdock.rb
-	@echo "✅ Casks/smartdock.rb and Formula/smartdock.rb updated"
-	@echo "   Next: commit and push, then users can brew upgrade smartdock"
 
 # === Clean ===
 
