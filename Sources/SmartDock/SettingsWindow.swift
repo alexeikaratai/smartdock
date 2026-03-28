@@ -59,6 +59,10 @@ final class SettingsWindow: NSObject {
         )
     }
 
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
     // MARK: - Public
 
     func show() {
