@@ -72,7 +72,7 @@ jobs:
           ZIP_SHA=$(curl -sL "${ZIP_URL}" | shasum -a 256 | cut -d' ' -f1)
           echo "SHA256: ${ZIP_SHA}"
 
-          # Clone tap repo via SSH
+          # Clone tap repo via SSH deploy key
           git clone git@github.com:alexeikaratai/homebrew-tap.git /tmp/tap
           cd /tmp/tap
 
