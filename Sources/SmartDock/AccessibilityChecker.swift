@@ -17,15 +17,14 @@ enum AccessibilityChecker {
 
         Log.info("Accessibility permission not granted — prompting user")
 
-        // Show system trust dialog (adds SmartDock to the list with a checkbox)
-        let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
-        let trusted = AXIsProcessTrustedWithOptions(options)
+        // Trigger system trust dialog (adds SmartDock to the list with a checkbox).
+        // Only called when AXIsProcessTrusted() returned false above.
+        _ = AXIsProcessTrustedWithOptions(
+            ["AXTrustedCheckOptionPrompt": true] as CFDictionary
+        )
 
-        if !trusted {
-            showPermissionAlert()
-        }
-
-        return trusted
+        showPermissionAlert()
+        return false
     }
 
     // MARK: - Private
