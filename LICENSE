@@ -1,20 +1,26 @@
 Copyright (c) 2024-2026 Alex Karatai. All rights reserved.
 
-PROPRIETARY SOFTWARE LICENSE
+SOURCE-AVAILABLE LICENSE
 
 This software and its source code are the exclusive property of Alex Karatai.
 
-Permission is NOT granted to any person or organization to:
+You ARE permitted to:
 
-- Copy, reproduce, or duplicate this software or any portion of it
+- View and study the source code
+- Download and use the application for personal, non-commercial purposes
+
+You are NOT permitted to:
+
+- Copy, reproduce, or redistribute the source code or any portion of it
 - Modify, adapt, or create derivative works based on this software
-- Distribute, sublicense, sell, or transfer this software to third parties
-- Use this software or its source code in any commercial or non-commercial project
+- Sell, sublicense, or include this software in any commercial product or service
+- Use this software or its source code for any commercial purpose
 
-This source code is made available on GitHub for reference and portfolio
-purposes only. Viewing the code does not grant any rights to use it.
+This source code is made available on GitHub for transparency and personal use.
+Viewing or downloading the code does not grant rights beyond those listed above.
 
-Any unauthorized use, reproduction, or distribution of this software
-is strictly prohibited and may result in legal action.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR
+OTHER LIABILITY ARISING FROM THE USE OF THIS SOFTWARE.
 
-For licensing inquiries, contact: alex.karatai@gmail.com
+For commercial licensing inquiries, contact: alex.karatai@gmail.com
