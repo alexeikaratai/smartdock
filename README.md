@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.4.0-blue?style=flat-square" alt="Version 1.4.0"/>
+  <img src="https://img.shields.io/badge/version-1.4.1-blue?style=flat-square" alt="Version 1.4.1"/>
   <img src="https://img.shields.io/badge/macOS-14.0%2B-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS 14+"/>
   <img src="https://img.shields.io/badge/Swift-6.0-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 6.0"/>
   <img src="https://img.shields.io/badge/license-All%20Rights%20Reserved-red?style=flat-square" alt="All Rights Reserved"/>
@@ -143,7 +143,7 @@ On first launch, SmartDock checks for **Accessibility** permission and shows a d
 export TEAM_ID=ABCDE12345
 export SIGN_ID="Developer ID Application: Your Name (ABCDE12345)"
 make notarize
-# → build/SmartDock-1.4.0.dmg (signed + notarized)
+# → build/SmartDock-1.4.1.dmg (signed + notarized)
 ```
 
 ### App Store
