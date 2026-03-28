@@ -56,12 +56,9 @@ jobs:
           fi
 
       - name: Setup SSH for Homebrew tap
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "${{ secrets.TAP_DEPLOY_KEY }}" > ~/.ssh/tap_key
-          chmod 600 ~/.ssh/tap_key
-          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
-          printf 'Host github.com\n  IdentityFile ~/.ssh/tap_key\n' >> ~/.ssh/config
+        uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.TAP_DEPLOY_KEY }}
 
       - name: Update Homebrew tap
         run: |
@@ -75,9 +72,8 @@ jobs:
           ZIP_SHA=$(curl -sL "${ZIP_URL}" | shasum -a 256 | cut -d' ' -f1)
           echo "SHA256: ${ZIP_SHA}"
 
-          # Clone tap repo via SSH deploy key
-          GIT_SSH_COMMAND="ssh -i ~/.ssh/tap_key -o StrictHostKeyChecking=no" \
-            git clone git@github.com:alexeikaratai/homebrew-tap.git /tmp/tap
+          # Clone tap repo via SSH
+          git clone git@github.com:alexeikaratai/homebrew-tap.git /tmp/tap
           cd /tmp/tap
 
           # Update Cask
@@ -93,4 +89,4 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add .
           git commit -m "Update SmartDock to v${VERSION}"
-          GIT_SSH_COMMAND="ssh -i ~/.ssh/tap_key -o StrictHostKeyChecking=no" git push
+          git push
