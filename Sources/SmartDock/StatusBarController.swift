@@ -10,9 +10,17 @@ final class StatusBarController: NSObject {
     private let service: SmartDockService
     private lazy var settingsWindow = SettingsWindow(service: service)
 
-    // Cached icons for dock visible / hidden states
-    private lazy var iconDockVisible: NSImage = makeIcon(dockVisible: true)
-    private lazy var iconDockHidden: NSImage = makeIcon(dockVisible: false)
+    // Cached icons: [position][visible/hidden]
+    private lazy var iconCache: [DockPosition: [Bool: NSImage]] = {
+        var cache: [DockPosition: [Bool: NSImage]] = [:]
+        for position in DockPosition.allCases {
+            cache[position] = [
+                true: makeIcon(position: position, dockVisible: true),
+                false: makeIcon(position: position, dockVisible: false),
+            ]
+        }
+        return cache
+    }()
 
     // Menu items that are updated dynamically
     private var statusMenuItem: NSMenuItem!
@@ -33,7 +41,8 @@ final class StatusBarController: NSObject {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
 
         if let button = statusItem.button {
-            button.image = iconDockVisible
+            let config = service.dockController.readSystemConfig()
+            button.image = iconCache[config.position]?[!config.autohide]
             button.toolTip = "SmartDock"
         }
 
@@ -139,8 +148,8 @@ final class StatusBarController: NSObject {
         toggleMenuItem.title = service.isEnabled ? "Disable" : "Enable"
 
         if let button = statusItem.button {
-            let isDockVisible = !service.dockController.isAutoHideEnabled()
-            button.image = isDockVisible ? iconDockVisible : iconDockHidden
+            let config = service.dockController.readSystemConfig()
+            button.image = iconCache[config.position]?[!config.autohide]
         }
     }
 
@@ -153,10 +162,11 @@ final class StatusBarController: NSObject {
             : "Status: Built-in display only"
     }
 
-    /// Draws a menu bar icon: monitor outline with or without a dock bar.
-    /// - `dockVisible: true` → monitor with dock bar at bottom (autohide off)
-    /// - `dockVisible: false` → monitor outline only (autohide on / dock hidden)
-    private func makeIcon(dockVisible: Bool) -> NSImage {
+    /// Draws a menu bar icon showing dock position and visibility.
+    /// - `position`: which edge the dock bar is drawn on
+    /// - `dockVisible: true` → monitor with dock bar on the given edge
+    /// - `dockVisible: false` → monitor outline only (autohide on)
+    private func makeIcon(position: DockPosition, dockVisible: Bool) -> NSImage {
         let size: CGFloat = 18
         let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { _ in
             let rect = NSRect(x: 1, y: 2, width: size - 2, height: size - 4)
@@ -166,17 +176,35 @@ final class StatusBarController: NSObject {
             path.stroke()
 
             if dockVisible {
-                // Dock bar at bottom with dots
-                let barY: CGFloat = 3.5
-                let barRect = NSRect(x: 3, y: barY, width: size - 6, height: 3)
                 NSColor.black.setFill()
-                NSBezierPath(roundedRect: barRect, xRadius: 1, yRadius: 1).fill()
 
-                for i in 0..<3 {
-                    let dotX = 5.0 + CGFloat(i) * 3.5
-                    let dotRect = NSRect(x: dotX, y: barY + 0.5, width: 2, height: 2)
+                switch position {
+                case .bottom:
+                    let barRect = NSRect(x: 3, y: 3.5, width: size - 6, height: 3)
+                    NSBezierPath(roundedRect: barRect, xRadius: 1, yRadius: 1).fill()
                     NSColor.white.setFill()
-                    NSBezierPath(ovalIn: dotRect).fill()
+                    for i in 0..<3 {
+                        let dotRect = NSRect(x: 5.0 + CGFloat(i) * 3.5, y: 4.0, width: 2, height: 2)
+                        NSBezierPath(ovalIn: dotRect).fill()
+                    }
+
+                case .left:
+                    let barRect = NSRect(x: 2.5, y: 4, width: 3, height: size - 8)
+                    NSBezierPath(roundedRect: barRect, xRadius: 1, yRadius: 1).fill()
+                    NSColor.white.setFill()
+                    for i in 0..<3 {
+                        let dotRect = NSRect(x: 3.0, y: 5.0 + CGFloat(i) * 3.0, width: 2, height: 2)
+                        NSBezierPath(ovalIn: dotRect).fill()
+                    }
+
+                case .right:
+                    let barRect = NSRect(x: size - 5.5, y: 4, width: 3, height: size - 8)
+                    NSBezierPath(roundedRect: barRect, xRadius: 1, yRadius: 1).fill()
+                    NSColor.white.setFill()
+                    for i in 0..<3 {
+                        let dotRect = NSRect(x: size - 5.0, y: 5.0 + CGFloat(i) * 3.0, width: 2, height: 2)
+                        NSBezierPath(ovalIn: dotRect).fill()
+                    }
                 }
             }
 
