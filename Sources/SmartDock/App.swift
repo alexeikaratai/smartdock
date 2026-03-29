@@ -21,8 +21,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Remove icon from Dock — we live only in the menu bar
-        NSApp.setActivationPolicy(.accessory)
+        // LSUIElement = true in Info.plist already hides us from Dock.
+        // Do NOT call NSApp.setActivationPolicy(.accessory) here —
+        // it can cause the status item to disappear during launch.
 
         // Check Accessibility permission before starting
         AccessibilityChecker.checkAndPromptIfNeeded()

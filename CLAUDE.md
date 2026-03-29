@@ -20,7 +20,7 @@ swift test --filter SmartDockTests.SmartDockServiceTests/testStartBeginsMonitori
 ## Version & Release
 
 ```bash
-make bump V=1.4.5   # update version in Makefile + Info.plist, increment build number
+make bump V=1.4.6   # update version in Makefile + Info.plist, increment build number
 make release        # build + zip + gh release create (working tree must be clean)
 make install        # copy .app to /Applications
 make fix            # xattr -cr + codesign (fix Gatekeeper quarantine)
@@ -133,7 +133,7 @@ Swift Package (swift-tools-version 6.0), two targets: **SmartDockCore** (testabl
 
 ### AppKit Patterns
 - **No storyboards/nibs.** All UI is programmatic with Auto Layout (`translatesAutoresizingMaskIntoConstraints = false`).
-- Menu bar app: `NSApp.setActivationPolicy(.accessory)` + `LSUIElement = true`. No Dock icon.
+- Menu bar app: `LSUIElement = true` in Info.plist. No Dock icon. Do NOT call `NSApp.setActivationPolicy(.accessory)` — it's redundant with LSUIElement and can cause status items to disappear during launch.
 - Glass/vibrancy: `NSVisualEffectView` with `.hudWindow` (window) or `.popover` (cards) material.
 - Use `NSLayoutConstraint.activate([...])` for batch constraint activation — never `constraint.isActive = true` one by one.
 - Slider values: update label during drag (`isContinuous = true`), mark dirty state. Changes apply only when user clicks Apply button — no auto-save on mouseUp.
