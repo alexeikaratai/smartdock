@@ -606,11 +606,15 @@ final class SettingsWindow: NSObject {
         let editingActiveMode = (selectedMode == .external && service.hasExternalDisplay)
             || (selectedMode == .builtin && !service.hasExternalDisplay)
 
+        // Reset dirty state before refresh — refresh posts a synchronous
+        // notification that calls handleStateChange, which would re-enter
+        // saveAndApply if the button were still enabled.
+        applyButton.isEnabled = false
+
         if editingActiveMode {
             service.refresh()
         }
 
-        applyButton.isEnabled = false
         updateStatus()
     }
 

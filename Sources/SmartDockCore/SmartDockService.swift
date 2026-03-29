@@ -95,9 +95,8 @@ public final class SmartDockService {
 
     // MARK: - Private
 
-    /// Guard against re-entrant calls. Applying dock config via AppleScript
-    /// can trigger `activeSpaceDidChangeNotification` (dock show/hide changes
-    /// the space), which calls back into `applyCurrentState()` → infinite loop.
+    /// Guard against re-entrant calls during dockController.apply().
+    /// Reset before posting notifications so observers can call refresh().
     private var isApplying = false
 
     private func handleDisplayChange() {
@@ -108,7 +107,7 @@ public final class SmartDockService {
     private func applyCurrentState() {
         guard !isApplying else { return }
         isApplying = true
-        defer { isApplying = false }
+
         let external = displayMonitor.hasExternalDisplay()
         hasExternalDisplay = external
 
@@ -123,6 +122,12 @@ public final class SmartDockService {
 
         currentConfig = config
         dockController.apply(config)
+
+        // Reset before notifying — observers (e.g. SettingsWindow) may save
+        // dirty prefs and call refresh(), which needs to proceed. The second
+        // apply is safe: diff-based DockController only touches changed properties.
+        isApplying = false
+
         delegate?.serviceDidUpdateState(self, hasExternal: external)
 
         NotificationCenter.default.post(
