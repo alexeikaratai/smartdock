@@ -37,6 +37,9 @@ public final class SmartDockService {
     /// Last known state (whether there is an external monitor)
     public private(set) var hasExternalDisplay: Bool = false
 
+    /// The dock configuration we last applied (not the transient system state).
+    public private(set) var currentConfig: DockConfiguration = DockConfiguration()
+
     private let displayMonitor: DisplayMonitoring
     public let dockController: DockControlling
     private let prefs: UserPreferences
@@ -118,6 +121,7 @@ public final class SmartDockService {
             Log.displayChange("No external displays — applying built-in config")
         }
 
+        currentConfig = config
         dockController.apply(config)
         delegate?.serviceDidUpdateState(self, hasExternal: external)
 

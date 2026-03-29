@@ -41,8 +41,9 @@ final class StatusBarController: NSObject {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
 
         if let button = statusItem.button {
-            let config = service.dockController.readSystemConfig()
+            let config = service.currentConfig
             button.image = iconCache[config.position]?[!config.autohide]
+                ?? iconCache[.bottom]?[true]
             button.toolTip = "SmartDock"
         }
 
@@ -148,8 +149,11 @@ final class StatusBarController: NSObject {
         toggleMenuItem.title = service.isEnabled ? "Disable" : "Enable"
 
         if let button = statusItem.button {
-            let config = service.dockController.readSystemConfig()
+            // Use our saved config, not readSystemConfig() — the system config can
+            // be in a transient state during fullscreen or dock transitions.
+            let config = service.currentConfig
             button.image = iconCache[config.position]?[!config.autohide]
+                ?? iconCache[.bottom]?[true]
         }
     }
 
