@@ -36,6 +36,7 @@ final class MockDisplayMonitor: DisplayMonitoring {
 
 // MARK: - Mock Dock Controller
 
+@MainActor
 final class MockDockController: DockControlling {
     var autoHideState: Bool = false
     var setAutoHideCallCount = 0

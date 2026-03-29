@@ -3,6 +3,7 @@ import Foundation
 // MARK: - Protocol
 
 /// Managing Dock preferences: autohide, position, icon size, magnification.
+@MainActor
 public protocol DockControlling {
     /// Current autohide state
     func isAutoHideEnabled() -> Bool

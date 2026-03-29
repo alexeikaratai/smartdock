@@ -115,6 +115,9 @@ public final class DisplayMonitor: DisplayMonitoring {
         guard isRunning else { return }
         isRunning = false
 
+        pendingCheck?.cancel()
+        pendingWakeCheck?.cancel()
+
         CGDisplayRemoveReconfigurationCallback(
             displayReconfigurationCallback,
             Unmanaged.passUnretained(self).toOpaque()
