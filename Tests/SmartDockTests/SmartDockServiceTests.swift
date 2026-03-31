@@ -66,7 +66,7 @@ final class SmartDockServiceTests: XCTestCase {
         monitor.simulateDisplayChange(externalCount: 1)
 
         XCTAssertTrue(service.hasExternalDisplay)
-        XCTAssertEqual(dock.applyCallCount, 2) // start + change
+        XCTAssertEqual(dock.applyCallCount, 2, "start + display change")
     }
 
     func testExternalDisconnectedAppliesBuiltinConfig() {
@@ -193,25 +193,20 @@ final class SmartDockServiceTests: XCTestCase {
                        "After connect, should apply external config with autohide=false")
     }
 
-    // MARK: - Space Change Re-apply
+    // MARK: - Display Change Re-apply
 
-    func testSpaceChangeTriggersReapply() {
-        // Simulates: fullscreen exit → space change → onConfigurationChanged fires
+    func testDisplayChangeTriggersApply() {
         monitor.mockExternalCount = 1
         service.start()
         let callsAfterStart = dock.applyCallCount
 
-        // Simulate space change (Mission Control / fullscreen exit)
-        // This is what DisplayMonitor.handleSpaceChange does — fires callback
-        // without changing the display count
         monitor.onConfigurationChanged?()
 
         XCTAssertEqual(dock.applyCallCount, callsAfterStart + 1,
-                       "Space change should trigger re-apply to fix stuck dock state")
+                       "Display change should trigger apply")
     }
 
-    func testSpaceChangePreservesCorrectMode() {
-        // External connected → space change should still apply external config
+    func testDisplayChangePreservesCorrectMode() {
         monitor.mockExternalCount = 2
         service.start()
 
@@ -219,10 +214,10 @@ final class SmartDockServiceTests: XCTestCase {
 
         XCTAssertTrue(service.hasExternalDisplay)
         XCTAssertFalse(dock.lastAppliedConfig!.autohide,
-                       "Space change with external monitors should keep external config")
+                       "Display change with external monitors should keep external config")
     }
 
-    func testSpaceChangeIgnoredWhenDisabled() {
+    func testDisplayChangeIgnoredWhenDisabled() {
         monitor.mockExternalCount = 1
         service.start()
         let callsAfterStart = dock.applyCallCount
@@ -231,7 +226,7 @@ final class SmartDockServiceTests: XCTestCase {
         monitor.onConfigurationChanged?()
 
         XCTAssertEqual(dock.applyCallCount, callsAfterStart,
-                       "Space change should be ignored when service is disabled")
+                       "Display change should be ignored when service is disabled")
     }
 
     // MARK: - Rapid State Changes
@@ -254,18 +249,15 @@ final class SmartDockServiceTests: XCTestCase {
                       "After rapid changes ending with no external, should be builtin config")
     }
 
-    func testRefreshAfterSpaceChangeFixesDock() {
-        // Simulates: external connected → fullscreen → exit → dock stuck
-        // → refresh should fix it
+    func testRefreshAppliesCorrectConfig() {
+        let prefs = UserPreferences.shared
+        prefs.externalConfig = DockConfiguration(autohide: false)
         monitor.mockExternalCount = 1
         service.start()
 
-        // Space change (simulating fullscreen exit)
-        monitor.onConfigurationChanged?()
-        // Manual refresh
         service.refresh()
 
         XCTAssertFalse(dock.lastAppliedConfig!.autohide,
-                       "Refresh with external monitors should apply autohide=false")
+                       "Refresh should apply current mode's config")
     }
 }

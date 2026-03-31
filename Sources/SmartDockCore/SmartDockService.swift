@@ -96,7 +96,6 @@ public final class SmartDockService {
     // MARK: - Private
 
     /// Guard against re-entrant calls during dockController.apply().
-    /// Reset before posting notifications so observers can call refresh().
     private var isApplying = false
 
     private func handleDisplayChange() {
@@ -104,9 +103,14 @@ public final class SmartDockService {
         applyCurrentState()
     }
 
+    /// Diff-based: reads system config, only applies properties that differ.
+    /// Fullscreen is handled by macOS — we don't observe space changes.
     private func applyCurrentState() {
         guard !isApplying else { return }
         isApplying = true
+
+        let previousConfig = currentConfig
+        let previousExternal = hasExternalDisplay
 
         let external = displayMonitor.hasExternalDisplay()
         hasExternalDisplay = external
@@ -122,18 +126,17 @@ public final class SmartDockService {
 
         currentConfig = config
         dockController.apply(config)
-
-        // Reset before notifying — observers (e.g. SettingsWindow) may save
-        // dirty prefs and call refresh(), which needs to proceed. The second
-        // apply is safe: diff-based DockController only touches changed properties.
         isApplying = false
 
-        delegate?.serviceDidUpdateState(self, hasExternal: external)
+        // Only notify observers when state actually changed.
+        if config != previousConfig || external != previousExternal {
+            delegate?.serviceDidUpdateState(self, hasExternal: external)
 
-        NotificationCenter.default.post(
-            name: .smartDockStateDidChange,
-            object: self,
-            userInfo: [SmartDockService.hasExternalKey: external]
-        )
+            NotificationCenter.default.post(
+                name: .smartDockStateDidChange,
+                object: self,
+                userInfo: [SmartDockService.hasExternalKey: external]
+            )
+        }
     }
 }

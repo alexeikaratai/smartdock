@@ -150,8 +150,6 @@ public final class DisplayMonitor: DisplayMonitoring {
     // MARK: - Wake Observers
 
     /// Subscribe to wake events that can leave the dock in a wrong state.
-    /// No space change observer — applying dock config via AppleScript itself
-    /// triggers space change notifications, causing infinite feedback loops.
     private func addWakeObservers() {
         let center = NSWorkspace.shared.notificationCenter
         center.addObserver(

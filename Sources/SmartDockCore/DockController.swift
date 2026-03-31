@@ -12,7 +12,7 @@ public protocol DockControlling {
     @discardableResult
     func setAutoHide(_ enabled: Bool) -> Bool
 
-    /// Apply a full dock configuration.
+    /// Apply a full dock configuration. Diff-based — only changes properties that differ from system state.
     @discardableResult
     func apply(_ config: DockConfiguration) -> Bool
 
@@ -82,59 +82,27 @@ public final class DockController: DockControlling {
 
         if config.position != current.position {
             changed.append("position=\(config.position.rawValue)")
-            if !runAppleScript("""
-                tell application "System Events"
-                    tell dock preferences
-                        set screen edge to \(config.position.appleScriptValue)
-                    end tell
-                end tell
-                """) { allOk = false }
+            if !applyPosition(config.position) { allOk = false }
         }
 
         if config.autohide != current.autohide {
             changed.append("autohide=\(config.autohide)")
-            if !runAppleScript("""
-                tell application "System Events"
-                    tell dock preferences
-                        set autohide to \(config.autohide)
-                    end tell
-                end tell
-                """) { allOk = false }
+            if !applyAutohide(config.autohide) { allOk = false }
         }
 
         if config.iconSize != current.iconSize {
             changed.append("size=\(config.iconSize)")
-            let dockSize = Self.pixelsToAppleScriptScale(config.iconSize)
-            if !runAppleScript("""
-                tell application "System Events"
-                    tell dock preferences
-                        set dock size to \(dockSize)
-                    end tell
-                end tell
-                """) { allOk = false }
+            if !applyIconSize(config.iconSize) { allOk = false }
         }
 
         if config.magnification != current.magnification {
             changed.append("magnification=\(config.magnification)")
-            if !runAppleScript("""
-                tell application "System Events"
-                    tell dock preferences
-                        set magnification to \(config.magnification)
-                    end tell
-                end tell
-                """) { allOk = false }
+            if !applyMagnification(config.magnification) { allOk = false }
         }
 
         if config.magnification && config.magnificationSize != current.magnificationSize {
             changed.append("magSize=\(config.magnificationSize)")
-            let magSize = Self.pixelsToAppleScriptScale(config.magnificationSize)
-            if !runAppleScript("""
-                tell application "System Events"
-                    tell dock preferences
-                        set magnification size to \(magSize)
-                    end tell
-                end tell
-                """) { allOk = false }
+            if !applyMagnificationSize(config.magnificationSize) { allOk = false }
         }
 
         if changed.isEmpty {
@@ -154,6 +122,60 @@ public final class DockController: DockControlling {
     static func pixelsToAppleScriptScale(_ pixels: Int) -> Double {
         let clamped = Double(Swift.max(16, Swift.min(128, pixels)))
         return (clamped - 16.0) / (128.0 - 16.0)
+    }
+
+    // MARK: - Per-Property AppleScript
+
+    private func applyPosition(_ position: DockPosition) -> Bool {
+        runAppleScript("""
+            tell application "System Events"
+                tell dock preferences
+                    set screen edge to \(position.appleScriptValue)
+                end tell
+            end tell
+            """)
+    }
+
+    private func applyAutohide(_ autohide: Bool) -> Bool {
+        runAppleScript("""
+            tell application "System Events"
+                tell dock preferences
+                    set autohide to \(autohide)
+                end tell
+            end tell
+            """)
+    }
+
+    private func applyIconSize(_ pixels: Int) -> Bool {
+        let dockSize = Self.pixelsToAppleScriptScale(pixels)
+        return runAppleScript("""
+            tell application "System Events"
+                tell dock preferences
+                    set dock size to \(dockSize)
+                end tell
+            end tell
+            """)
+    }
+
+    private func applyMagnification(_ enabled: Bool) -> Bool {
+        runAppleScript("""
+            tell application "System Events"
+                tell dock preferences
+                    set magnification to \(enabled)
+                end tell
+            end tell
+            """)
+    }
+
+    private func applyMagnificationSize(_ pixels: Int) -> Bool {
+        let magSize = Self.pixelsToAppleScriptScale(pixels)
+        return runAppleScript("""
+            tell application "System Events"
+                tell dock preferences
+                    set magnification size to \(magSize)
+                end tell
+            end tell
+            """)
     }
 
     // MARK: - Private
