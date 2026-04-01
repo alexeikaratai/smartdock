@@ -128,14 +128,15 @@ public final class DisplayMonitor: DisplayMonitoring {
     // MARK: - Internal (called from C callback on main queue)
 
     /// Called by the C callback after display reconfiguration completes.
-    /// Debounces: waits for callbacks to stop arriving, then checks if the
-    /// external display count actually changed. This prevents reacting to
-    /// transient fluctuations during Mission Control / fullscreen transitions.
+    /// Debounces: cancels any pending check and reschedules, so the check
+    /// always runs 1s after the *last* CG callback. This lets hardware
+    /// settle before we read the display count.
     fileprivate func handleReconfiguration() {
         pendingCheck?.cancel()
 
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
+            self.pendingCheck = nil
             let current = self.externalDisplayCount()
             if current != self.lastExternalCount {
                 Log.displayChange("External display count changed: \(self.lastExternalCount) → \(current)")
@@ -180,10 +181,9 @@ public final class DisplayMonitor: DisplayMonitoring {
         forceRecheck()
     }
 
-    /// Force a display state re-check. Unlike handleReconfiguration(), this
-    /// always fires the callback regardless of whether the count changed,
-    /// because after sleep the dock may be in an incorrect state even if
-    /// the display count is the same.
+    /// Re-check display state after wake. Only fires callback if the
+    /// display count actually changed — otherwise the dock is already
+    /// in the correct state and any AppleScript poke would disrupt fullscreen.
     ///
     /// Uses a separate `pendingWakeCheck` so CG callbacks can't cancel it.
     private func forceRecheck() {
@@ -193,11 +193,12 @@ public final class DisplayMonitor: DisplayMonitoring {
             guard let self else { return }
             let current = self.externalDisplayCount()
             Log.displayChange("Wake re-check: external displays = \(current) (was \(self.lastExternalCount))")
-            self.lastExternalCount = current
-            self.onConfigurationChanged?()
+            if current != self.lastExternalCount {
+                self.lastExternalCount = current
+                self.onConfigurationChanged?()
+            }
         }
         pendingWakeCheck = work
-        // Longer delay after wake — system needs more time to stabilize displays
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: work)
     }
 }
