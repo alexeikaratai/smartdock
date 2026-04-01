@@ -78,6 +78,10 @@ final class SettingsWindow: NSObject {
         w.center()
         w.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+
+        // Select the tab matching the current display state
+        selectedMode = service.hasExternalDisplay ? .external : .builtin
+        segmentedControl.selectedSegment = selectedMode.rawValue
         loadCurrentMode()
     }
 
@@ -236,6 +240,13 @@ final class SettingsWindow: NSObject {
         syncButton.controlSize = .small
         container.addSubview(syncButton)
 
+        // Refresh Now button
+        let refreshButton = NSButton(title: "Refresh Now", target: self, action: #selector(refreshNow))
+        refreshButton.translatesAutoresizingMaskIntoConstraints = false
+        refreshButton.bezelStyle = .rounded
+        refreshButton.controlSize = .small
+        container.addSubview(refreshButton)
+
         // Quit button
         let quitButton = NSButton(title: "Quit SmartDock", target: self, action: #selector(quitApp))
         quitButton.translatesAutoresizingMaskIntoConstraints = false
@@ -333,9 +344,13 @@ final class SettingsWindow: NSObject {
             syncButton.topAnchor.constraint(equalTo: launchAtLoginCheckbox.bottomAnchor, constant: 12),
             syncButton.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
 
-            // Quit button — next to Sync
+            // Refresh Now — next to Sync
+            refreshButton.centerYAnchor.constraint(equalTo: syncButton.centerYAnchor),
+            refreshButton.leadingAnchor.constraint(equalTo: syncButton.trailingAnchor, constant: 8),
+
+            // Quit button — next to Refresh
             quitButton.centerYAnchor.constraint(equalTo: syncButton.centerYAnchor),
-            quitButton.leadingAnchor.constraint(equalTo: syncButton.trailingAnchor, constant: 8),
+            quitButton.leadingAnchor.constraint(equalTo: refreshButton.trailingAnchor, constant: 8),
 
             // Status
             statusLabel.topAnchor.constraint(equalTo: syncButton.bottomAnchor, constant: 10),
@@ -545,6 +560,10 @@ final class SettingsWindow: NSObject {
     @objc private func toggleLaunchAtLogin(_ sender: NSButton) {
         LaunchAtLogin.toggle()
         sender.state = LaunchAtLogin.isEnabled ? .on : .off
+    }
+
+    @objc private func refreshNow(_ sender: Any) {
+        service.refresh()
     }
 
     @objc private func quitApp(_ sender: Any) {
