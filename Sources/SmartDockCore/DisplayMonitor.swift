@@ -11,9 +11,6 @@ public protocol DisplayMonitoring: AnyObject {
     /// Called when the number of external displays actually changes.
     var onConfigurationChanged: (() -> Void)? { get set }
 
-    /// Called on space change (fullscreen exit, Mission Control).
-    var onSpaceChanged: (() -> Void)? { get set }
-
     /// Number of active external monitors
     func externalDisplayCount() -> Int
 
@@ -40,7 +37,6 @@ public protocol DisplayMonitoring: AnyObject {
 public final class DisplayMonitor: DisplayMonitoring {
 
     public var onConfigurationChanged: (() -> Void)?
-    public var onSpaceChanged: (() -> Void)?
 
     /// Thread-safe flag — accessed from deinit (nonisolated) and main actor methods.
     private nonisolated(unsafe) var isRunning = false
@@ -168,18 +164,7 @@ public final class DisplayMonitor: DisplayMonitoring {
             name: NSWorkspace.screensDidWakeNotification,
             object: nil
         )
-        center.addObserver(
-            self,
-            selector: #selector(handleSpaceChange),
-            name: NSWorkspace.activeSpaceDidChangeNotification,
-            object: nil
-        )
-        Log.info("Wake + space change observers registered")
-    }
-
-    @objc private func handleSpaceChange() {
-        guard isRunning else { return }
-        onSpaceChanged?()
+        Log.info("Wake observers registered")
     }
 
     private func removeWakeObservers() {

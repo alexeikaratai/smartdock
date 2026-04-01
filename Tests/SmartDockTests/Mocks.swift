@@ -6,7 +6,6 @@ import Foundation
 @MainActor
 final class MockDisplayMonitor: DisplayMonitoring {
     var onConfigurationChanged: (() -> Void)?
-    var onSpaceChanged: (() -> Void)?
 
     var mockExternalCount: Int = 0
     var startCallCount = 0

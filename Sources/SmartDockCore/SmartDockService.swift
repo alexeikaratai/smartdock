@@ -62,9 +62,6 @@ public final class SmartDockService {
         self.displayMonitor.onConfigurationChanged = { [weak self] in
             self?.handleDisplayChange()
         }
-        self.displayMonitor.onSpaceChanged = { [weak self] in
-            self?.refresh()
-        }
     }
 
     // MARK: - Public
