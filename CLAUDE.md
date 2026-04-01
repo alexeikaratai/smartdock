@@ -20,7 +20,7 @@ swift test --filter SmartDockTests.SmartDockServiceTests/testStartBeginsMonitori
 ## Version & Release
 
 ```bash
-make bump V=1.4.8   # update version in Makefile + Info.plist, increment build number
+make bump V=1.4.9   # update version in Makefile + Info.plist, increment build number
 make release        # build + zip + gh release create (working tree must be clean)
 make install        # copy .app to /Applications
 make fix            # xattr -cr + codesign (fix Gatekeeper quarantine)
@@ -32,7 +32,7 @@ Version is defined in two places — keep them in sync (use `make bump`):
 
 ## Architecture
 
-Swift Package (swift-tools-version 6.3), two targets: **SmartDockCore** (testable logic) and **SmartDock** (AppKit UI). Platform: macOS 14+, Swift 6 strict concurrency.
+Swift Package (swift-tools-version 6.2), two targets: **SmartDockCore** (testable logic) and **SmartDock** (AppKit UI). Platform: macOS 14+, Swift 6 strict concurrency.
 
 ### Core layer (`Sources/SmartDockCore/`)
 
