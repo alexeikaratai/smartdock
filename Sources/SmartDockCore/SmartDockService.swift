@@ -62,6 +62,9 @@ public final class SmartDockService {
         self.displayMonitor.onConfigurationChanged = { [weak self] in
             self?.handleDisplayChange()
         }
+        self.displayMonitor.onSpaceChanged = { [weak self] in
+            self?.refresh()
+        }
     }
 
     // MARK: - Public
@@ -104,7 +107,6 @@ public final class SmartDockService {
     }
 
     /// Diff-based: reads system config, only applies properties that differ.
-    /// Fullscreen is handled by macOS — we don't observe space changes.
     private func applyCurrentState() {
         guard !isApplying else { return }
         isApplying = true
@@ -125,6 +127,7 @@ public final class SmartDockService {
         }
 
         currentConfig = config
+
         dockController.apply(config)
         isApplying = false
 
