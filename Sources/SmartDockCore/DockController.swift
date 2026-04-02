@@ -13,6 +13,7 @@ public protocol DockControlling {
     func setAutoHide(_ enabled: Bool) -> Bool
 
     /// Apply a full dock configuration. Diff-based — only changes properties that differ from system state.
+    /// Uses AppleScript → System Events for immediate dock update.
     @discardableResult
     func apply(_ config: DockConfiguration) -> Bool
 
@@ -53,6 +54,7 @@ public final class DockController: DockControlling {
     /// Read current dock settings directly from the system.
     /// Creates a fresh UserDefaults instance to avoid stale cached values
     /// after AppleScript changes dock preferences via System Events.
+    /// Sizes are returned as 0.0–1.0 scale (converted from pixel tilesize).
     public func readSystemConfig() -> DockConfiguration {
         guard let d = UserDefaults(suiteName: "com.apple.dock") else {
             return DockConfiguration()
@@ -64,9 +66,9 @@ public final class DockController: DockControlling {
         return DockConfiguration(
             autohide: d.bool(forKey: "autohide"),
             position: DockPosition(rawValue: orientationRaw) ?? .bottom,
-            iconSize: tilesize > 0 ? tilesize : 48,
+            iconSize: tilesize > 0 ? DockConfiguration.pixelsToScale(tilesize) : 0.2857,
             magnification: d.bool(forKey: "magnification"),
-            magnificationSize: largesize > 0 ? largesize : 64
+            magnificationSize: largesize > 0 ? DockConfiguration.pixelsToScale(largesize) : 0.4286
         )
     }
 
@@ -90,8 +92,9 @@ public final class DockController: DockControlling {
             if !applyAutohide(config.autohide) { allOk = false }
         }
 
-        if config.iconSize != current.iconSize {
-            changed.append("size=\(config.iconSize)")
+        // Tolerance covers 1-pixel rounding difference (~0.009 scale).
+        if abs(config.iconSize - current.iconSize) > 0.01 {
+            changed.append("size=\(String(format: "%.3f", config.iconSize))")
             if !applyIconSize(config.iconSize) { allOk = false }
         }
 
@@ -100,8 +103,8 @@ public final class DockController: DockControlling {
             if !applyMagnification(config.magnification) { allOk = false }
         }
 
-        if config.magnification && config.magnificationSize != current.magnificationSize {
-            changed.append("magSize=\(config.magnificationSize)")
+        if config.magnification && abs(config.magnificationSize - current.magnificationSize) > 0.01 {
+            changed.append("magSize=\(String(format: "%.3f", config.magnificationSize))")
             if !applyMagnificationSize(config.magnificationSize) { allOk = false }
         }
 
@@ -113,15 +116,6 @@ public final class DockController: DockControlling {
         }
 
         return allOk
-    }
-
-    // MARK: - Scale Conversion
-
-    /// Converts pixel size (16–128) to AppleScript dock size scale (0.0–1.0).
-    /// System Events uses a normalized float; the actual pixel range is 16–128.
-    static func pixelsToAppleScriptScale(_ pixels: Int) -> Double {
-        let clamped = Double(Swift.max(16, Swift.min(128, pixels)))
-        return (clamped - 16.0) / (128.0 - 16.0)
     }
 
     // MARK: - Per-Property AppleScript
@@ -146,12 +140,11 @@ public final class DockController: DockControlling {
             """)
     }
 
-    private func applyIconSize(_ pixels: Int) -> Bool {
-        let dockSize = Self.pixelsToAppleScriptScale(pixels)
-        return runAppleScript("""
+    private func applyIconSize(_ scale: Double) -> Bool {
+        runAppleScript("""
             tell application "System Events"
                 tell dock preferences
-                    set dock size to \(dockSize)
+                    set dock size to \(scale)
                 end tell
             end tell
             """)
@@ -167,12 +160,11 @@ public final class DockController: DockControlling {
             """)
     }
 
-    private func applyMagnificationSize(_ pixels: Int) -> Bool {
-        let magSize = Self.pixelsToAppleScriptScale(pixels)
-        return runAppleScript("""
+    private func applyMagnificationSize(_ scale: Double) -> Bool {
+        runAppleScript("""
             tell application "System Events"
                 tell dock preferences
-                    set magnification size to \(magSize)
+                    set magnification size to \(scale)
                 end tell
             end tell
             """)

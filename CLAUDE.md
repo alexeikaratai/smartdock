@@ -20,7 +20,7 @@ swift test --filter SmartDockTests.SmartDockServiceTests/testStartBeginsMonitori
 ## Version & Release
 
 ```bash
-make bump V=1.5.1   # update version in Makefile + Info.plist, increment build number
+make bump V=1.5.2   # update version in Makefile + Info.plist, increment build number
 make release        # build + zip + gh release create (working tree must be clean)
 make install        # copy .app to /Applications
 make fix            # xattr -cr + codesign (fix Gatekeeper quarantine)
@@ -38,10 +38,10 @@ Swift Package (swift-tools-version 6.2), two targets: **SmartDockCore** (testabl
 
 | File | Responsibility |
 |---|---|
-| `DockConfiguration.swift` | `DockConfiguration` value type (position, autohide, icon size, magnification). `UserPreferences` persists per-mode configs via UserDefaults. `DockPosition` enum. First-launch: `initializeDefaultsIfNeeded(from:)` reads system config, sets external=autohide off, builtin=autohide on. |
+| `DockConfiguration.swift` | `DockConfiguration` value type (position, autohide, icon size as 0.0–1.0 scale, magnification). `UserPreferences` persists per-mode configs via UserDefaults with migration from old pixel format. `DockPosition` enum. First-launch: `initializeDefaultsIfNeeded(from:)` reads system config, sets external=autohide off, builtin=autohide on. |
 | `DisplayMonitor.swift` | Detects external monitor connect/disconnect via `CGDisplayRegisterReconfigurationCallback`. Debounces (1s settle delay). Filters by add/remove/enable/disable CG flags only. Also observes `didWakeNotification`, `screensDidWakeNotification` (2s delay re-check). No space change observer — AppleScript triggers space notifications causing feedback loops. Conforms to `DisplayMonitoring`. |
 | `DockController.swift` | Applies `DockConfiguration` via `NSAppleScript` → System Events. Diff-based: reads current system config via fresh `UserDefaults(suiteName: "com.apple.dock")` and only applies properties that actually differ. Conforms to `DockControlling`. |
-| `SmartDockService.swift` | Orchestrator: reads `UserPreferences`, applies appropriate config based on display state. Has `SmartDockServiceDelegate`. Posts `Notification.Name.smartDockStateDidChange` on every state change. |
+| `SmartDockService.swift` | Orchestrator: reads `UserPreferences`, applies appropriate config based on display state. Has `SmartDockServiceDelegate`. Posts `Notification.Name.smartDockStateDidChange` only when state actually changes. |
 | `Log.swift` | Centralized `Logger` API. Subsystem `com.smartdock.app`. Categories: `general`, `display`. |
 
 ### App layer (`Sources/SmartDock/`)
@@ -142,7 +142,7 @@ Swift Package (swift-tools-version 6.2), two targets: **SmartDockCore** (testabl
 ### AppleScript / System Events
 - Each Dock property (`autohide`, `position`, `dock size`, `magnification`, `magnification size`) is set in its **own** `tell application "System Events" / tell dock preferences` block. Never combine them — if one fails, others still apply.
 - No `killall Dock`. AppleScript via System Events updates the Dock gracefully.
-- Pixel sizes (16-128) must be converted to AppleScript scale (0.0-1.0) via `pixelsToAppleScriptScale()`.
+- Sizes use 0.0–1.0 scale internally (same as macOS System Events). Convert via `DockConfiguration.pixelsToScale()` / `scaleToPixels()`. Diff-based apply uses 0.01 tolerance to avoid rounding noise.
 
 ### CoreGraphics Display Callbacks
 - Use `CGDisplayRegisterReconfigurationCallback` — event-driven, no polling/timers.
