@@ -19,25 +19,39 @@ public enum DockPosition: String, CaseIterable, Sendable {
 // MARK: - Dock Configuration
 
 /// Full set of Dock preferences for a given mode (external / built-in).
+/// Sizes use the same 0.0–1.0 scale as macOS System Events / dock preferences.
+/// This avoids pixel→scale→pixel rounding issues.
 public struct DockConfiguration: Equatable, Sendable {
     public let autohide: Bool
     public let position: DockPosition
-    public let iconSize: Int          // 16...128, default 48
+    public let iconSize: Double          // 0.0...1.0, default ~0.29 (48px)
     public let magnification: Bool
-    public let magnificationSize: Int // 16...128, default 64
+    public let magnificationSize: Double // 0.0...1.0, default ~0.43 (64px)
 
     public init(
         autohide: Bool = false,
         position: DockPosition = .bottom,
-        iconSize: Int = 48,
+        iconSize: Double = 0.2857,
         magnification: Bool = false,
-        magnificationSize: Int = 64
+        magnificationSize: Double = 0.4286
     ) {
         self.autohide = autohide
         self.position = position
-        self.iconSize = iconSize.clamped(to: 16...128)
+        self.iconSize = iconSize.clamped(to: 0.0...1.0)
         self.magnification = magnification
-        self.magnificationSize = magnificationSize.clamped(to: 16...128)
+        self.magnificationSize = magnificationSize.clamped(to: 0.0...1.0)
+    }
+
+    /// Convert pixel value (16–128) to scale (0.0–1.0).
+    public static func pixelsToScale(_ pixels: Int) -> Double {
+        let clamped = Double(Swift.max(16, Swift.min(128, pixels)))
+        return (clamped - 16.0) / (128.0 - 16.0)
+    }
+
+    /// Convert scale (0.0–1.0) to approximate pixel value (16–128).
+    /// For display purposes only — the canonical value is the scale.
+    public static func scaleToPixels(_ scale: Double) -> Int {
+        Int((scale * 112.0 + 16.0).rounded())
     }
 }
 
@@ -102,6 +116,33 @@ public final class UserPreferences {
         set { save(newValue, key: "builtin") }
     }
 
+    // MARK: - Migration
+
+    /// Migrate old integer pixel values to new scale format.
+    public func migrateIfNeeded() {
+        migrateMode("external")
+        migrateMode("builtin")
+    }
+
+    private func migrateMode(_ key: String) {
+        let sizeKey = "\(prefix).\(key).iconSize"
+        let magSizeKey = "\(prefix).\(key).magnificationSize"
+
+        // Old format stored integers > 1. New format stores 0.0–1.0.
+        // If value > 1.0, it's old pixel format — convert to scale.
+        if let sizeVal = defaults.object(forKey: sizeKey) as? Double, sizeVal > 1.0 {
+            defaults.set(DockConfiguration.pixelsToScale(Int(sizeVal)), forKey: sizeKey)
+        } else if let sizeVal = defaults.object(forKey: sizeKey) as? Int, sizeVal > 1 {
+            defaults.set(DockConfiguration.pixelsToScale(sizeVal), forKey: sizeKey)
+        }
+
+        if let magVal = defaults.object(forKey: magSizeKey) as? Double, magVal > 1.0 {
+            defaults.set(DockConfiguration.pixelsToScale(Int(magVal)), forKey: magSizeKey)
+        } else if let magVal = defaults.object(forKey: magSizeKey) as? Int, magVal > 1 {
+            defaults.set(DockConfiguration.pixelsToScale(magVal), forKey: magSizeKey)
+        }
+    }
+
     // MARK: - Persistence
 
     private func save(_ config: DockConfiguration, key: String) {
@@ -117,24 +158,23 @@ public final class UserPreferences {
         guard defaults.object(forKey: autohideKey) != nil else { return nil }
 
         let positionRaw = defaults.string(forKey: "\(prefix).\(key).position") ?? "bottom"
+        let iconSize = defaults.double(forKey: "\(prefix).\(key).iconSize")
+        let magSize = defaults.double(forKey: "\(prefix).\(key).magnificationSize")
+
         return DockConfiguration(
             autohide: defaults.bool(forKey: autohideKey),
             position: DockPosition(rawValue: positionRaw) ?? .bottom,
-            iconSize: defaults.integer(forKey: "\(prefix).\(key).iconSize").nonZero ?? 48,
+            iconSize: iconSize > 0 ? iconSize : 0.2857,
             magnification: defaults.bool(forKey: "\(prefix).\(key).magnification"),
-            magnificationSize: defaults.integer(forKey: "\(prefix).\(key).magnificationSize").nonZero ?? 64
+            magnificationSize: magSize > 0 ? magSize : 0.4286
         )
     }
 }
 
 // MARK: - Helpers
 
-private extension Int {
-    func clamped(to range: ClosedRange<Int>) -> Int {
+private extension Double {
+    func clamped(to range: ClosedRange<Double>) -> Double {
         Swift.min(Swift.max(self, range.lowerBound), range.upperBound)
-    }
-
-    var nonZero: Int? {
-        self != 0 ? self : nil
     }
 }

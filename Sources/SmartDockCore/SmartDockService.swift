@@ -46,10 +46,6 @@ public final class SmartDockService {
 
     // MARK: - Init
 
-    /// - Parameters:
-    ///   - displayMonitor: Display monitoring object (injectable for tests)
-    ///   - dockController: Dock management object (injectable for tests)
-    ///   - prefs: User preferences for dock configuration per mode
     public init(
         displayMonitor: DisplayMonitoring = DisplayMonitor(),
         dockController: DockControlling = DockController(),
@@ -66,13 +62,10 @@ public final class SmartDockService {
 
     // MARK: - Public
 
-    /// Enable the service: start monitoring and apply current state
     public func start() {
         guard !isEnabled else { return }
         isEnabled = true
 
-        // On first launch, snapshot current system dock config as the default
-        // so we don't override the user's settings until they configure SmartDock.
         prefs.initializeDefaultsIfNeeded(from: dockController.readSystemConfig())
 
         displayMonitor.start()
@@ -80,7 +73,6 @@ public final class SmartDockService {
         Log.info("SmartDock service started")
     }
 
-    /// Disable the service: stop monitoring
     public func stop() {
         guard isEnabled else { return }
         isEnabled = false
@@ -88,14 +80,13 @@ public final class SmartDockService {
         Log.info("SmartDock service stopped")
     }
 
-    /// Recalculate and apply state (called from Settings when user changes a preference)
+    /// Recalculate and apply state.
     public func refresh() {
         applyCurrentState()
     }
 
     // MARK: - Private
 
-    /// Guard against re-entrant calls during dockController.apply().
     private var isApplying = false
 
     private func handleDisplayChange() {
@@ -103,10 +94,10 @@ public final class SmartDockService {
         applyCurrentState()
     }
 
-    /// Diff-based: reads system config, only applies properties that differ.
     private func applyCurrentState() {
         guard !isApplying else { return }
         isApplying = true
+        defer { isApplying = false }
 
         let previousConfig = currentConfig
         let previousExternal = hasExternalDisplay
@@ -124,9 +115,7 @@ public final class SmartDockService {
         }
 
         currentConfig = config
-
         dockController.apply(config)
-        isApplying = false
 
         // Only notify observers when state actually changed.
         if config != previousConfig || external != previousExternal {

@@ -223,9 +223,6 @@ private func displayReconfigurationCallback(
     guard !flags.contains(CGDisplayChangeSummaryFlags(rawValue: 1)) else { return }
 
     // Only react to actual display topology changes (add/remove/enable/disable).
-    // Ignore mode changes, moves, and desktop shape changes — these fire during
-    // Mission Control and fullscreen transitions and would cause spurious
-    // dock config re-application.
     let addRemoveFlags = CGDisplayChangeSummaryFlags(rawValue:
         0x10 |   // kCGDisplayAddFlag
         0x20 |   // kCGDisplayRemoveFlag
@@ -237,7 +234,6 @@ private func displayReconfigurationCallback(
     guard let userInfo = userInfo else { return }
     let monitor = Unmanaged<DisplayMonitor>.fromOpaque(userInfo).takeUnretainedValue()
 
-    // Callback comes on an arbitrary thread — switch to main
     DispatchQueue.main.async { @MainActor in
         monitor.handleReconfiguration()
     }

@@ -178,15 +178,15 @@ final class SettingsWindow: NSObject {
         let sizeTitle = makeLabel(text: "Icon Size", font: .systemFont(ofSize: 13, weight: .medium))
         card.addSubview(sizeTitle)
 
-        iconSizeSlider = NSSlider(value: 48, minValue: 16, maxValue: 128, target: self, action: #selector(sliderChanged))
+        iconSizeSlider = NSSlider(value: 0.29, minValue: 0, maxValue: 1, target: self, action: #selector(sliderChanged))
         iconSizeSlider.translatesAutoresizingMaskIntoConstraints = false
         iconSizeSlider.numberOfTickMarks = 0
         iconSizeSlider.isContinuous = true
         card.addSubview(iconSizeSlider)
 
-        iconSizeLabel = makeLabel(text: "48 px", font: .monospacedDigitSystemFont(ofSize: 11, weight: .regular))
-        iconSizeLabel.textColor = .secondaryLabelColor
-        iconSizeLabel.alignment = .right
+        iconSizeLabel = makeLabel(text: "Small ◀─▶ Large", font: .systemFont(ofSize: 10))
+        iconSizeLabel.textColor = .tertiaryLabelColor
+        iconSizeLabel.alignment = .center
         card.addSubview(iconSizeLabel)
 
         // Magnification
@@ -197,15 +197,15 @@ final class SettingsWindow: NSObject {
         let magTitle = makeLabel(text: "Magnification Size", font: .systemFont(ofSize: 13, weight: .medium))
         card.addSubview(magTitle)
 
-        magSizeSlider = NSSlider(value: 64, minValue: 16, maxValue: 128, target: self, action: #selector(sliderChanged))
+        magSizeSlider = NSSlider(value: 0.43, minValue: 0, maxValue: 1, target: self, action: #selector(sliderChanged))
         magSizeSlider.translatesAutoresizingMaskIntoConstraints = false
         magSizeSlider.numberOfTickMarks = 0
         magSizeSlider.isContinuous = true
         card.addSubview(magSizeSlider)
 
-        magSizeLabel = makeLabel(text: "64 px", font: .monospacedDigitSystemFont(ofSize: 11, weight: .regular))
-        magSizeLabel.textColor = .secondaryLabelColor
-        magSizeLabel.alignment = .right
+        magSizeLabel = makeLabel(text: "Small ◀─▶ Large", font: .systemFont(ofSize: 10))
+        magSizeLabel.textColor = .tertiaryLabelColor
+        magSizeLabel.alignment = .center
         card.addSubview(magSizeLabel)
 
         // --- Apply Button ---
@@ -534,11 +534,6 @@ final class SettingsWindow: NSObject {
     }
 
     @objc private func sliderChanged(_ sender: NSSlider) {
-        if sender === iconSizeSlider {
-            iconSizeLabel.stringValue = "\(Int(sender.doubleValue)) px"
-        } else if sender === magSizeSlider {
-            magSizeLabel.stringValue = "\(Int(sender.doubleValue)) px"
-        }
         markDirty()
     }
 
@@ -595,11 +590,9 @@ final class SettingsWindow: NSObject {
         updatePositionSelection()
 
         autohideCheckbox.state = config.autohide ? .on : .off
-        iconSizeSlider.doubleValue = Double(config.iconSize)
-        iconSizeLabel.stringValue = "\(config.iconSize) px"
+        iconSizeSlider.doubleValue = config.iconSize
         magnificationCheckbox.state = config.magnification ? .on : .off
-        magSizeSlider.doubleValue = Double(config.magnificationSize)
-        magSizeLabel.stringValue = "\(config.magnificationSize) px"
+        magSizeSlider.doubleValue = config.magnificationSize
         magSizeSlider.isEnabled = config.magnification
 
         updateStatus()
@@ -610,9 +603,9 @@ final class SettingsWindow: NSObject {
         let config = DockConfiguration(
             autohide: autohideCheckbox.state == .on,
             position: selectedPosition,
-            iconSize: Int(iconSizeSlider.doubleValue),
+            iconSize: iconSizeSlider.doubleValue,
             magnification: magnificationCheckbox.state == .on,
-            magnificationSize: Int(magSizeSlider.doubleValue)
+            magnificationSize: magSizeSlider.doubleValue
         )
 
         if selectedMode == .external {

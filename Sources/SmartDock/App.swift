@@ -25,6 +25,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Do NOT call NSApp.setActivationPolicy(.accessory) here —
         // it can cause the status item to disappear during launch.
 
+        // Migrate old pixel-based preferences to scale format
+        UserPreferences.shared.migrateIfNeeded()
+
         // Check Accessibility permission before starting
         AccessibilityChecker.checkAndPromptIfNeeded()
 
