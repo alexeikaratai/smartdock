@@ -25,12 +25,13 @@ final class SettingsWindow: NSObject {
 
     private var window: NSWindow?
     private let service: SmartDockService
+    private let hotkeyManager: HotkeyManager
     private let prefs = UserPreferences.shared
 
     private var selectedMode: Mode = .external
     private var selectedPosition: DockPosition = .bottom
 
-    // Controls
+    // Controls — Dock settings
     private var segmentedControl: NSSegmentedControl!
     private var positionButtons: [DockPosition: NSButton] = [:]
     private var positionImageViews: [DockPosition: NSImageView] = [:]
@@ -42,19 +43,36 @@ final class SettingsWindow: NSObject {
     private var magSizeSlider: NSSlider!
     private var magSizeLabel: NSTextField!
     private var applyButton: NSButton!
+
+    // Controls — General
     private var launchAtLoginCheckbox: NSButton!
+    private var notificationsCheckbox: NSButton!
+    private var syncFromSystemCheckbox: NSButton!
     private var statusLabel: NSTextField!
+
+    // Controls — Shortcuts
+    private var toggleAutohideHotkeyButton: NSButton!
+    private var refreshNowHotkeyButton: NSButton!
+    private var recordingMonitor: Any?
+    private var recordingAction: HotkeyAction?
 
     // MARK: - Init
 
-    init(service: SmartDockService) {
+    init(service: SmartDockService, hotkeyManager: HotkeyManager) {
         self.service = service
+        self.hotkeyManager = hotkeyManager
         super.init()
 
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleStateChange),
             name: .smartDockStateDidChange,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleNotificationPermissionChanged),
+            name: .smartDockNotificationPermissionChanged,
             object: nil
         )
     }
@@ -89,7 +107,7 @@ final class SettingsWindow: NSObject {
 
     private func makeWindow() -> NSWindow {
         let w = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 610),
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 820),
             styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -233,6 +251,48 @@ final class SettingsWindow: NSObject {
         launchAtLoginCheckbox.state = LaunchAtLogin.isEnabled ? .on : .off
         container.addSubview(launchAtLoginCheckbox)
 
+        notificationsCheckbox = NSButton(checkboxWithTitle: "Notify on Profile Switch", target: self, action: #selector(toggleNotifications))
+        notificationsCheckbox.translatesAutoresizingMaskIntoConstraints = false
+        notificationsCheckbox.state = prefs.notificationsEnabled ? .on : .off
+        container.addSubview(notificationsCheckbox)
+
+        syncFromSystemCheckbox = NSButton(checkboxWithTitle: "Auto-import System changes", target: self, action: #selector(toggleSyncFromSystem))
+        syncFromSystemCheckbox.translatesAutoresizingMaskIntoConstraints = false
+        syncFromSystemCheckbox.state = prefs.syncFromSystemEnabled ? .on : .off
+        container.addSubview(syncFromSystemCheckbox)
+
+        // --- Shortcuts Section ---
+        let shortcutsSep = NSBox()
+        shortcutsSep.translatesAutoresizingMaskIntoConstraints = false
+        shortcutsSep.boxType = .separator
+        container.addSubview(shortcutsSep)
+
+        let shortcutsHeader = makeLabel(text: "SHORTCUTS", font: .systemFont(ofSize: 11, weight: .medium))
+        shortcutsHeader.textColor = .secondaryLabelColor
+        container.addSubview(shortcutsHeader)
+
+        let toggleLabel = makeLabel(text: "Toggle Autohide", font: .systemFont(ofSize: 13))
+        container.addSubview(toggleLabel)
+
+        toggleAutohideHotkeyButton = makeHotkeyButton(for: .toggleAutohide)
+        container.addSubview(toggleAutohideHotkeyButton)
+
+        let refreshLabel = makeLabel(text: "Refresh Now", font: .systemFont(ofSize: 13))
+        container.addSubview(refreshLabel)
+
+        refreshNowHotkeyButton = makeHotkeyButton(for: .refreshNow)
+        container.addSubview(refreshNowHotkeyButton)
+
+        let shortcutsHint = makeLabel(text: "Click to record, Esc to clear", font: .systemFont(ofSize: 10))
+        shortcutsHint.textColor = .tertiaryLabelColor
+        container.addSubview(shortcutsHint)
+
+        // --- Bottom Buttons ---
+        let bottomSep = NSBox()
+        bottomSep.translatesAutoresizingMaskIntoConstraints = false
+        bottomSep.boxType = .separator
+        container.addSubview(bottomSep)
+
         // Sync from System button
         let syncButton = NSButton(title: "Sync from System", target: self, action: #selector(syncFromSystem))
         syncButton.translatesAutoresizingMaskIntoConstraints = false
@@ -340,8 +400,43 @@ final class SettingsWindow: NSObject {
             launchAtLoginCheckbox.topAnchor.constraint(equalTo: generalHeader.bottomAnchor, constant: 8),
             launchAtLoginCheckbox.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
 
-            // Sync button
-            syncButton.topAnchor.constraint(equalTo: launchAtLoginCheckbox.bottomAnchor, constant: 12),
+            notificationsCheckbox.topAnchor.constraint(equalTo: launchAtLoginCheckbox.bottomAnchor, constant: 8),
+            notificationsCheckbox.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
+
+            syncFromSystemCheckbox.topAnchor.constraint(equalTo: notificationsCheckbox.bottomAnchor, constant: 8),
+            syncFromSystemCheckbox.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
+
+            // Shortcuts section
+            shortcutsSep.topAnchor.constraint(equalTo: syncFromSystemCheckbox.bottomAnchor, constant: 14),
+            shortcutsSep.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
+            shortcutsSep.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
+
+            shortcutsHeader.topAnchor.constraint(equalTo: shortcutsSep.bottomAnchor, constant: 14),
+            shortcutsHeader.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
+
+            toggleLabel.topAnchor.constraint(equalTo: shortcutsHeader.bottomAnchor, constant: 10),
+            toggleLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
+
+            toggleAutohideHotkeyButton.centerYAnchor.constraint(equalTo: toggleLabel.centerYAnchor),
+            toggleAutohideHotkeyButton.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -margin),
+            toggleAutohideHotkeyButton.widthAnchor.constraint(equalToConstant: 120),
+
+            refreshLabel.topAnchor.constraint(equalTo: toggleLabel.bottomAnchor, constant: 10),
+            refreshLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
+
+            refreshNowHotkeyButton.centerYAnchor.constraint(equalTo: refreshLabel.centerYAnchor),
+            refreshNowHotkeyButton.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -margin),
+            refreshNowHotkeyButton.widthAnchor.constraint(equalToConstant: 120),
+
+            shortcutsHint.topAnchor.constraint(equalTo: refreshLabel.bottomAnchor, constant: 6),
+            shortcutsHint.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
+
+            // Bottom buttons
+            bottomSep.topAnchor.constraint(equalTo: shortcutsHint.bottomAnchor, constant: 14),
+            bottomSep.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
+            bottomSep.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
+
+            syncButton.topAnchor.constraint(equalTo: bottomSep.bottomAnchor, constant: 12),
             syncButton.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
 
             // Refresh Now — next to Sync
@@ -557,12 +652,108 @@ final class SettingsWindow: NSObject {
         sender.state = LaunchAtLogin.isEnabled ? .on : .off
     }
 
+    @objc private func toggleNotifications(_ sender: NSButton) {
+        let enabled = sender.state == .on
+        prefs.notificationsEnabled = enabled
+        if enabled {
+            // Request notification permission via the app's NotificationManager.
+            NotificationCenter.default.post(
+                name: .smartDockRequestNotificationAuth,
+                object: nil
+            )
+        }
+    }
+
+    @objc private func toggleSyncFromSystem(_ sender: NSButton) {
+        prefs.syncFromSystemEnabled = sender.state == .on
+    }
+
+    @objc private func handleNotificationPermissionChanged(_ notification: Notification) {
+        notificationsCheckbox.state = prefs.notificationsEnabled ? .on : .off
+    }
+
+    @objc private func hotkeyButtonClicked(_ sender: NSButton) {
+        guard sender.tag >= 0, sender.tag < HotkeyAction.allCases.count else { return }
+        let action = HotkeyAction.allCases[sender.tag]
+
+        // If already recording, cancel
+        if recordingAction != nil {
+            stopRecording()
+            return
+        }
+
+        startRecording(action: action, button: sender)
+    }
+
     @objc private func refreshNow(_ sender: Any) {
         service.refresh()
     }
 
     @objc private func quitApp(_ sender: Any) {
         NSApp.terminate(nil)
+    }
+
+    // MARK: - Hotkey Recording
+
+    private func startRecording(action: HotkeyAction, button: NSButton) {
+        recordingAction = action
+        hotkeyManager.isRecording = true
+        button.title = "Press shortcut..."
+
+        recordingMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            self.handleRecordedKey(event)
+            return nil // consume the event
+        }
+    }
+
+    private func stopRecording() {
+        if let monitor = recordingMonitor {
+            NSEvent.removeMonitor(monitor)
+            recordingMonitor = nil
+        }
+        recordingAction = nil
+        hotkeyManager.isRecording = false
+        updateHotkeyButtons()
+    }
+
+    private func handleRecordedKey(_ event: NSEvent) {
+        guard let action = recordingAction else { return }
+
+        // Escape clears the binding
+        if event.keyCode == 53 {
+            prefs.setHotkey(nil, for: action.rawValue)
+            stopRecording()
+            return
+        }
+
+        // Require at least one modifier (Cmd, Ctrl, Opt, Shift).
+        // Strip CapsLock and Function flags for consistent matching.
+        let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        let hasModifier = modifiers.contains(.command) || modifiers.contains(.control)
+            || modifiers.contains(.option)
+        guard hasModifier else { return } // keep waiting
+
+        let displayName = event.charactersIgnoringModifiers?.uppercased() ?? "?"
+        let binding = HotkeyBinding(
+            keyCode: event.keyCode,
+            modifiers: modifiers.rawValue,
+            displayName: displayName
+        )
+        prefs.setHotkey(binding, for: action.rawValue)
+        stopRecording()
+    }
+
+    private func updateHotkeyButtons() {
+        toggleAutohideHotkeyButton.title = hotkeyDisplayString(for: .toggleAutohide)
+        refreshNowHotkeyButton.title = hotkeyDisplayString(for: .refreshNow)
+    }
+
+    private func hotkeyDisplayString(for action: HotkeyAction) -> String {
+        guard let binding = prefs.hotkey(for: action.rawValue) else {
+            return "Click to set"
+        }
+        return HotkeyManager.displayString(for: binding)
     }
 
     /// Display state changed (monitor connected/disconnected) — refresh Settings UI.
@@ -648,6 +839,15 @@ final class SettingsWindow: NSObject {
         return label
     }
 
+    private func makeHotkeyButton(for action: HotkeyAction) -> NSButton {
+        let btn = NSButton(title: hotkeyDisplayString(for: action), target: self, action: #selector(hotkeyButtonClicked))
+        btn.translatesAutoresizingMaskIntoConstraints = false
+        btn.bezelStyle = .rounded
+        btn.controlSize = .small
+        btn.tag = HotkeyAction.allCases.firstIndex(of: action) ?? 0
+        return btn
+    }
+
     /// Creates a card with vibrancy material for a glass-like appearance.
     private func makeGlassCard() -> NSVisualEffectView {
         let card = NSVisualEffectView()
@@ -668,6 +868,7 @@ final class SettingsWindow: NSObject {
 
 extension SettingsWindow: NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
+        if recordingAction != nil { stopRecording() }
         window = nil
     }
 }

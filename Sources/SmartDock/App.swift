@@ -1,4 +1,5 @@
 import Cocoa
+import UserNotifications
 import SmartDockCore
 
 // MARK: - App Delegate
@@ -9,6 +10,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var statusBarController: StatusBarController!
     private let service = SmartDockService()
+    private var notificationManager: NotificationManager!
+    private var hotkeyManager: HotkeyManager!
 
     /// Explicit entry point for a menu bar app without storyboard/nib.
     /// The default @main behavior calls NSApplicationMain which expects
@@ -31,7 +34,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Check Accessibility permission before starting
         AccessibilityChecker.checkAndPromptIfNeeded()
 
-        statusBarController = StatusBarController(service: service)
+        // Hotkey manager: global keyboard shortcuts
+        hotkeyManager = HotkeyManager(service: service)
+        hotkeyManager.start()
+
+        statusBarController = StatusBarController(service: service, hotkeyManager: hotkeyManager)
+
+        // Notification manager: posts macOS banners on profile switch
+        notificationManager = NotificationManager()
+        UNUserNotificationCenter.current().delegate = notificationManager
+
         service.start()
 
         Log.info("SmartDock launched (v\(Bundle.main.shortVersion))")
@@ -45,6 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        hotkeyManager.stop()
         service.stop()
     }
 }

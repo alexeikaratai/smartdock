@@ -53,6 +53,31 @@ public struct DockConfiguration: Equatable, Sendable {
     public static func scaleToPixels(_ scale: Double) -> Int {
         Int((scale * 112.0 + 16.0).rounded())
     }
+
+    /// Compare with tolerance for size fields (0.01 scale ≈ 1px).
+    /// Used by system sync to detect real changes vs rounding noise.
+    public func approximatelyEquals(_ other: DockConfiguration) -> Bool {
+        autohide == other.autohide
+            && position == other.position
+            && magnification == other.magnification
+            && abs(iconSize - other.iconSize) <= 0.01
+            && abs(magnificationSize - other.magnificationSize) <= 0.01
+    }
+}
+
+// MARK: - Hotkey Binding
+
+/// Stores a keyboard shortcut: modifier flags + virtual key code + display name.
+public struct HotkeyBinding: Equatable, Sendable {
+    public let keyCode: UInt16
+    public let modifiers: UInt         // NSEvent.ModifierFlags.rawValue
+    public let displayName: String     // from charactersIgnoringModifiers, e.g. "H"
+
+    public init(keyCode: UInt16, modifiers: UInt, displayName: String) {
+        self.keyCode = keyCode
+        self.modifiers = modifiers
+        self.displayName = displayName
+    }
 }
 
 // MARK: - User Preferences
@@ -114,6 +139,52 @@ public final class UserPreferences {
     public var builtinConfig: DockConfiguration {
         get { load(key: "builtin") ?? DockConfiguration(autohide: true) }
         set { save(newValue, key: "builtin") }
+    }
+
+    // MARK: - Notifications
+
+    public var notificationsEnabled: Bool {
+        get { defaults.bool(forKey: "\(prefix).notificationsEnabled") }
+        set { defaults.set(newValue, forKey: "\(prefix).notificationsEnabled") }
+    }
+
+    // MARK: - System Sync
+
+    public var syncFromSystemEnabled: Bool {
+        get {
+            // Default true — sync enabled unless explicitly disabled.
+            defaults.object(forKey: "\(prefix).syncFromSystem") == nil
+                ? true
+                : defaults.bool(forKey: "\(prefix).syncFromSystem")
+        }
+        set { defaults.set(newValue, forKey: "\(prefix).syncFromSystem") }
+    }
+
+    // MARK: - Hotkeys
+
+    public func hotkey(for action: String) -> HotkeyBinding? {
+        let keyCodeKey = "\(prefix).hotkey.\(action).keyCode"
+        guard defaults.object(forKey: keyCodeKey) != nil else { return nil }
+        return HotkeyBinding(
+            keyCode: UInt16(defaults.integer(forKey: keyCodeKey)),
+            modifiers: UInt(defaults.integer(forKey: "\(prefix).hotkey.\(action).modifiers")),
+            displayName: defaults.string(forKey: "\(prefix).hotkey.\(action).displayName") ?? "?"
+        )
+    }
+
+    public func setHotkey(_ binding: HotkeyBinding?, for action: String) {
+        let keyCodeKey = "\(prefix).hotkey.\(action).keyCode"
+        let modifiersKey = "\(prefix).hotkey.\(action).modifiers"
+        let displayNameKey = "\(prefix).hotkey.\(action).displayName"
+        if let binding {
+            defaults.set(Int(binding.keyCode), forKey: keyCodeKey)
+            defaults.set(Int(binding.modifiers), forKey: modifiersKey)
+            defaults.set(binding.displayName, forKey: displayNameKey)
+        } else {
+            defaults.removeObject(forKey: keyCodeKey)
+            defaults.removeObject(forKey: modifiersKey)
+            defaults.removeObject(forKey: displayNameKey)
+        }
     }
 
     // MARK: - Migration

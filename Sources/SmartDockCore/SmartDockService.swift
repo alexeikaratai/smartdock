@@ -58,6 +58,10 @@ public final class SmartDockService {
         self.displayMonitor.onConfigurationChanged = { [weak self] in
             self?.handleDisplayChange()
         }
+
+        self.dockController.onExternalConfigChanged = { [weak self] config in
+            self?.handleExternalDockChange(config)
+        }
     }
 
     // MARK: - Public
@@ -69,6 +73,7 @@ public final class SmartDockService {
         prefs.initializeDefaultsIfNeeded(from: dockController.readSystemConfig())
 
         displayMonitor.start()
+        dockController.startObservingSystemChanges()
         applyCurrentState()
         Log.info("SmartDock service started")
     }
@@ -77,6 +82,7 @@ public final class SmartDockService {
         guard isEnabled else { return }
         isEnabled = false
         displayMonitor.stop()
+        dockController.stopObservingSystemChanges()
         Log.info("SmartDock service stopped")
     }
 
@@ -92,6 +98,30 @@ public final class SmartDockService {
     private func handleDisplayChange() {
         guard isEnabled else { return }
         applyCurrentState()
+    }
+
+    /// System dock settings changed externally (e.g. via System Settings).
+    /// Update the currently active profile to match.
+    private func handleExternalDockChange(_ config: DockConfiguration) {
+        guard isEnabled, !isApplying else { return }
+        guard prefs.syncFromSystemEnabled else { return }
+
+        if hasExternalDisplay {
+            prefs.externalConfig = config
+            Log.info("External dock change detected — updated external profile")
+        } else {
+            prefs.builtinConfig = config
+            Log.info("External dock change detected — updated built-in profile")
+        }
+
+        currentConfig = config
+
+        delegate?.serviceDidUpdateState(self, hasExternal: hasExternalDisplay)
+        NotificationCenter.default.post(
+            name: .smartDockStateDidChange,
+            object: self,
+            userInfo: [SmartDockService.hasExternalKey: hasExternalDisplay]
+        )
     }
 
     private func applyCurrentState() {

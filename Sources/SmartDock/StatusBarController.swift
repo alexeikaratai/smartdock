@@ -8,7 +8,8 @@ final class StatusBarController: NSObject {
 
     private var statusItem: NSStatusItem!
     private let service: SmartDockService
-    private lazy var settingsWindow = SettingsWindow(service: service)
+    private let hotkeyManager: HotkeyManager
+    private lazy var settingsWindow = SettingsWindow(service: service, hotkeyManager: hotkeyManager)
 
     // Cached icons: [position][visible/hidden]
     private lazy var iconCache: [DockPosition: [Bool: NSImage]] = {
@@ -28,8 +29,9 @@ final class StatusBarController: NSObject {
 
     // MARK: - Init
 
-    init(service: SmartDockService) {
+    init(service: SmartDockService, hotkeyManager: HotkeyManager) {
         self.service = service
+        self.hotkeyManager = hotkeyManager
         super.init()
         setupStatusItem()
         service.delegate = self
