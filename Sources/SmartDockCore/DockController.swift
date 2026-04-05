@@ -4,7 +4,10 @@ import Foundation
 
 /// Managing Dock preferences: autohide, position, icon size, magnification.
 @MainActor
-public protocol DockControlling {
+public protocol DockControlling: AnyObject {
+    /// Called when system dock settings change externally (e.g. via System Settings).
+    var onExternalConfigChanged: ((DockConfiguration) -> Void)? { get set }
+
     /// Current autohide state
     func isAutoHideEnabled() -> Bool
 
@@ -19,6 +22,12 @@ public protocol DockControlling {
 
     /// Read the current system dock configuration.
     func readSystemConfig() -> DockConfiguration
+
+    /// Start observing system dock preference changes via KVO.
+    func startObservingSystemChanges()
+
+    /// Stop observing system dock preference changes.
+    func stopObservingSystemChanges()
 }
 
 // MARK: - Implementation
@@ -30,6 +39,15 @@ public protocol DockControlling {
 /// the others from being applied. This avoids the need for `killall Dock`
 /// entirely — System Events tells the Dock to update itself gracefully.
 public final class DockController: DockControlling {
+
+    public var onExternalConfigChanged: ((DockConfiguration) -> Void)?
+
+    /// Last config we applied via AppleScript — used to distinguish our own
+    /// changes from external ones in KVO callbacks.
+    private var lastAppliedConfig: DockConfiguration?
+
+    private var prefsObserver: DockPrefsObserver?
+    private var pendingExternalCheck: DispatchWorkItem?
 
     public init() {}
 
@@ -115,7 +133,60 @@ public final class DockController: DockControlling {
             Log.info("Dock config applied: \(changed.joined(separator: " "))\(status)")
         }
 
+        // Snapshot what we applied — KVO will fire for our own changes,
+        // and we compare against this to filter them out.
+        lastAppliedConfig = config
+
         return allOk
+    }
+
+    // MARK: - System Change Observation
+
+    public func startObservingSystemChanges() {
+        stopObservingSystemChanges()
+
+        lastAppliedConfig = readSystemConfig()
+
+        let observer = DockPrefsObserver()
+        observer.onChange = { [weak self] in
+            self?.handleExternalChange()
+        }
+        observer.start()
+        prefsObserver = observer
+        Log.info("Dock system preferences observer started")
+    }
+
+    public func stopObservingSystemChanges() {
+        pendingExternalCheck?.cancel()
+        pendingExternalCheck = nil
+        prefsObserver?.stop()
+        prefsObserver = nil
+    }
+
+    /// Debounced handler for KVO callbacks. System Settings may change
+    /// multiple keys at once — wait 0.5s after the last change before reading.
+    private func handleExternalChange() {
+        pendingExternalCheck?.cancel()
+
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingExternalCheck = nil
+
+            let systemConfig = self.readSystemConfig()
+
+            // If the system config matches what we last applied (within tolerance),
+            // this is our own change echoing back — ignore it.
+            if let lastApplied = self.lastAppliedConfig,
+               systemConfig.approximatelyEquals(lastApplied) {
+                return
+            }
+
+            self.lastAppliedConfig = systemConfig
+            Log.info("External dock preferences change detected")
+            self.onExternalConfigChanged?(systemConfig)
+        }
+        pendingExternalCheck = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
     }
 
     // MARK: - Per-Property AppleScript
@@ -182,6 +253,65 @@ public final class DockController: DockControlling {
             return false
         }
         return true
+    }
+}
+
+// MARK: - Dock Preferences KVO Observer
+
+/// Observes `com.apple.dock` UserDefaults keys via KVO.
+/// When any process (System Settings, `defaults write`) changes dock preferences,
+/// `cfprefsd` delivers KVO callbacks. This is a small NSObject helper so that
+/// DockController itself doesn't need to inherit from NSObject.
+@MainActor
+private final class DockPrefsObserver: NSObject {
+
+    var onChange: (() -> Void)?
+
+    /// Accessed from deinit (nonisolated) — must be nonisolated(unsafe).
+    private nonisolated(unsafe) var observedDefaults: UserDefaults?
+    private let watchedKeys = [
+        "autohide", "orientation", "tilesize",
+        "magnification", "largesize",
+    ]
+
+    /// Thread-safe flag — accessed from deinit (nonisolated) and @MainActor methods.
+    private nonisolated(unsafe) var isObserving = false
+
+    func start() {
+        guard let defaults = UserDefaults(suiteName: "com.apple.dock") else { return }
+        observedDefaults = defaults
+        for key in watchedKeys {
+            defaults.addObserver(self, forKeyPath: key, options: [.new], context: nil)
+        }
+        isObserving = true
+    }
+
+    func stop() {
+        guard isObserving, let defaults = observedDefaults else { return }
+        isObserving = false
+        for key in watchedKeys {
+            defaults.removeObserver(self, forKeyPath: key)
+        }
+        observedDefaults = nil
+    }
+
+    override nonisolated func observeValue(
+        forKeyPath keyPath: String?,
+        of object: Any?,
+        change: [NSKeyValueChangeKey: Any]?,
+        context: UnsafeMutableRawPointer?
+    ) {
+        DispatchQueue.main.async { @MainActor [weak self] in
+            self?.onChange?()
+        }
+    }
+
+    deinit {
+        // Safety: remove observers if stop() wasn't called.
+        guard isObserving, let defaults = observedDefaults else { return }
+        for key in watchedKeys {
+            defaults.removeObserver(self, forKeyPath: key)
+        }
     }
 }
 

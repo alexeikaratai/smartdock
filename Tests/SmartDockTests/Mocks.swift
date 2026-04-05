@@ -38,12 +38,16 @@ final class MockDisplayMonitor: DisplayMonitoring {
 
 @MainActor
 final class MockDockController: DockControlling {
+    var onExternalConfigChanged: ((DockConfiguration) -> Void)?
+
     var autoHideState: Bool = false
     var setAutoHideCallCount = 0
     var lastAutoHideValue: Bool?
     var applyCallCount = 0
     var lastAppliedConfig: DockConfiguration?
     var mockSystemConfig = DockConfiguration()
+    var startObservingCallCount = 0
+    var stopObservingCallCount = 0
 
     func isAutoHideEnabled() -> Bool {
         autoHideState
@@ -67,6 +71,19 @@ final class MockDockController: DockControlling {
 
     func readSystemConfig() -> DockConfiguration {
         mockSystemConfig
+    }
+
+    func startObservingSystemChanges() {
+        startObservingCallCount += 1
+    }
+
+    func stopObservingSystemChanges() {
+        stopObservingCallCount += 1
+    }
+
+    /// Simulates an external dock settings change (e.g. via System Settings).
+    func simulateExternalDockChange(_ config: DockConfiguration) {
+        onExternalConfigChanged?(config)
     }
 }
 

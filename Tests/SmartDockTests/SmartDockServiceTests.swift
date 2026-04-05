@@ -249,6 +249,93 @@ final class SmartDockServiceTests: XCTestCase {
                       "After rapid changes ending with no external, should be builtin config")
     }
 
+    // MARK: - External Dock Change (System Sync)
+
+    func testExternalDockChangeUpdatesActiveProfile() {
+        let prefs = UserPreferences.shared
+        prefs.builtinConfig = DockConfiguration(autohide: true, position: .bottom)
+        prefs.syncFromSystemEnabled = true
+        monitor.mockExternalCount = 0
+        service.start()
+
+        let newConfig = DockConfiguration(autohide: false, position: .left)
+        dock.simulateExternalDockChange(newConfig)
+
+        XCTAssertEqual(prefs.builtinConfig.position, .left,
+                       "External change should update active (built-in) profile")
+        XCTAssertFalse(prefs.builtinConfig.autohide)
+    }
+
+    func testExternalDockChangeUpdatesExternalProfile() {
+        let prefs = UserPreferences.shared
+        prefs.externalConfig = DockConfiguration(autohide: false, position: .bottom)
+        prefs.syncFromSystemEnabled = true
+        monitor.mockExternalCount = 1
+        service.start()
+
+        let newConfig = DockConfiguration(autohide: true, position: .right)
+        dock.simulateExternalDockChange(newConfig)
+
+        XCTAssertEqual(prefs.externalConfig.position, .right,
+                       "External change should update active (external) profile")
+        XCTAssertTrue(prefs.externalConfig.autohide)
+    }
+
+    func testExternalDockChangeIgnoredWhenDisabled() {
+        let prefs = UserPreferences.shared
+        prefs.builtinConfig = DockConfiguration(autohide: true, position: .bottom)
+        monitor.mockExternalCount = 0
+        service.start()
+        service.stop()
+
+        let newConfig = DockConfiguration(autohide: false, position: .left)
+        dock.simulateExternalDockChange(newConfig)
+
+        XCTAssertEqual(prefs.builtinConfig.position, .bottom,
+                       "External change should be ignored when service is disabled")
+    }
+
+    func testExternalDockChangeIgnoredWhenSyncDisabled() {
+        let prefs = UserPreferences.shared
+        prefs.builtinConfig = DockConfiguration(autohide: true, position: .bottom)
+        prefs.syncFromSystemEnabled = false
+        monitor.mockExternalCount = 0
+        service.start()
+
+        let newConfig = DockConfiguration(autohide: false, position: .left)
+        dock.simulateExternalDockChange(newConfig)
+
+        XCTAssertEqual(prefs.builtinConfig.position, .bottom,
+                       "External change should be ignored when sync is disabled")
+    }
+
+    func testExternalDockChangeNotifiesDelegate() {
+        let prefs = UserPreferences.shared
+        prefs.syncFromSystemEnabled = true
+        monitor.mockExternalCount = 0
+        service.start()
+        let countBefore = delegate.stateUpdates.count
+
+        let newConfig = DockConfiguration(autohide: false, position: .left)
+        dock.simulateExternalDockChange(newConfig)
+
+        XCTAssertEqual(delegate.stateUpdates.count, countBefore + 1,
+                       "External change should notify delegate")
+    }
+
+    func testStartBeginsObservingSystemChanges() {
+        service.start()
+        XCTAssertEqual(dock.startObservingCallCount, 1)
+    }
+
+    func testStopEndsObservingSystemChanges() {
+        service.start()
+        service.stop()
+        XCTAssertEqual(dock.stopObservingCallCount, 1)
+    }
+
+    // MARK: - Refresh
+
     func testRefreshAppliesCorrectConfig() {
         let prefs = UserPreferences.shared
         prefs.externalConfig = DockConfiguration(autohide: false)
