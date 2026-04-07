@@ -10,6 +10,18 @@ final class SmartDockServiceTests: XCTestCase {
     private var service: SmartDockService!
 
     override func setUp() async throws {
+        // Reset all SmartDock preferences so parallel tests don't leak state.
+        let defaults = UserDefaults.standard
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("com.smartdock") {
+            defaults.removeObject(forKey: key)
+        }
+
+        // Set explicit defaults that tests rely on.
+        let prefs = UserPreferences.shared
+        prefs.externalConfig = DockConfiguration(autohide: false)
+        prefs.builtinConfig = DockConfiguration(autohide: true)
+        prefs.syncFromSystemEnabled = true
+
         monitor = MockDisplayMonitor()
         dock = MockDockController()
         delegate = MockServiceDelegate()
@@ -207,6 +219,8 @@ final class SmartDockServiceTests: XCTestCase {
     }
 
     func testDisplayChangePreservesCorrectMode() {
+        let prefs = UserPreferences.shared
+        prefs.externalConfig = DockConfiguration(autohide: false)
         monitor.mockExternalCount = 2
         service.start()
 

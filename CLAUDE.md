@@ -6,7 +6,7 @@ Project instructions for Claude Code. Follow these exactly.
 
 ```bash
 make build          # swift build -c release
-make test           # swift test --parallel
+make test           # swift test (sequential — parallel is flaky due to shared UserPreferences singleton)
 make app            # build + icon + .app bundle (ad-hoc signed)
 make run            # build + bundle + open
 make clean          # remove build artifacts
@@ -20,7 +20,7 @@ swift test --filter SmartDockTests.SmartDockServiceTests/testStartBeginsMonitori
 ## Version & Release
 
 ```bash
-make bump V=1.6.1   # update version in Makefile + Info.plist, increment build number
+make bump V=1.7.0   # update version in Makefile + Info.plist, increment build number
 make release        # build + zip + gh release create (working tree must be clean)
 make install        # copy .app to /Applications
 make fix            # xattr -cr + codesign (fix Gatekeeper quarantine)
@@ -58,7 +58,7 @@ Swift Package (swift-tools-version 6.2), two targets: **SmartDockCore** (testabl
 
 | File | Responsibility |
 |---|---|
-| `DockConfiguration.swift` | `DockConfiguration` value type (position, autohide, icon size as 0.0–1.0 scale, magnification). `HotkeyBinding` value type (keyCode + modifiers + displayName). `UserPreferences` persists per-mode configs via UserDefaults with migration from old pixel format. Also stores: `notificationsEnabled`, `syncFromSystemEnabled`, hotkey bindings. `DockPosition` enum. First-launch: `initializeDefaultsIfNeeded(from:)` reads system config, sets external=autohide off, builtin=autohide on. |
+| `DockConfiguration.swift` | `DockConfiguration` value type (position, autohide, icon size as 0.0–1.0 scale, magnification). `HotkeyBinding` value type (keyCode + modifiers + displayName). `UserPreferences` persists per-mode configs via UserDefaults with migration from old pixel format. Also stores: `notificationsEnabled`, `syncFromSystemEnabled`, `hasSeenOnboarding`, `hasPromptedAccessibility`, hotkey bindings. `DockPosition` enum. First-launch: `initializeDefaultsIfNeeded(from:)` reads system config, sets external=autohide off, builtin=autohide on. |
 | `DisplayMonitor.swift` | Detects external monitor connect/disconnect via `CGDisplayRegisterReconfigurationCallback`. Debounces (1s settle delay). Filters by add/remove/enable/disable CG flags only. Also observes `didWakeNotification`, `screensDidWakeNotification` (2s delay re-check). No space change observer — AppleScript triggers space notifications causing feedback loops. Conforms to `DisplayMonitoring`. |
 | `DockController.swift` | Applies `DockConfiguration` via `NSAppleScript` → System Events. Diff-based: reads current system config via fresh `UserDefaults(suiteName: "com.apple.dock")` and only applies properties that actually differ. Observes external dock preference changes via KVO on `UserDefaults(suiteName: "com.apple.dock")` using private `DockPrefsObserver` helper (NSObject for KVO). Debounces 0.5s, compares with `lastAppliedConfig` to filter own changes. Conforms to `DockControlling`. |
 | `SmartDockService.swift` | Orchestrator: reads `UserPreferences`, applies appropriate config based on display state. Handles external dock changes (System Settings sync): updates active profile when system config diverges from `lastAppliedConfig`. Has `SmartDockServiceDelegate`. Posts `Notification.Name.smartDockStateDidChange` only when state actually changes. |
@@ -68,13 +68,15 @@ Swift Package (swift-tools-version 6.2), two targets: **SmartDockCore** (testabl
 
 | File | Responsibility |
 |---|---|
-| `App.swift` | `@main` AppDelegate with manual `NSApplication` run loop (no storyboards). Checks Accessibility on launch. Creates `NotificationManager` and `HotkeyManager`. `applicationShouldHandleReopen` opens Settings when re-launched from /Applications. |
+| `App.swift` | `@main` AppDelegate with manual `NSApplication` run loop (no storyboards). Prompts Accessibility on first launch only (avoids re-prompting after Homebrew updates). Creates `NotificationManager`, `HotkeyManager`, shows `OnboardingWindow` on first launch. `applicationShouldHandleReopen` opens Settings when re-launched from /Applications. |
 | `StatusBarController.swift` | Menu bar icon (`dock.rectangle` SF Symbol) + dropdown menu. Implements `NSMenuDelegate`, `SmartDockServiceDelegate`. Exposes `showSettings()` for re-open handling. Passes `HotkeyManager` to `SettingsWindow`. |
 | `SettingsWindow.swift` | Glass NSWindow (`NSVisualEffectView`), segmented control for External/Built-in modes. Position icon picker (Rectangle-style icons), sliders, autohide, magnification. **Apply button** — changes are not applied until user clicks Apply (or Enter). Dirty state tracking via `markDirty()`. Auto-saves before tab switch and display change. General: Launch at Login, Notify on Profile Switch, Auto-import System changes, Sync from System, Quit. Shortcuts: hotkey recording for Toggle Autohide and Refresh Now. Observes `smartDockStateDidChange` to refresh UI. |
 | `NotificationManager.swift` | Posts macOS banner notifications (`UNUserNotificationCenter`) on profile switch. Observes `.smartDockStateDidChange`. Cooldown 3s. Lazy authorization request. `UNUserNotificationCenterDelegate` for foreground banners. |
 | `HotkeyManager.swift` | Global keyboard shortcuts via `NSEvent.addGlobalMonitorForEvents` + `addLocalMonitorForEvents`. `HotkeyAction` enum (`.toggleAutohide`, `.refreshNow`). `isRecording` flag pauses dispatch during hotkey recording. |
+| `OnboardingWindow.swift` | Welcome screen shown once on first launch. Glass window with app description, feature list, "Get Started" button. Sets `hasSeenOnboarding` on close. |
+| `AboutWindow.swift` | About window with version, description, GitHub/Changelog links. Opened from menu bar dropdown. |
 | `LaunchAtLogin.swift` | `SMAppService.mainApp` wrapper. |
-| `AccessibilityChecker.swift` | `AXIsProcessTrusted()` check + `AXIsProcessTrustedWithOptions` prompt. |
+| `AccessibilityChecker.swift` | `AXIsProcessTrusted()` check. Prompts system dialog only on first launch (`hasPromptedAccessibility` flag). Accessibility needed only for global hotkeys — core dock switching works without it. |
 
 ### Tests (`Tests/SmartDockTests/`)
 
@@ -218,7 +220,8 @@ Swift Package (swift-tools-version 6.2), two targets: **SmartDockCore** (testabl
 - Always use protocol-based dependency injection — never instantiate `DisplayMonitor` or `DockController` directly in tests.
 - Mock classes live in `Tests/SmartDockTests/Mocks.swift`.
 - `MockDisplayMonitor.simulateDisplayChange(externalCount:)` triggers the callback chain.
-- Tests use `swift test --parallel` — ensure tests are independent with no shared mutable state.
+- Tests use `swift test` (sequential) — `UserPreferences.shared` singleton causes flaky failures with `--parallel`.
+- `setUp` resets all `com.smartdock.*` UserDefaults keys and sets explicit defaults (`externalConfig`, `builtinConfig`, `syncFromSystemEnabled`).
 
 ### Logging
 - Use `Log.info()`, `Log.error()`, `Log.displayChange()` — never `print()`. Categories: `general`, `display`.
@@ -230,7 +233,7 @@ Swift Package (swift-tools-version 6.2), two targets: **SmartDockCore** (testabl
 - `com.apple.security.scripting-targets` scoped to `com.apple.systemevents.dock.preferences`
 - Sandbox: **off** (`com.apple.security.app-sandbox = false`)
 - `LSUIElement = true` in Info.plist (no Dock icon)
-- Accessibility: `AXIsProcessTrusted()` — prompt once on first launch, don't re-prompt if already granted
+- Accessibility: `AXIsProcessTrusted()` — prompt only on first launch (`hasPromptedAccessibility` flag). Ad-hoc signing resets macOS Accessibility permission on each rebuild/Homebrew update, so re-prompting would annoy users. Accessibility is needed only for global hotkeys — core dock switching (AppleScript) works without it.
 
 ## File Structure
 
@@ -244,12 +247,14 @@ Sources/
 │   └── Log.swift                 # Logger wrapper
 └── SmartDock/
     ├── App.swift                 # @main, manual NSApplication run loop
-    ├── StatusBarController.swift # Menu bar icon + dropdown
+    ├── StatusBarController.swift # Menu bar icon + dropdown + About menu item
     ├── SettingsWindow.swift      # Glass settings (Auto Layout, programmatic)
+    ├── OnboardingWindow.swift    # First-launch welcome screen
+    ├── AboutWindow.swift         # About window with links
     ├── NotificationManager.swift # macOS banner notifications on profile switch
     ├── HotkeyManager.swift       # Global keyboard shortcuts
     ├── LaunchAtLogin.swift       # SMAppService wrapper
-    └── AccessibilityChecker.swift
+    └── AccessibilityChecker.swift # First-launch-only Accessibility prompt
 Tests/SmartDockTests/
     ├── Mocks.swift               # MockDisplayMonitor, MockDockController, MockServiceDelegate
     ├── SmartDockServiceTests.swift
