@@ -10,6 +10,7 @@ permissions:
 
 env:
   XCODE_PATH: /Applications/Xcode_26.3.app
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
 
