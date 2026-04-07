@@ -3,7 +3,7 @@
 # === Config ===
 APP_NAME     := SmartDock
 BUNDLE_ID    := com.smartdock.app
-VERSION      := 1.6.1
+VERSION      := 1.7.0
 BUILD_DIR    := .build/release
 APP_DIR      := build/$(APP_NAME).app
 CONTENTS     := $(APP_DIR)/Contents
@@ -20,7 +20,7 @@ build:
 
 test:
 	@echo "🧪 Running tests..."
-	swift test --parallel
+	swift test
 
 # === App Bundle ===
 
@@ -96,11 +96,11 @@ notarize: dmg
 	@echo "✅ Notarized and stapled"
 
 # === Version Bump ===
-# Usage: make bump V=1.6.1
+# Usage: make bump V=1.7.0
 
 bump:
 ifndef V
-	$(error Usage: make bump V=1.6.1)
+	$(error Usage: make bump V=1.7.0)
 endif
 	@echo "📌 Bumping version to $(V)..."
 	sed -i '' 's/^VERSION      := .*/VERSION      := $(V)/' Makefile

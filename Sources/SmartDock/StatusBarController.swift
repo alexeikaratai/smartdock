@@ -10,6 +10,7 @@ final class StatusBarController: NSObject {
     private let service: SmartDockService
     private let hotkeyManager: HotkeyManager
     private lazy var settingsWindow = SettingsWindow(service: service, hotkeyManager: hotkeyManager)
+    private lazy var aboutWindow = AboutWindow()
 
     // Cached icons: [position][visible/hidden]
     private lazy var iconCache: [DockPosition: [Bool: NSImage]] = {
@@ -102,6 +103,15 @@ final class StatusBarController: NSObject {
         settingsItem.target = self
         menu.addItem(settingsItem)
 
+        // About
+        let aboutItem = NSMenuItem(
+            title: "About SmartDock",
+            action: #selector(openAbout),
+            keyEquivalent: ""
+        )
+        aboutItem.target = self
+        menu.addItem(aboutItem)
+
         menu.addItem(.separator())
 
         // Exit
@@ -137,6 +147,10 @@ final class StatusBarController: NSObject {
 
     @objc private func openSettings() {
         showSettings()
+    }
+
+    @objc private func openAbout() {
+        aboutWindow.show()
     }
 
     @objc private func quit() {

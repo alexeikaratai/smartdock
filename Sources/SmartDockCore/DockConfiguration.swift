@@ -160,6 +160,18 @@ public final class UserPreferences {
         set { defaults.set(newValue, forKey: "\(prefix).syncFromSystem") }
     }
 
+    // MARK: - Onboarding
+
+    public var hasSeenOnboarding: Bool {
+        get { defaults.bool(forKey: "\(prefix).hasSeenOnboarding") }
+        set { defaults.set(newValue, forKey: "\(prefix).hasSeenOnboarding") }
+    }
+
+    public var hasPromptedAccessibility: Bool {
+        get { defaults.bool(forKey: "\(prefix).hasPromptedAccessibility") }
+        set { defaults.set(newValue, forKey: "\(prefix).hasPromptedAccessibility") }
+    }
+
     // MARK: - Hotkeys
 
     public func hotkey(for action: String) -> HotkeyBinding? {

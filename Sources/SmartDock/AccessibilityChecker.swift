@@ -1,56 +1,31 @@
 import Cocoa
 import SmartDockCore
 
-/// Checks and prompts for Accessibility permission.
-/// SmartDock needs this to control Dock visibility via System Events (AppleScript).
+/// Checks Accessibility permission status.
+/// Accessibility is needed only for global hotkeys (`NSEvent.addGlobalMonitorForEvents`).
+/// Core functionality (dock switching via AppleScript) works without it.
 @MainActor
 enum AccessibilityChecker {
 
     // MARK: - Public
 
-    /// Check permission and prompt if needed.
-    /// Returns true if permission is granted.
-    @discardableResult
-    static func checkAndPromptIfNeeded() -> Bool {
-        // Already granted — nothing to do
-        if AXIsProcessTrusted() { return true }
+    /// Whether Accessibility permission is currently granted.
+    static var isGranted: Bool {
+        AXIsProcessTrusted()
+    }
 
-        Log.info("Accessibility permission not granted — prompting user")
+    /// Prompt the system trust dialog if permission is not granted.
+    /// Only called on first launch — avoids re-prompting after Homebrew updates
+    /// where ad-hoc re-signing resets the permission.
+    static func promptIfFirstLaunch() {
+        guard !UserPreferences.shared.hasPromptedAccessibility else { return }
+        guard !AXIsProcessTrusted() else { return }
 
-        // Trigger system trust dialog (adds SmartDock to the list with a checkbox).
-        // Only called when AXIsProcessTrusted() returned false above.
+        UserPreferences.shared.hasPromptedAccessibility = true
+        Log.info("First launch — prompting for Accessibility permission")
+
         _ = AXIsProcessTrustedWithOptions(
             ["AXTrustedCheckOptionPrompt": true] as CFDictionary
         )
-
-        showPermissionAlert()
-        return false
-    }
-
-    // MARK: - Private
-
-    private static func showPermissionAlert() {
-        let alert = NSAlert()
-        alert.messageText = "Accessibility Permission Required"
-        alert.informativeText = """
-            SmartDock needs Accessibility permission to control \
-            the Dock when monitors are connected or disconnected.
-
-            Enable SmartDock in System Settings → Privacy & Security → Accessibility, \
-            then the app will start working automatically.
-            """
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "Open System Settings")
-        alert.addButton(withTitle: "OK")
-
-        if alert.runModal() == .alertFirstButtonReturn {
-            openAccessibilitySettings()
-        }
-    }
-
-    private static func openAccessibilitySettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-            NSWorkspace.shared.open(url)
-        }
     }
 }

@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let service = SmartDockService()
     private var notificationManager: NotificationManager!
     private var hotkeyManager: HotkeyManager!
+    private var onboardingWindow: OnboardingWindow?
 
     /// Explicit entry point for a menu bar app without storyboard/nib.
     /// The default @main behavior calls NSApplicationMain which expects
@@ -31,8 +32,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Migrate old pixel-based preferences to scale format
         UserPreferences.shared.migrateIfNeeded()
 
-        // Check Accessibility permission before starting
-        AccessibilityChecker.checkAndPromptIfNeeded()
+        // Prompt for Accessibility on first launch only.
+        // Subsequent launches (including after Homebrew updates) won't re-prompt.
+        // Accessibility is needed only for global hotkeys — core dock switching works without it.
+        AccessibilityChecker.promptIfFirstLaunch()
 
         // Hotkey manager: global keyboard shortcuts
         hotkeyManager = HotkeyManager(service: service)
@@ -45,6 +48,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UNUserNotificationCenter.current().delegate = notificationManager
 
         service.start()
+
+        // Show onboarding on first launch
+        if !UserPreferences.shared.hasSeenOnboarding {
+            onboardingWindow = OnboardingWindow()
+            onboardingWindow?.onComplete = { [weak self] in
+                self?.statusBarController.showSettings()
+                self?.onboardingWindow = nil
+            }
+            onboardingWindow?.show()
+        }
 
         Log.info("SmartDock launched (v\(Bundle.main.shortVersion))")
     }
