@@ -20,7 +20,7 @@ swift test --filter SmartDockTests.SmartDockServiceTests/testStartBeginsMonitori
 ## Version & Release
 
 ```bash
-make bump V=1.6.0   # update version in Makefile + Info.plist, increment build number
+make bump V=1.6.1   # update version in Makefile + Info.plist, increment build number
 make release        # build + zip + gh release create (working tree must be clean)
 make install        # copy .app to /Applications
 make fix            # xattr -cr + codesign (fix Gatekeeper quarantine)
@@ -29,6 +29,26 @@ make fix            # xattr -cr + codesign (fix Gatekeeper quarantine)
 Version is defined in two places — keep them in sync (use `make bump`):
 - `Makefile` line 6: `VERSION := x.y.z`
 - `Resources/Info.plist`: `CFBundleShortVersionString` + `CFBundleVersion` (build number)
+
+## CI/CD
+
+Two GitHub Actions workflows in `.github/workflows/`:
+
+**`ci.yml`** — runs on push to `main`/`dev` and PRs to `main`:
+- Concurrency group per branch — cancels in-progress runs on new push
+- SPM cache (`actions/cache@v4` on `.build` dir)
+- `swift test --parallel` + `swift build -c release`
+
+**`release.yml`** — runs on `v*` tag push. Four jobs in a pipeline:
+```
+🧪 Test  →  🔨 Build  →  🎉 Release  →  🍺 Homebrew
+```
+- **Test**: runs `swift test --parallel`
+- **Build**: bumps version in Makefile/Info.plist, runs `make app`, uploads zip as artifact
+- **Release**: downloads artifact, creates GitHub Release with `gh release create`
+- **Homebrew**: computes sha256, updates Cask + Formula in `alexeikaratai/homebrew-tap`
+
+Xcode version is set via `env.XCODE_PATH` at workflow level — single place to update.
 
 ## Architecture
 

@@ -115,13 +115,7 @@ public final class SmartDockService {
         }
 
         currentConfig = config
-
-        delegate?.serviceDidUpdateState(self, hasExternal: hasExternalDisplay)
-        NotificationCenter.default.post(
-            name: .smartDockStateDidChange,
-            object: self,
-            userInfo: [SmartDockService.hasExternalKey: hasExternalDisplay]
-        )
+        notifyStateChanged()
     }
 
     private func applyCurrentState() {
@@ -149,13 +143,16 @@ public final class SmartDockService {
 
         // Only notify observers when state actually changed.
         if config != previousConfig || external != previousExternal {
-            delegate?.serviceDidUpdateState(self, hasExternal: external)
-
-            NotificationCenter.default.post(
-                name: .smartDockStateDidChange,
-                object: self,
-                userInfo: [SmartDockService.hasExternalKey: external]
-            )
+            notifyStateChanged()
         }
+    }
+
+    private func notifyStateChanged() {
+        delegate?.serviceDidUpdateState(self, hasExternal: hasExternalDisplay)
+        NotificationCenter.default.post(
+            name: .smartDockStateDidChange,
+            object: self,
+            userInfo: [SmartDockService.hasExternalKey: hasExternalDisplay]
+        )
     }
 }
