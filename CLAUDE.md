@@ -20,7 +20,7 @@ swift test --filter SmartDockTests.SmartDockServiceTests/testStartBeginsMonitori
 ## Version & Release
 
 ```bash
-make bump V=1.7.2   # update version in Makefile + Info.plist, increment build number
+make bump V=1.7.3   # update version in Makefile + Info.plist, increment build number
 make release        # build + zip + gh release create (working tree must be clean)
 make install        # copy .app to /Applications
 make fix            # xattr -cr + codesign (fix Gatekeeper quarantine)
@@ -36,14 +36,14 @@ Two GitHub Actions workflows in `.github/workflows/`:
 
 **`ci.yml`** — runs on push to `main`/`dev` and PRs to `main`:
 - Concurrency group per branch — cancels in-progress runs on new push
-- SPM cache (`actions/cache@v4` on `.build` dir)
-- `swift test --parallel` + `swift build -c release`
+- SPM cache (`actions/cache@v5` on `.build` dir)
+- `swift test` + `swift build -c release`
 
 **`release.yml`** — runs on `v*` tag push. Four jobs in a pipeline:
 ```
 🧪 Test  →  🔨 Build  →  🎉 Release  →  🍺 Homebrew
 ```
-- **Test**: runs `swift test --parallel`
+- **Test**: runs `swift test`
 - **Build**: bumps version in Makefile/Info.plist, runs `make app`, uploads zip as artifact
 - **Release**: downloads artifact, creates GitHub Release with `gh release create`
 - **Homebrew**: computes sha256, updates Cask + Formula in `alexeikaratai/homebrew-tap`

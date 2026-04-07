@@ -97,7 +97,7 @@ final class AboutWindow: NSObject {
         descLabel.textColor = .secondaryLabelColor
         descLabel.alignment = .center
         descLabel.maximumNumberOfLines = 0
-        descLabel.preferredMaxLayoutWidth = 300
+        descLabel.lineBreakMode = .byWordWrapping
         container.addSubview(descLabel)
 
         // Link buttons
@@ -108,7 +108,7 @@ final class AboutWindow: NSObject {
         container.addSubview(changelogButton)
 
         // Footer
-        let footerLabel = makeLabel(text: "Made with \u{2764} in Kazakhstan", font: .systemFont(ofSize: 10))
+        let footerLabel = makeLabel(text: "Made with \u{2764} by Alex Karatai", font: .systemFont(ofSize: 10))
         footerLabel.textColor = .tertiaryLabelColor
         footerLabel.alignment = .center
         container.addSubview(footerLabel)
