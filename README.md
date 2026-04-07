@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.7.0-blue?style=flat-square" alt="Version 1.7.0"/>
+  <img src="https://img.shields.io/badge/version-1.7.1-blue?style=flat-square" alt="Version 1.7.1"/>
   <img src="https://img.shields.io/badge/macOS-14.0%2B-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS 14+"/>
   <img src="https://img.shields.io/badge/Swift-6.2-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 6.2"/>
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License"/>
@@ -28,10 +28,13 @@ SmartDock lives in your menu bar and automatically switches Dock configuration w
 | 📐 | **Icon size & magnification** | Independent size sliders for each mode |
 | 👁️ | **Autohide toggle** | Show/hide Dock per mode |
 | ⚡ | **Instant detection** | Event-driven via `CGDisplayRegisterReconfigurationCallback` — no polling |
+| 🔄 | **System sync** | Auto-imports Dock changes from System Settings via KVO |
+| 🔔 | **Notifications** | macOS banner when profile switches (optional) |
+| ⌨️ | **Global hotkeys** | Customizable shortcuts for Toggle Autohide and Refresh |
 | 🎨 | **Glass UI** | Translucent settings window with `NSVisualEffectView` |
-| 🔄 | **Sync from System** | One-click import of current Dock settings |
 | 🚀 | **Launch at Login** | Native `SMAppService` integration |
 | 🛡️ | **Smooth transitions** | Per-property AppleScript — no Dock restart needed |
+| 👋 | **Onboarding** | Welcome screen on first launch |
 
 ## 📸 How It Works
 
@@ -98,17 +101,21 @@ make test
 ```
 Sources/
 ├── SmartDockCore/                    # Testable business logic
-│   ├── DockConfiguration.swift       # DockConfiguration model + UserPreferences
+│   ├── DockConfiguration.swift       # DockConfiguration + HotkeyBinding + UserPreferences
 │   ├── DisplayMonitor.swift          # CG callback + debounce for display changes
-│   ├── DockController.swift          # Per-property AppleScript via System Events
+│   ├── DockController.swift          # AppleScript Dock control + KVO system sync
 │   ├── SmartDockService.swift        # Orchestrator: display state → dock config
 │   └── Log.swift                     # Logger API (macOS 14+)
 └── SmartDock/                        # AppKit UI layer
     ├── App.swift                     # @main entry, manual NSApplication run loop
     ├── StatusBarController.swift     # Menu bar icon & dropdown
     ├── SettingsWindow.swift          # Glass settings window (Auto Layout)
+    ├── OnboardingWindow.swift        # First-launch welcome screen
+    ├── AboutWindow.swift             # About window with links
+    ├── NotificationManager.swift     # macOS banner notifications
+    ├── HotkeyManager.swift           # Global keyboard shortcuts
     ├── LaunchAtLogin.swift           # SMAppService wrapper
-    └── AccessibilityChecker.swift    # Permission check & prompt
+    └── AccessibilityChecker.swift    # First-launch Accessibility prompt
 ```
 
 ### Key Design Decisions
@@ -122,11 +129,13 @@ Sources/
 | **Protocol-based DI** | `DisplayMonitoring` / `DockControlling` protocols enable mock-based testing |
 | **Event-driven detection** | `CGDisplayRegisterReconfigurationCallback` — no timers, no polling |
 | **Diff-based apply** | Only runs AppleScript for properties that actually changed — no dock flash |
+| **KVO system sync** | Observes `com.apple.dock` UserDefaults — auto-imports changes from System Settings |
+| **Hotkey caching** | Bindings cached in memory — no UserDefaults reads on every keystroke |
 | **Wake recovery** | Re-applies config after sleep/wake to fix macOS resetting dock state |
 
 ## 🔐 Permissions
 
-On first launch, SmartDock checks for **Accessibility** permission and shows a dialog linking to **System Settings → Privacy & Security → Accessibility**. This is required for AppleScript control of Dock preferences via System Events.
+On first launch, SmartDock prompts for **Accessibility** permission (**System Settings → Privacy & Security → Accessibility**). This is needed for global keyboard shortcuts. Core dock switching works without it via Automation permission (granted automatically for AppleScript → System Events).
 
 ## 🛠️ Requirements
 
