@@ -56,6 +56,18 @@ final class SettingsWindow: NSObject {
     private var recordingMonitor: Any?
     private var recordingAction: HotkeyAction?
 
+    // Cached position icons: [position][selected] — avoids redrawing bezier paths on every click
+    private lazy var positionIconCache: [DockPosition: [Bool: NSImage]] = {
+        var cache: [DockPosition: [Bool: NSImage]] = [:]
+        for position in DockPosition.allCases {
+            cache[position] = [
+                true: drawPositionIcon(for: position, selected: true),
+                false: drawPositionIcon(for: position, selected: false),
+            ]
+        }
+        return cache
+    }()
+
     // MARK: - Init
 
     init(service: SmartDockService, hotkeyManager: HotkeyManager) {
@@ -492,7 +504,7 @@ final class SettingsWindow: NSObject {
         // Icon
         let imageView = NSImageView()
         imageView.translatesAutoresizingMaskIntoConstraints = false
-        imageView.image = drawPositionIcon(for: position, selected: false)
+        imageView.image = positionIconCache[position]?[false]
         imageView.imageAlignment = .alignCenter
         btn.addSubview(imageView)
         positionImageViews[position] = imageView
@@ -527,7 +539,7 @@ final class SettingsWindow: NSObject {
             btn.layer?.backgroundColor = isSelected
                 ? NSColor.controlAccentColor.withAlphaComponent(0.2).cgColor
                 : NSColor.clear.cgColor
-            positionImageViews[position]?.image = drawPositionIcon(for: position, selected: isSelected)
+            positionImageViews[position]?.image = positionIconCache[position]?[isSelected]
             positionLabels[position]?.textColor = isSelected ? .controlAccentColor : .secondaryLabelColor
         }
     }
@@ -714,6 +726,7 @@ final class SettingsWindow: NSObject {
         }
         recordingAction = nil
         hotkeyManager.isRecording = false
+        hotkeyManager.reloadBindings()
         updateHotkeyButtons()
     }
 

@@ -30,6 +30,9 @@ final class HotkeyManager {
     private nonisolated(unsafe) var globalMonitor: Any?
     private nonisolated(unsafe) var localMonitor: Any?
 
+    /// Cached hotkey bindings — avoids UserDefaults reads on every keystroke.
+    private var cachedBindings: [(action: HotkeyAction, binding: HotkeyBinding)] = []
+
     /// When true, monitors skip dispatch — used during hotkey recording in Settings.
     var isRecording = false
 
@@ -48,6 +51,13 @@ final class HotkeyManager {
 
     func start() {
         stop()
+        refreshBindingCache()
+
+        // Only install monitors if at least one hotkey is configured.
+        guard !cachedBindings.isEmpty else {
+            Log.info("Hotkey monitoring skipped — no hotkeys configured")
+            return
+        }
 
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return }
@@ -62,7 +72,19 @@ final class HotkeyManager {
             return event
         }
 
-        Log.info("Hotkey monitoring started")
+        Log.info("Hotkey monitoring started (\(cachedBindings.count) binding(s))")
+    }
+
+    /// Reload cached bindings from UserPreferences and restart monitors if needed.
+    func reloadBindings() {
+        refreshBindingCache()
+
+        // Start/stop monitors based on whether any hotkeys are configured.
+        if !cachedBindings.isEmpty && globalMonitor == nil {
+            start()
+        } else if cachedBindings.isEmpty && globalMonitor != nil {
+            stop()
+        }
     }
 
     func stop() {
@@ -81,14 +103,13 @@ final class HotkeyManager {
     /// Returns true if the event matched a hotkey binding.
     @discardableResult
     private func handleKeyEvent(_ event: NSEvent) -> Bool {
-        guard !isRecording else { return false }
+        guard !isRecording, !cachedBindings.isEmpty else { return false }
 
         // Strip CapsLock and Function flags — only match Cmd/Ctrl/Opt/Shift.
         let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift]).rawValue
         let keyCode = event.keyCode
 
-        for action in HotkeyAction.allCases {
-            guard let binding = prefs.hotkey(for: action.rawValue) else { continue }
+        for (action, binding) in cachedBindings {
             if binding.keyCode == keyCode && binding.modifiers == modifiers {
                 executeAction(action)
                 return true
@@ -96,6 +117,13 @@ final class HotkeyManager {
         }
 
         return false
+    }
+
+    private func refreshBindingCache() {
+        cachedBindings = HotkeyAction.allCases.compactMap { action in
+            guard let binding = prefs.hotkey(for: action.rawValue) else { return nil }
+            return (action, binding)
+        }
     }
 
     private func executeAction(_ action: HotkeyAction) {

@@ -8,71 +8,150 @@ on:
 permissions:
   contents: write
 
+env:
+  XCODE_PATH: /Applications/Xcode_26.3.app
+
 jobs:
-  release:
+
+  # ── Stage 1: Test ────────────────────────────────────────
+
+  test:
+    name: 🧪 Test
     runs-on: macos-15
+
     steps:
-      - uses: actions/checkout@v5
+      - name: 📥 Checkout
+        uses: actions/checkout@v5
 
-      - name: Select Xcode 26.3
-        run: sudo xcode-select -s /Applications/Xcode_26.3.app
+      - name: 🔧 Select Xcode
+        run: sudo xcode-select -s ${{ env.XCODE_PATH }}
 
-      - name: Extract version from tag
+      - name: 📦 Restore SPM cache
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved', 'Package.swift') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - name: 🧪 Run tests
+        run: swift test --parallel
+
+  # ── Stage 2: Build ───────────────────────────────────────
+
+  build:
+    name: 🔨 Build
+    runs-on: macos-15
+    needs: test
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v5
+
+      - name: 🔧 Select Xcode
+        run: sudo xcode-select -s ${{ env.XCODE_PATH }}
+
+      - name: 📦 Restore SPM cache
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved', 'Package.swift') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - name: 🏷️ Extract version
         id: version
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Run tests
-        run: swift test --parallel
-
-      - name: Update version in project files
+      - name: 📌 Update version in project files
         run: |
           VERSION=${{ steps.version.outputs.VERSION }}
           sed -i '' "s/^VERSION      := .*/VERSION      := ${VERSION}/" Makefile
           sed -i '' "/CFBundleShortVersionString/{n;s|<string>.*</string>|<string>${VERSION}</string>|;}" Resources/Info.plist
-          # Increment build number
           BUILD=$(sed -n '/CFBundleVersion/{n;s/.*<string>\(.*\)<\/string>.*/\1/p;}' Resources/Info.plist)
           NEW_BUILD=$(( BUILD + 1 ))
           sed -i '' "/CFBundleVersion/{n;s|<string>.*</string>|<string>${NEW_BUILD}</string>|;}" Resources/Info.plist
+          echo "Version: ${VERSION}, Build: ${NEW_BUILD}"
 
-      - name: Build app bundle
+      - name: 🔨 Build app bundle
         run: make app
 
-      - name: Create release zip
+      - name: 📦 Create release zip
         run: cd build && zip -r SmartDock-${{ steps.version.outputs.VERSION }}.zip SmartDock.app
 
-      - name: Create GitHub Release
+      - name: ⬆️ Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SmartDock-${{ steps.version.outputs.VERSION }}
+          path: build/SmartDock-${{ steps.version.outputs.VERSION }}.zip
+
+  # ── Stage 3: GitHub Release ──────────────────────────────
+
+  release:
+    name: 🎉 Release
+    runs-on: macos-15
+    needs: build
+
+    steps:
+      - name: 🏷️ Extract version
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: ⬇️ Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: SmartDock-${{ steps.version.outputs.VERSION }}
+
+      - name: 🎉 Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if gh release view ${{ github.ref_name }} &>/dev/null; then
+          VERSION=${{ steps.version.outputs.VERSION }}
+          TAG=${{ github.ref_name }}
+          ZIP=SmartDock-${VERSION}.zip
+
+          if gh release view "${TAG}" --repo "${{ github.repository }}" &>/dev/null; then
             echo "Release exists — uploading asset"
-            gh release upload ${{ github.ref_name }} \
-              build/SmartDock-${{ steps.version.outputs.VERSION }}.zip --clobber
+            gh release upload "${TAG}" "${ZIP}" --clobber --repo "${{ github.repository }}"
           else
-            gh release create ${{ github.ref_name }} \
-              build/SmartDock-${{ steps.version.outputs.VERSION }}.zip \
-              --title "SmartDock ${{ steps.version.outputs.VERSION }}" \
+            gh release create "${TAG}" "${ZIP}" \
+              --repo "${{ github.repository }}" \
+              --title "SmartDock ${VERSION}" \
               --generate-notes
           fi
 
-      - name: Setup SSH for Homebrew tap
+  # ── Stage 4: Homebrew Tap ────────────────────────────────
+
+  homebrew:
+    name: 🍺 Homebrew
+    runs-on: macos-15
+    needs: release
+
+    steps:
+      - name: 🏷️ Extract version
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: 🔑 Setup SSH
         uses: webfactory/ssh-agent@v0.10.0
         with:
           ssh-private-key: ${{ secrets.TAP_DEPLOY_KEY }}
 
-      - name: Update Homebrew tap
+      - name: 🍺 Update Homebrew tap
         run: |
           VERSION=${{ steps.version.outputs.VERSION }}
-          ZIP_URL="https://github.com/${{ github.repository }}/releases/download/v${VERSION}/SmartDock-${VERSION}.zip"
+          REPO=${{ github.repository }}
+          ZIP_URL="https://github.com/${REPO}/releases/download/v${VERSION}/SmartDock-${VERSION}.zip"
+          TAR_URL="https://github.com/${REPO}/archive/refs/tags/v${VERSION}.tar.gz"
 
-          # Wait for release asset to be available
+          # Wait for release asset
           sleep 10
 
-          # Compute sha256
+          # Compute checksums
           ZIP_SHA=$(curl -sL "${ZIP_URL}" | shasum -a 256 | cut -d' ' -f1)
-          echo "SHA256: ${ZIP_SHA}"
+          TAR_SHA=$(curl -sL "${TAR_URL}" | shasum -a 256 | cut -d' ' -f1)
+          echo "Cask SHA256:    ${ZIP_SHA}"
+          echo "Formula SHA256: ${TAR_SHA}"
 
-          # Clone tap repo via SSH deploy key
+          # Clone tap repo
           git clone git@github.com:alexeikaratai/homebrew-tap.git /tmp/tap
           cd /tmp/tap
 
@@ -82,9 +161,9 @@ jobs:
 
           # Update Formula
           sed -i '' "s|/v[0-9]*\.[0-9]*\.[0-9]*/|/v${VERSION}/|g" Formula/smartdock.rb
-          TAR_SHA=$(curl -sL "https://github.com/${{ github.repository }}/archive/refs/tags/v${VERSION}.tar.gz" | shasum -a 256 | cut -d' ' -f1)
           sed -i '' "s/sha256 \".*\"/sha256 \"${TAR_SHA}\"/" Formula/smartdock.rb
 
+          # Commit & push
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add .
