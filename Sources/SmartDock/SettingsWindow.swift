@@ -51,8 +51,7 @@ final class SettingsWindow: NSObject {
     private var statusLabel: NSTextField!
 
     // Controls — Shortcuts
-    private var toggleAutohideHotkeyButton: NSButton!
-    private var refreshNowHotkeyButton: NSButton!
+    private var hotkeyButtons: [HotkeyAction: NSButton] = [:]
     private var recordingMonitor: Any?
     private var recordingAction: HotkeyAction?
 
@@ -119,7 +118,7 @@ final class SettingsWindow: NSObject {
 
     private func makeWindow() -> NSWindow {
         let w = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 820),
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 910),
             styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -283,17 +282,17 @@ final class SettingsWindow: NSObject {
         shortcutsHeader.textColor = .secondaryLabelColor
         container.addSubview(shortcutsHeader)
 
-        let toggleLabel = makeLabel(text: "Toggle Autohide", font: .systemFont(ofSize: 13))
-        container.addSubview(toggleLabel)
+        // Build hotkey rows dynamically from all actions
+        var hotkeyLabels: [NSTextField] = []
+        for action in HotkeyAction.allCases {
+            let label = makeLabel(text: action.displayName, font: .systemFont(ofSize: 13))
+            container.addSubview(label)
+            hotkeyLabels.append(label)
 
-        toggleAutohideHotkeyButton = makeHotkeyButton(for: .toggleAutohide)
-        container.addSubview(toggleAutohideHotkeyButton)
-
-        let refreshLabel = makeLabel(text: "Refresh Now", font: .systemFont(ofSize: 13))
-        container.addSubview(refreshLabel)
-
-        refreshNowHotkeyButton = makeHotkeyButton(for: .refreshNow)
-        container.addSubview(refreshNowHotkeyButton)
+            let btn = makeHotkeyButton(for: action)
+            container.addSubview(btn)
+            hotkeyButtons[action] = btn
+        }
 
         let shortcutsHint = makeLabel(text: "Click to record, Esc to clear", font: .systemFont(ofSize: 10))
         shortcutsHint.textColor = .tertiaryLabelColor
@@ -425,22 +424,25 @@ final class SettingsWindow: NSObject {
 
             shortcutsHeader.topAnchor.constraint(equalTo: shortcutsSep.bottomAnchor, constant: 14),
             shortcutsHeader.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
+        ])
 
-            toggleLabel.topAnchor.constraint(equalTo: shortcutsHeader.bottomAnchor, constant: 10),
-            toggleLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
+        // Hotkey row constraints — built dynamically
+        var previousAnchor = shortcutsHeader.bottomAnchor
+        for (index, action) in HotkeyAction.allCases.enumerated() {
+            let label = hotkeyLabels[index]
+            let btn = hotkeyButtons[action]!
+            NSLayoutConstraint.activate([
+                label.topAnchor.constraint(equalTo: previousAnchor, constant: 10),
+                label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
+                btn.centerYAnchor.constraint(equalTo: label.centerYAnchor),
+                btn.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -margin),
+                btn.widthAnchor.constraint(equalToConstant: 120),
+            ])
+            previousAnchor = label.bottomAnchor
+        }
 
-            toggleAutohideHotkeyButton.centerYAnchor.constraint(equalTo: toggleLabel.centerYAnchor),
-            toggleAutohideHotkeyButton.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -margin),
-            toggleAutohideHotkeyButton.widthAnchor.constraint(equalToConstant: 120),
-
-            refreshLabel.topAnchor.constraint(equalTo: toggleLabel.bottomAnchor, constant: 10),
-            refreshLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
-
-            refreshNowHotkeyButton.centerYAnchor.constraint(equalTo: refreshLabel.centerYAnchor),
-            refreshNowHotkeyButton.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -margin),
-            refreshNowHotkeyButton.widthAnchor.constraint(equalToConstant: 120),
-
-            shortcutsHint.topAnchor.constraint(equalTo: refreshLabel.bottomAnchor, constant: 6),
+        NSLayoutConstraint.activate([
+            shortcutsHint.topAnchor.constraint(equalTo: previousAnchor, constant: 6),
             shortcutsHint.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
 
             // Bottom buttons
@@ -758,8 +760,9 @@ final class SettingsWindow: NSObject {
     }
 
     private func updateHotkeyButtons() {
-        toggleAutohideHotkeyButton.title = hotkeyDisplayString(for: .toggleAutohide)
-        refreshNowHotkeyButton.title = hotkeyDisplayString(for: .refreshNow)
+        for action in HotkeyAction.allCases {
+            hotkeyButtons[action]?.title = hotkeyDisplayString(for: action)
+        }
     }
 
     private func hotkeyDisplayString(for action: HotkeyAction) -> String {
