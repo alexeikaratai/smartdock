@@ -6,11 +6,17 @@ import SmartDockCore
 enum HotkeyAction: String, CaseIterable, Sendable {
     case toggleAutohide
     case refreshNow
+    case switchToExternal
+    case switchToBuiltin
+    case openSettings
 
     var displayName: String {
         switch self {
-        case .toggleAutohide: return "Toggle Autohide"
-        case .refreshNow:     return "Refresh Now"
+        case .toggleAutohide:  return "Toggle Autohide"
+        case .refreshNow:      return "Refresh Now"
+        case .switchToExternal: return "Apply External Profile"
+        case .switchToBuiltin:  return "Apply Built-in Profile"
+        case .openSettings:    return "Open Settings"
         }
     }
 }
@@ -25,6 +31,9 @@ final class HotkeyManager {
 
     private let service: SmartDockService
     private let prefs = UserPreferences.shared
+
+    /// Called when Open Settings hotkey is pressed.
+    var onOpenSettings: (() -> Void)?
 
     /// Accessed from deinit (nonisolated) and @MainActor methods.
     private nonisolated(unsafe) var globalMonitor: Any?
@@ -100,10 +109,15 @@ final class HotkeyManager {
 
     // MARK: - Private
 
+    /// Minimum interval between hotkey executions to prevent rapid-fire.
+    private var lastExecutionTime: Date = .distantPast
+    private let executionCooldown: TimeInterval = 0.3
+
     /// Returns true if the event matched a hotkey binding.
     @discardableResult
     private func handleKeyEvent(_ event: NSEvent) -> Bool {
         guard !isRecording, !cachedBindings.isEmpty else { return false }
+        guard Date().timeIntervalSince(lastExecutionTime) >= executionCooldown else { return false }
 
         // Strip CapsLock and Function flags — only match Cmd/Ctrl/Opt/Shift.
         let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift]).rawValue
@@ -111,6 +125,7 @@ final class HotkeyManager {
 
         for (action, binding) in cachedBindings {
             if binding.keyCode == keyCode && binding.modifiers == modifiers {
+                lastExecutionTime = Date()
                 executeAction(action)
                 return true
             }
@@ -133,7 +148,21 @@ final class HotkeyManager {
         case .refreshNow:
             service.refresh()
             Log.info("Hotkey: refreshed dock config")
+        case .switchToExternal:
+            applyProfile(external: true)
+        case .switchToBuiltin:
+            applyProfile(external: false)
+        case .openSettings:
+            onOpenSettings?()
+            Log.info("Hotkey: opened settings")
         }
+    }
+
+    private func applyProfile(external: Bool) {
+        let config = external ? prefs.externalConfig : prefs.builtinConfig
+        service.dockController.apply(config)
+        service.refresh()
+        Log.info("Hotkey: applied \(external ? "external" : "built-in") profile")
     }
 
     private func toggleAutohide() {

@@ -42,6 +42,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeyManager.start()
 
         statusBarController = StatusBarController(service: service, hotkeyManager: hotkeyManager)
+        hotkeyManager.onOpenSettings = { [weak self] in
+            self?.statusBarController.showSettings()
+        }
 
         // Notification manager: posts macOS banners on profile switch
         notificationManager = NotificationManager()
