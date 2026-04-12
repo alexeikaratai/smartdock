@@ -10,7 +10,6 @@ final class StatusBarController: NSObject {
     private let service: SmartDockService
     private let hotkeyManager: HotkeyManager
     private lazy var settingsWindow = SettingsWindow(service: service, hotkeyManager: hotkeyManager)
-    private lazy var aboutWindow = AboutWindow()
 
     // Cached icons: [position][visible/hidden]
     private lazy var iconCache: [DockPosition: [Bool: NSImage]] = {
@@ -81,6 +80,7 @@ final class StatusBarController: NSObject {
             keyEquivalent: "e"
         )
         toggleMenuItem.target = self
+        toggleMenuItem.image = NSImage(systemSymbolName: "power", accessibilityDescription: nil)
         menu.addItem(toggleMenuItem)
 
         // Forced refresh
@@ -90,6 +90,7 @@ final class StatusBarController: NSObject {
             keyEquivalent: "r"
         )
         refreshItem.target = self
+        refreshItem.image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: nil)
         menu.addItem(refreshItem)
 
         menu.addItem(.separator())
@@ -101,7 +102,18 @@ final class StatusBarController: NSObject {
             keyEquivalent: ","
         )
         settingsItem.target = self
+        settingsItem.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: nil)
         menu.addItem(settingsItem)
+
+        // Shortcuts
+        let shortcutsItem = NSMenuItem(
+            title: "Shortcuts…",
+            action: #selector(openShortcuts),
+            keyEquivalent: ""
+        )
+        shortcutsItem.target = self
+        shortcutsItem.image = NSImage(systemSymbolName: "keyboard", accessibilityDescription: nil)
+        menu.addItem(shortcutsItem)
 
         // About
         let aboutItem = NSMenuItem(
@@ -110,6 +122,7 @@ final class StatusBarController: NSObject {
             keyEquivalent: ""
         )
         aboutItem.target = self
+        aboutItem.image = NSImage(systemSymbolName: "info.circle", accessibilityDescription: nil)
         menu.addItem(aboutItem)
 
         menu.addItem(.separator())
@@ -121,6 +134,7 @@ final class StatusBarController: NSObject {
             keyEquivalent: "q"
         )
         quitItem.target = self
+        quitItem.image = NSImage(systemSymbolName: "xmark.circle", accessibilityDescription: nil)
         menu.addItem(quitItem)
 
         statusItem.menu = menu
@@ -149,8 +163,12 @@ final class StatusBarController: NSObject {
         showSettings()
     }
 
+    @objc private func openShortcuts() {
+        settingsWindow.show(tab: .shortcuts)
+    }
+
     @objc private func openAbout() {
-        aboutWindow.show()
+        settingsWindow.show(tab: .about)
     }
 
     @objc private func quit() {

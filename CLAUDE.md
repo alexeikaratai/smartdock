@@ -20,7 +20,7 @@ swift test --filter SmartDockTests.SmartDockServiceTests/testStartBeginsMonitori
 ## Version & Release
 
 ```bash
-make bump V=1.7.4   # update version in Makefile + Info.plist, increment build number
+make bump V=1.8.1   # update version in Makefile + Info.plist, increment build number
 make release        # build + zip + gh release create (working tree must be clean)
 make install        # copy .app to /Applications
 make fix            # xattr -cr + codesign (fix Gatekeeper quarantine)
@@ -69,12 +69,11 @@ Swift Package (swift-tools-version 6.2), two targets: **SmartDockCore** (testabl
 | File | Responsibility |
 |---|---|
 | `App.swift` | `@main` AppDelegate with manual `NSApplication` run loop (no storyboards). Prompts Accessibility on first launch only (avoids re-prompting after Homebrew updates). Creates `NotificationManager`, `HotkeyManager`, shows `OnboardingWindow` on first launch. `applicationShouldHandleReopen` opens Settings when re-launched from /Applications. |
-| `StatusBarController.swift` | Menu bar icon (`dock.rectangle` SF Symbol) + dropdown menu. Implements `NSMenuDelegate`, `SmartDockServiceDelegate`. Exposes `showSettings()` for re-open handling. Passes `HotkeyManager` to `SettingsWindow`. |
-| `SettingsWindow.swift` | Glass NSWindow (`NSVisualEffectView`), segmented control for External/Built-in modes. Position icon picker (Rectangle-style icons), sliders, autohide, magnification. **Apply button** — changes are not applied until user clicks Apply (or Enter). Dirty state tracking via `markDirty()`. Auto-saves before tab switch and display change. General: Launch at Login, Notify on Profile Switch, Auto-import System changes, Sync from System, Quit. Shortcuts: hotkey recording for Toggle Autohide and Refresh Now. Observes `smartDockStateDidChange` to refresh UI. |
+| `StatusBarController.swift` | Menu bar icon (`dock.rectangle` SF Symbol) + dropdown menu with SF Symbol icons per item. Implements `NSMenuDelegate`, `SmartDockServiceDelegate`. Exposes `showSettings()` for re-open handling. Passes `HotkeyManager` to `SettingsWindow`. Menu items: Settings, Shortcuts, About open SettingsWindow on the corresponding tab. |
+| `SettingsWindow.swift` | Tabbed glass NSWindow (`NSVisualEffectView`) with 3 tabs: **Settings** (dock config card with mode control + general + buttons), **Shortcuts** (5 hotkey rows), **About** (version, links). Tab switching auto-saves dirty Settings and cancels hotkey recording. Apply button centered in card. Observes `smartDockStateDidChange` to refresh UI. |
 | `NotificationManager.swift` | Posts macOS banner notifications (`UNUserNotificationCenter`) on profile switch. Observes `.smartDockStateDidChange`. Cooldown 3s. Lazy authorization request. `UNUserNotificationCenterDelegate` for foreground banners. |
-| `HotkeyManager.swift` | Global keyboard shortcuts via `NSEvent.addGlobalMonitorForEvents` + `addLocalMonitorForEvents`. `HotkeyAction` enum (`.toggleAutohide`, `.refreshNow`). `isRecording` flag pauses dispatch during hotkey recording. |
+| `HotkeyManager.swift` | Global keyboard shortcuts via `NSEvent.addGlobalMonitorForEvents` + `addLocalMonitorForEvents`. `HotkeyAction` enum: `.toggleAutohide`, `.refreshNow`, `.switchToExternal`, `.switchToBuiltin`, `.openSettings`. Cached bindings, rate limiting 0.3s, `isRecording` flag pauses dispatch during recording. |
 | `OnboardingWindow.swift` | Welcome screen shown once on first launch. Glass window with app description, feature list, "Get Started" button. Sets `hasSeenOnboarding` on close. |
-| `AboutWindow.swift` | About window with version, description, GitHub/Changelog links. Opened from menu bar dropdown. |
 | `LaunchAtLogin.swift` | `SMAppService.mainApp` wrapper. |
 | `AccessibilityChecker.swift` | `AXIsProcessTrusted()` check. Prompts system dialog only on first launch (`hasPromptedAccessibility` flag). Accessibility needed only for global hotkeys — core dock switching works without it. |
 
@@ -247,12 +246,11 @@ Sources/
 │   └── Log.swift                 # Logger wrapper
 └── SmartDock/
     ├── App.swift                 # @main, manual NSApplication run loop
-    ├── StatusBarController.swift # Menu bar icon + dropdown + About menu item
-    ├── SettingsWindow.swift      # Glass settings (Auto Layout, programmatic)
+    ├── StatusBarController.swift # Menu bar icon + dropdown with SF Symbol icons
+    ├── SettingsWindow.swift      # Tabbed glass window (Settings / Shortcuts / About)
     ├── OnboardingWindow.swift    # First-launch welcome screen
-    ├── AboutWindow.swift         # About window with links
     ├── NotificationManager.swift # macOS banner notifications on profile switch
-    ├── HotkeyManager.swift       # Global keyboard shortcuts
+    ├── HotkeyManager.swift       # Global keyboard shortcuts (5 actions)
     ├── LaunchAtLogin.swift       # SMAppService wrapper
     └── AccessibilityChecker.swift # First-launch-only Accessibility prompt
 Tests/SmartDockTests/

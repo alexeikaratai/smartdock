@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.7.4-blue?style=flat-square" alt="Version 1.7.4"/>
+  <img src="https://img.shields.io/badge/version-1.8.1-blue?style=flat-square" alt="Version 1.8.1"/>
   <img src="https://img.shields.io/badge/macOS-14.0%2B-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS 14+"/>
   <img src="https://img.shields.io/badge/Swift-6.2-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 6.2"/>
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License"/>
@@ -30,35 +30,17 @@ SmartDock lives in your menu bar and automatically switches Dock configuration w
 | ⚡ | **Instant detection** | Event-driven via `CGDisplayRegisterReconfigurationCallback` — no polling |
 | 🔄 | **System sync** | Auto-imports Dock changes from System Settings via KVO |
 | 🔔 | **Notifications** | macOS banner when profile switches (optional) |
-| ⌨️ | **Global hotkeys** | Customizable shortcuts for Toggle Autohide and Refresh |
-| 🎨 | **Glass UI** | Translucent settings window with `NSVisualEffectView` |
+| ⌨️ | **Global hotkeys** | 5 customizable shortcuts — toggle autohide, refresh, switch profiles, open settings |
+| 🎨 | **Glass UI** | Tabbed settings window (Settings / Shortcuts / About) with `NSVisualEffectView` |
 | 🚀 | **Launch at Login** | Native `SMAppService` integration |
 | 🛡️ | **Smooth transitions** | Per-property AppleScript — no Dock restart needed |
 | 👋 | **Onboarding** | Welcome screen on first launch |
 
-## 📸 How It Works
+## 📸 Screenshot
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                                                         │
-│   🖥️ External Monitor Connected                         │
-│   ┌─────────────────────┐                               │
-│   │  Dock: Bottom        │  ← Your "external" profile   │
-│   │  Size: 64px          │                               │
-│   │  Autohide: Off       │                               │
-│   │  Magnification: On   │                               │
-│   └─────────────────────┘                               │
-│                                                         │
-│   💻 Built-in Display Only                               │
-│   ┌─────────────────────┐                               │
-│   │  Dock: Left          │  ← Your "built-in" profile   │
-│   │  Size: 36px          │                               │
-│   │  Autohide: On        │                               │
-│   │  Magnification: Off  │                               │
-│   └─────────────────────┘                               │
-│                                                         │
-└─────────────────────────────────────────────────────────┘
-```
+<p align="center">
+  <img src="assets/settings.png" width="400" alt="SmartDock Settings"/>
+</p>
 
 ## 📦 Installation
 
@@ -108,12 +90,11 @@ Sources/
 │   └── Log.swift                     # Logger API (macOS 14+)
 └── SmartDock/                        # AppKit UI layer
     ├── App.swift                     # @main entry, manual NSApplication run loop
-    ├── StatusBarController.swift     # Menu bar icon & dropdown
-    ├── SettingsWindow.swift          # Glass settings window (Auto Layout)
+    ├── StatusBarController.swift     # Menu bar icon & dropdown with SF Symbol icons
+    ├── SettingsWindow.swift          # Tabbed glass window (Settings / Shortcuts / About)
     ├── OnboardingWindow.swift        # First-launch welcome screen
-    ├── AboutWindow.swift             # About window with links
     ├── NotificationManager.swift     # macOS banner notifications
-    ├── HotkeyManager.swift           # Global keyboard shortcuts
+    ├── HotkeyManager.swift           # Global keyboard shortcuts (5 actions)
     ├── LaunchAtLogin.swift           # SMAppService wrapper
     └── AccessibilityChecker.swift    # First-launch Accessibility prompt
 ```
