@@ -134,6 +134,8 @@ final class SettingsWindow: NSObject {
         w.titleVisibility = .hidden
         w.isMovableByWindowBackground = true
         w.backgroundColor = .clear
+        w.minSize = NSSize(width: 420, height: 660)
+        w.maxSize = NSSize(width: 420, height: 660)
 
         let vibrancy = NSVisualEffectView()
         vibrancy.translatesAutoresizingMaskIntoConstraints = false

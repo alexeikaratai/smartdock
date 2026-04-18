@@ -43,6 +43,8 @@ final class OnboardingWindow: NSObject {
         w.titleVisibility = .hidden
         w.isMovableByWindowBackground = true
         w.backgroundColor = .clear
+        w.minSize = NSSize(width: 400, height: 400)
+        w.maxSize = NSSize(width: 400, height: 400)
 
         let vibrancy = NSVisualEffectView()
         vibrancy.translatesAutoresizingMaskIntoConstraints = false
