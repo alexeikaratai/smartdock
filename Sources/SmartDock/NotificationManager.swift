@@ -29,6 +29,10 @@ final class NotificationManager: NSObject {
     private let cooldown: TimeInterval = 3.0
     private var isAuthorized = false
 
+    /// Tracks last notified external state to avoid spamming notifications
+    /// when only profile settings change (not the actual profile).
+    private var lastNotifiedExternal: Bool?
+
     // MARK: - Init
 
     override init() {
@@ -91,6 +95,13 @@ final class NotificationManager: NSObject {
               let hasExternal = userInfo[SmartDockService.hasExternalKey] as? Bool else {
             return
         }
+
+        // Only notify on actual profile switch (External↔Built-in),
+        // not on settings changes within the same profile.
+        if let last = lastNotifiedExternal, last == hasExternal {
+            return
+        }
+        lastNotifiedExternal = hasExternal
 
         // Cooldown: prevent spam during rapid connect/disconnect
         if let lastDate = lastNotificationDate,
