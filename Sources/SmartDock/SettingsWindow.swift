@@ -58,6 +58,7 @@ final class SettingsWindow: NSObject {
     private var hotkeyButtons: [HotkeyAction: NSButton] = [:]
     private var recordingMonitor: Any?
     private var recordingAction: HotkeyAction?
+    private var accessibilityWarningView: NSView!
 
     // Cached position icons
     private lazy var positionIconCache: [DockPosition: [Bool: NSImage]] = {
@@ -443,6 +444,10 @@ final class SettingsWindow: NSObject {
         header.textColor = .secondaryLabelColor
         container.addSubview(header)
 
+        // Accessibility warning — only shown when permission is missing
+        accessibilityWarningView = makeAccessibilityWarning()
+        container.addSubview(accessibilityWarningView)
+
         var hotkeyLabels: [NSTextField] = []
         for action in HotkeyAction.allCases {
             let label = makeLabel(text: action.displayName, font: .systemFont(ofSize: 13))
@@ -462,9 +467,13 @@ final class SettingsWindow: NSObject {
         NSLayoutConstraint.activate([
             header.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
             header.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
+
+            accessibilityWarningView.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 10),
+            accessibilityWarningView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin - 4),
+            accessibilityWarningView.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -(margin - 4)),
         ])
 
-        var previousAnchor = header.bottomAnchor
+        var previousAnchor = accessibilityWarningView.bottomAnchor
         for (index, action) in HotkeyAction.allCases.enumerated() {
             let label = hotkeyLabels[index]
             let btn = hotkeyButtons[action]!
@@ -943,6 +952,69 @@ final class SettingsWindow: NSObject {
         btn.controlSize = .small
         btn.tag = HotkeyAction.allCases.firstIndex(of: action) ?? 0
         return btn
+    }
+
+    /// Yellow warning banner shown when Accessibility permission is missing.
+    /// Hidden if permission is already granted.
+    private func makeAccessibilityWarning() -> NSView {
+        let view = NSView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.wantsLayer = true
+        view.layer?.cornerRadius = 8
+        view.layer?.backgroundColor = NSColor.systemYellow.withAlphaComponent(0.15).cgColor
+        view.layer?.borderWidth = 0.5
+        view.layer?.borderColor = NSColor.systemYellow.withAlphaComponent(0.4).cgColor
+        view.isHidden = AccessibilityChecker.isGranted
+
+        let icon = NSImageView()
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        icon.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)
+        icon.contentTintColor = .systemYellow
+        view.addSubview(icon)
+
+        let title = makeLabel(text: "Hotkeys require Accessibility permission",
+                              font: .systemFont(ofSize: 12, weight: .medium))
+        view.addSubview(title)
+
+        let subtitle = makeLabel(text: "Global shortcuts won't work until granted in System Settings.",
+                                 font: .systemFont(ofSize: 11))
+        subtitle.textColor = .secondaryLabelColor
+        subtitle.maximumNumberOfLines = 0
+        subtitle.lineBreakMode = .byWordWrapping
+        view.addSubview(subtitle)
+
+        let openButton = NSButton(title: "Open System Settings", target: self,
+                                  action: #selector(openAccessibilitySettings))
+        openButton.translatesAutoresizingMaskIntoConstraints = false
+        openButton.bezelStyle = .rounded
+        openButton.controlSize = .small
+        view.addSubview(openButton)
+
+        NSLayoutConstraint.activate([
+            icon.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
+            icon.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
+            icon.widthAnchor.constraint(equalToConstant: 18),
+            icon.heightAnchor.constraint(equalToConstant: 18),
+
+            title.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
+            title.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 8),
+            title.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+
+            subtitle.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 2),
+            subtitle.leadingAnchor.constraint(equalTo: title.leadingAnchor),
+            subtitle.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+
+            openButton.topAnchor.constraint(equalTo: subtitle.bottomAnchor, constant: 8),
+            openButton.leadingAnchor.constraint(equalTo: title.leadingAnchor),
+            openButton.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -12),
+        ])
+
+        return view
+    }
+
+    @objc private func openAccessibilitySettings() {
+        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
+        NSWorkspace.shared.open(url)
     }
 
     private func makeGlassCard() -> NSVisualEffectView {
