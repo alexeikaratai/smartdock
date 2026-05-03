@@ -27,7 +27,7 @@ enum HotkeyAction: String, CaseIterable, Sendable {
 /// Uses `NSEvent.addGlobalMonitorForEvents` (background) and
 /// `addLocalMonitorForEvents` (foreground) to catch hotkeys in all states.
 @MainActor
-final class HotkeyManager {
+final class HotkeyManager: NSObject {
 
     private let service: SmartDockService
     private let prefs = UserPreferences.shared
@@ -49,11 +49,31 @@ final class HotkeyManager {
 
     init(service: SmartDockService) {
         self.service = service
+        super.init()
+
+        // Re-create monitors when SmartDock becomes active —
+        // picks up any Accessibility permission changes made in System Settings.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(handleAppActivation),
+            name: NSWorkspace.didActivateApplicationNotification,
+            object: nil
+        )
     }
 
     deinit {
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
         if let monitor = globalMonitor { NSEvent.removeMonitor(monitor) }
         if let monitor = localMonitor { NSEvent.removeMonitor(monitor) }
+    }
+
+    @objc private func handleAppActivation(_ notification: Notification) {
+        guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+              app.bundleIdentifier == Bundle.main.bundleIdentifier else { return }
+        // Restart monitors so they re-check Accessibility status
+        if !cachedBindings.isEmpty {
+            start()
+        }
     }
 
     // MARK: - Public
@@ -68,8 +88,12 @@ final class HotkeyManager {
             return
         }
 
+        let isTrusted = AXIsProcessTrusted()
+        Log.info("Hotkey start: AXIsProcessTrusted=\(isTrusted), bindings=\(cachedBindings.count)")
+
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return }
+            Log.info("Global keyDown received: keyCode=\(event.keyCode) modifiers=\(event.modifierFlags.rawValue)")
             self.handleKeyEvent(event)
         }
 
@@ -81,18 +105,24 @@ final class HotkeyManager {
             return event
         }
 
+        if globalMonitor == nil {
+            Log.error("Global monitor failed to register (Accessibility permission likely missing)")
+        }
+
         Log.info("Hotkey monitoring started (\(cachedBindings.count) binding(s))")
     }
 
-    /// Reload cached bindings from UserPreferences and restart monitors if needed.
+    /// Reload cached bindings from UserPreferences and restart monitors.
+    /// Always restarts to pick up any Accessibility permission changes —
+    /// `addGlobalMonitorForEvents` doesn't react to permission grants
+    /// after the monitor was created.
     func reloadBindings() {
         refreshBindingCache()
 
-        // Start/stop monitors based on whether any hotkeys are configured.
-        if !cachedBindings.isEmpty && globalMonitor == nil {
-            start()
-        } else if cachedBindings.isEmpty && globalMonitor != nil {
+        if cachedBindings.isEmpty {
             stop()
+        } else {
+            start()
         }
     }
 
