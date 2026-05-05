@@ -3,7 +3,8 @@
     "allow": [
       "Bash(rtk grep *)",
       "Bash(rtk make *)",
-      "Bash(rtk swift *)"
+      "Bash(rtk swift *)",
+      "Bash(rtk git *)"
     ]
   }
 }

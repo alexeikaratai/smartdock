@@ -976,8 +976,10 @@ final class SettingsWindow: NSObject {
                               font: .systemFont(ofSize: 12, weight: .medium))
         view.addSubview(title)
 
-        let subtitle = makeLabel(text: "Global shortcuts won't work until granted in System Settings.",
-                                 font: .systemFont(ofSize: 11))
+        let subtitle = makeLabel(
+            text: "If the checkbox is on but hotkeys still don't work, the permission is broken (common after Homebrew updates). Use Reset to fix it.",
+            font: .systemFont(ofSize: 11)
+        )
         subtitle.textColor = .secondaryLabelColor
         subtitle.maximumNumberOfLines = 0
         subtitle.lineBreakMode = .byWordWrapping
@@ -989,6 +991,13 @@ final class SettingsWindow: NSObject {
         openButton.bezelStyle = .rounded
         openButton.controlSize = .small
         view.addSubview(openButton)
+
+        let resetButton = NSButton(title: "Reset Permission", target: self,
+                                   action: #selector(resetAccessibilityPermission))
+        resetButton.translatesAutoresizingMaskIntoConstraints = false
+        resetButton.bezelStyle = .rounded
+        resetButton.controlSize = .small
+        view.addSubview(resetButton)
 
         NSLayoutConstraint.activate([
             icon.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
@@ -1007,6 +1016,9 @@ final class SettingsWindow: NSObject {
             openButton.topAnchor.constraint(equalTo: subtitle.bottomAnchor, constant: 8),
             openButton.leadingAnchor.constraint(equalTo: title.leadingAnchor),
             openButton.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -12),
+
+            resetButton.centerYAnchor.constraint(equalTo: openButton.centerYAnchor),
+            resetButton.leadingAnchor.constraint(equalTo: openButton.trailingAnchor, constant: 8),
         ])
 
         return view
@@ -1015,6 +1027,45 @@ final class SettingsWindow: NSObject {
     @objc private func openAccessibilitySettings() {
         let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
         NSWorkspace.shared.open(url)
+    }
+
+    @objc private func resetAccessibilityPermission() {
+        let alert = NSAlert()
+        alert.messageText = "Reset Accessibility Permission?"
+        alert.informativeText = "This will remove SmartDock from the Accessibility list and restart the app. You'll be prompted to grant permission again. Administrator password is required."
+        alert.addButton(withTitle: "Reset & Restart")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        // Run tccutil with admin privileges via osascript.
+        // Quit and relaunch SmartDock so the system re-checks permission.
+        let bundleID = Bundle.main.bundleIdentifier ?? "com.smartdock.app"
+        let bundlePath = Bundle.main.bundlePath
+        let script = """
+            do shell script "/usr/bin/tccutil reset Accessibility \(bundleID)" with administrator privileges
+            """
+
+        let appleScript = NSAppleScript(source: script)
+        var error: NSDictionary?
+        appleScript?.executeAndReturnError(&error)
+
+        if let error {
+            Log.error("Failed to reset Accessibility: \(error)")
+            let failAlert = NSAlert()
+            failAlert.messageText = "Reset Failed"
+            failAlert.informativeText = "Could not reset Accessibility permission. You can run this command manually:\n\nsudo tccutil reset Accessibility \(bundleID)"
+            failAlert.runModal()
+            return
+        }
+
+        // Relaunch app
+        let task = Process()
+        task.launchPath = "/usr/bin/open"
+        task.arguments = ["-n", bundlePath]
+        try? task.run()
+        NSApp.terminate(nil)
     }
 
     private func makeGlassCard() -> NSVisualEffectView {
