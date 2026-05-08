@@ -1060,12 +1060,9 @@ final class SettingsWindow: NSObject {
             return
         }
 
-        // Relaunch app
-        let task = Process()
-        task.launchPath = "/usr/bin/open"
-        task.arguments = ["-n", bundlePath]
-        try? task.run()
-        NSApp.terminate(nil)
+        // Relaunch via shell — wait for current PID to exit before opening
+        // new instance to avoid two instances running in parallel.
+        AppRelauncher.relaunch(bundlePath: bundlePath)
     }
 
     private func makeGlassCard() -> NSVisualEffectView {
