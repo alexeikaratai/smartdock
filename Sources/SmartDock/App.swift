@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var notificationManager: NotificationManager!
     private var hotkeyManager: HotkeyManager!
     private var onboardingWindow: OnboardingWindow?
+    private let updateWatcher = AppUpdateWatcher()
 
     /// Explicit entry point for a menu bar app without storyboard/nib.
     /// The default @main behavior calls NSApplicationMain which expects
@@ -52,6 +53,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         service.start()
 
+        // Watch for binary changes (e.g. Homebrew upgrade) and prompt to relaunch
+        updateWatcher.start()
+
         // Show onboarding on first launch
         if !UserPreferences.shared.hasSeenOnboarding {
             onboardingWindow = OnboardingWindow()
@@ -73,6 +77,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        updateWatcher.stop()
         hotkeyManager.stop()
         service.stop()
     }
