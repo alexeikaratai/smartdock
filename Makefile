@@ -3,7 +3,7 @@
 # === Config ===
 APP_NAME     := SmartDock
 BUNDLE_ID    := com.smartdock.app
-VERSION      := 1.8.7
+VERSION      := 1.8.8
 BUILD_DIR    := .build/release
 APP_DIR      := build/$(APP_NAME).app
 CONTENTS     := $(APP_DIR)/Contents
@@ -96,11 +96,11 @@ notarize: dmg
 	@echo "✅ Notarized and stapled"
 
 # === Version Bump ===
-# Usage: make bump V=1.8.7
+# Usage: make bump V=1.8.8
 
 bump:
 ifndef V
-	$(error Usage: make bump V=1.8.7)
+	$(error Usage: make bump V=1.8.8)
 endif
 	@echo "📌 Bumping version to $(V)..."
 	sed -i '' 's/^VERSION      := .*/VERSION      := $(V)/' Makefile
