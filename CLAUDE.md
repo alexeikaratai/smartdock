@@ -20,7 +20,7 @@ swift test --filter SmartDockTests.SmartDockServiceTests/testStartBeginsMonitori
 ## Version & Release
 
 ```bash
-make bump V=1.8.8   # update version in Makefile + Info.plist, increment build number
+make bump V=1.8.9   # update version in Makefile + Info.plist, increment build number
 make release        # build + zip + gh release create (working tree must be clean)
 make install        # copy .app to /Applications
 make fix            # xattr -cr + codesign (fix Gatekeeper quarantine)
@@ -58,7 +58,7 @@ Swift Package (swift-tools-version 6.2), two targets: **SmartDockCore** (testabl
 
 | File | Responsibility |
 |---|---|
-| `DockConfiguration.swift` | `DockConfiguration` value type (position, autohide, icon size as 0.0–1.0 scale, magnification). `HotkeyBinding` value type (keyCode + modifiers + displayName). `UserPreferences` persists per-mode configs via UserDefaults with migration from old pixel format. Also stores: `notificationsEnabled`, `syncFromSystemEnabled`, `hasSeenOnboarding`, `hasPromptedAccessibility`, hotkey bindings. `DockPosition` enum. First-launch: `initializeDefaultsIfNeeded(from:)` reads system config, sets external=autohide off, builtin=autohide on. |
+| `DockConfiguration.swift` | `DockConfiguration` value type (position, autohide, icon size as 0.0–1.0 scale, magnification). `HotkeyBinding` value type (keyCode + modifiers + displayName). `UserPreferences` persists per-mode configs via UserDefaults with migration from old pixel format. Also stores: `notificationsEnabled`, `syncFromSystemEnabled`, `hasSeenOnboarding`, `hasPromptedAccessibility`, `pendingAccessibilityGrant`, hotkey bindings. `DockPosition` enum. First-launch: `initializeDefaultsIfNeeded(from:)` reads system config, sets external=autohide off, builtin=autohide on. |
 | `DisplayMonitor.swift` | Detects external monitor connect/disconnect via `CGDisplayRegisterReconfigurationCallback`. Debounces (1s settle delay). Filters by add/remove/enable/disable CG flags only. Also observes `didWakeNotification`, `screensDidWakeNotification` (2s delay re-check). No space change observer — AppleScript triggers space notifications causing feedback loops. Conforms to `DisplayMonitoring`. |
 | `DockController.swift` | Applies `DockConfiguration` via `NSAppleScript` → System Events. Diff-based: reads current system config via fresh `UserDefaults(suiteName: "com.apple.dock")` and only applies properties that actually differ. Observes external dock preference changes via KVO on `UserDefaults(suiteName: "com.apple.dock")` using private `DockPrefsObserver` helper (NSObject for KVO). Debounces 0.5s, compares with `lastAppliedConfig` to filter own changes. Conforms to `DockControlling`. |
 | `SmartDockService.swift` | Orchestrator: reads `UserPreferences`, applies appropriate config based on display state. Handles external dock changes (System Settings sync): updates active profile when system config diverges from `lastAppliedConfig`. Has `SmartDockServiceDelegate`. Posts `Notification.Name.smartDockStateDidChange` only when state actually changes. |
@@ -68,12 +68,14 @@ Swift Package (swift-tools-version 6.2), two targets: **SmartDockCore** (testabl
 
 | File | Responsibility |
 |---|---|
-| `App.swift` | `@main` AppDelegate with manual `NSApplication` run loop (no storyboards). Prompts Accessibility on first launch only (avoids re-prompting after Homebrew updates). Creates `NotificationManager`, `HotkeyManager`, shows `OnboardingWindow` on first launch. `applicationShouldHandleReopen` opens Settings when re-launched from /Applications. |
+| `App.swift` | `@main` AppDelegate with manual `NSApplication` run loop (no storyboards). Prompts Accessibility on first launch only (avoids re-prompting after Homebrew updates). Creates `NotificationManager`, `HotkeyManager`, `AppUpdateWatcher`, shows `OnboardingWindow` on first launch. After "Reset Permission" relaunch: opens Shortcuts tab + System Settings, polls `AXIsProcessTrusted` (1s, max 5min), auto-relaunches when granted. `applicationShouldHandleReopen` opens Settings when re-launched from /Applications. |
 | `StatusBarController.swift` | Menu bar icon (`dock.rectangle` SF Symbol) + dropdown menu with SF Symbol icons per item. Implements `NSMenuDelegate`, `SmartDockServiceDelegate`. Exposes `showSettings()` for re-open handling. Passes `HotkeyManager` to `SettingsWindow`. Menu items: Settings, Shortcuts, About open SettingsWindow on the corresponding tab. |
 | `SettingsWindow.swift` | Tabbed glass NSWindow (`NSVisualEffectView`) with 3 tabs: **Settings** (dock config card with mode control + general + buttons), **Shortcuts** (5 hotkey rows), **About** (version, links). Tab switching auto-saves dirty Settings and cancels hotkey recording. Apply button centered in card. Observes `smartDockStateDidChange` to refresh UI. |
 | `NotificationManager.swift` | Posts macOS banner notifications (`UNUserNotificationCenter`) on profile switch. Observes `.smartDockStateDidChange`. Cooldown 3s. Lazy authorization request. `UNUserNotificationCenterDelegate` for foreground banners. |
 | `HotkeyManager.swift` | Global keyboard shortcuts via `NSEvent.addGlobalMonitorForEvents` + `addLocalMonitorForEvents`. `HotkeyAction` enum: `.toggleAutohide`, `.refreshNow`, `.switchToExternal`, `.switchToBuiltin`, `.openSettings`. Cached bindings, rate limiting 0.3s, `isRecording` flag pauses dispatch during recording. |
 | `OnboardingWindow.swift` | Welcome screen shown once on first launch. Glass window with app description, feature list, "Get Started" button. Sets `hasSeenOnboarding` on close. |
+| `AppRelauncher.swift` | Spawns shell that waits for current PID to exit (max 5s), then opens new instance via `open -n`. Bundle path passed via env var (no shell injection). Used by Reset Permission and update prompt. |
+| `AppUpdateWatcher.swift` | Watches `Bundle.main.executablePath` via `DispatchSource.makeFileSystemObjectSource` for delete/write/rename events. On Homebrew upgrade: debounce 2s, prompt user "SmartDock was updated. Relaunch?". Uses `AppRelauncher` for safe relaunch. |
 | `LaunchAtLogin.swift` | `SMAppService.mainApp` wrapper. |
 | `AccessibilityChecker.swift` | `AXIsProcessTrusted()` check. Prompts system dialog only on first launch (`hasPromptedAccessibility` flag). Accessibility needed only for global hotkeys — core dock switching works without it. |
 
@@ -251,6 +253,8 @@ Sources/
     ├── OnboardingWindow.swift    # First-launch welcome screen
     ├── NotificationManager.swift # macOS banner notifications on profile switch
     ├── HotkeyManager.swift       # Global keyboard shortcuts (5 actions)
+    ├── AppRelauncher.swift       # Safe relaunch — waits for PID exit before spawning new instance
+    ├── AppUpdateWatcher.swift    # FS watcher on executable — detects Homebrew upgrade, prompts relaunch
     ├── LaunchAtLogin.swift       # SMAppService wrapper
     └── AccessibilityChecker.swift # First-launch-only Accessibility prompt
 Tests/SmartDockTests/

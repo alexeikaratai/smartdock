@@ -22,6 +22,7 @@ final class SettingsWindow: NSObject {
     // MARK: - Properties
 
     private var window: NSWindow?
+    private var resetSizeMonitor: Any?
     private let service: SmartDockService
     private let hotkeyManager: HotkeyManager
     private let prefs = UserPreferences.shared
@@ -114,18 +115,36 @@ final class SettingsWindow: NSObject {
         w.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
+        installResetSizeMonitor()
+
         selectedMode = service.hasExternalDisplay ? .external : .builtin
         modeControl.selectedSegment = selectedMode.rawValue
         loadCurrentMode()
         selectTab(tab)
     }
 
+    /// Installs a local key monitor for ⌘0 — resets window to default size.
+    private func installResetSizeMonitor() {
+        resetSizeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self,
+                  event.modifierFlags.contains(.command),
+                  event.charactersIgnoringModifiers == "0" else {
+                return event
+            }
+            self.window?.setContentSize(Self.defaultContentSize)
+            self.window?.center()
+            return nil
+        }
+    }
+
     // MARK: - Window Construction
+
+    private static let defaultContentSize = NSSize(width: 420, height: 660)
 
     private func makeWindow() -> NSWindow {
         let w = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 660),
-            styleMask: [.titled, .closable, .fullSizeContentView],
+            contentRect: NSRect(x: 0, y: 0, width: Self.defaultContentSize.width, height: Self.defaultContentSize.height),
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
@@ -135,6 +154,14 @@ final class SettingsWindow: NSObject {
         w.titleVisibility = .hidden
         w.isMovableByWindowBackground = true
         w.backgroundColor = .clear
+
+        // Bounded resize range — user can shrink down to minimum readable size.
+        w.contentMinSize = NSSize(width: 380, height: 500)
+        w.contentMaxSize = NSSize(width: 600, height: 900)
+        w.setContentSize(Self.defaultContentSize)
+
+        // Don't persist resized frame across sessions — always open at default.
+        w.setFrameAutosaveName("")
 
         let vibrancy = NSVisualEffectView()
         vibrancy.translatesAutoresizingMaskIntoConstraints = false
@@ -981,6 +1008,7 @@ final class SettingsWindow: NSObject {
         subtitle.textColor = .secondaryLabelColor
         subtitle.maximumNumberOfLines = 0
         subtitle.lineBreakMode = .byWordWrapping
+        subtitle.preferredMaxLayoutWidth = 340
         view.addSubview(subtitle)
 
         let openButton = NSButton(title: "Open System Settings", target: self,
@@ -1037,6 +1065,9 @@ final class SettingsWindow: NSObject {
 
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
+        // Set flag so next launch opens Shortcuts tab + watches for permission grant
+        prefs.pendingAccessibilityGrant = true
+
         // Run tccutil with admin privileges via osascript.
         // Quit and relaunch SmartDock so the system re-checks permission.
         let bundleID = Bundle.main.bundleIdentifier ?? "com.smartdock.app"
@@ -1083,6 +1114,10 @@ final class SettingsWindow: NSObject {
 extension SettingsWindow: NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         if recordingAction != nil { stopRecording() }
+        if let monitor = resetSizeMonitor {
+            NSEvent.removeMonitor(monitor)
+            resetSizeMonitor = nil
+        }
         window = nil
     }
 }

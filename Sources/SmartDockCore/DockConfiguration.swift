@@ -172,6 +172,13 @@ public final class UserPreferences {
         set { defaults.set(newValue, forKey: "\(prefix).hasPromptedAccessibility") }
     }
 
+    /// Set after Reset Permission flow — tells next launch to open Shortcuts tab,
+    /// open System Settings, and watch for Accessibility grant to auto-restart.
+    public var pendingAccessibilityGrant: Bool {
+        get { defaults.bool(forKey: "\(prefix).pendingAccessibilityGrant") }
+        set { defaults.set(newValue, forKey: "\(prefix).pendingAccessibilityGrant") }
+    }
+
     // MARK: - Hotkeys
 
     public func hotkey(for action: String) -> HotkeyBinding? {

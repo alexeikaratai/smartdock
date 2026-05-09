@@ -155,8 +155,8 @@ final class StatusBarController: NSObject {
         service.refresh()
     }
 
-    func showSettings() {
-        settingsWindow.show()
+    func showSettings(tab: SettingsWindow.Tab = .settings) {
+        settingsWindow.show(tab: tab)
     }
 
     @objc private func openSettings() {
