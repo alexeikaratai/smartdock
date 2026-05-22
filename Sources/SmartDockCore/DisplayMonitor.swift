@@ -80,9 +80,13 @@ public final class DisplayMonitor: DisplayMonitoring {
 
         var externalCount = 0
         for i in 0..<Int(displayCount) {
-            if CGDisplayIsBuiltin(displayIDs[i]) == 0 {
-                externalCount += 1
-            }
+            let id = displayIDs[i]
+            // Skip built-in displays
+            guard CGDisplayIsBuiltin(id) == 0 else { continue }
+            // Skip sleeping/inactive externals — clamshell mode, monitor in standby,
+            // phantom connections from USB-C hubs etc.
+            guard CGDisplayIsActive(id) != 0, CGDisplayIsAsleep(id) == 0 else { continue }
+            externalCount += 1
         }
         return externalCount
     }
