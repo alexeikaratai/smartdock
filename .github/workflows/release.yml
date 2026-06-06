@@ -22,7 +22,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: 🔧 Select Xcode
         run: sudo xcode-select -s ${{ env.XCODE_PATH }}
@@ -46,7 +46,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: 🔧 Select Xcode
         run: sudo xcode-select -s ${{ env.XCODE_PATH }}
@@ -79,7 +79,7 @@ jobs:
         run: cd build && zip -r SmartDock-${{ steps.version.outputs.VERSION }}.zip SmartDock.app
 
       - name: ⬆️ Upload artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: SmartDock-${{ steps.version.outputs.VERSION }}
           path: build/SmartDock-${{ steps.version.outputs.VERSION }}.zip
@@ -97,7 +97,7 @@ jobs:
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: ⬇️ Download artifact
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: SmartDock-${{ steps.version.outputs.VERSION }}
 
