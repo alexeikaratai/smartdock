@@ -20,7 +20,7 @@ swift test --filter SmartDockTests.SmartDockServiceTests/testStartBeginsMonitori
 ## Version & Release
 
 ```bash
-make bump V=1.9.0   # update version in Makefile + Info.plist, increment build number
+make bump V=1.9.1   # update version in Makefile + Info.plist, increment build number
 make release        # build + zip + gh release create (working tree must be clean)
 make install        # copy .app to /Applications
 make fix            # xattr -cr + codesign (fix Gatekeeper quarantine)
@@ -70,7 +70,7 @@ Swift Package (swift-tools-version 6.2), two targets: **SmartDockCore** (testabl
 |---|---|
 | `App.swift` | `@main` AppDelegate with manual `NSApplication` run loop (no storyboards). Prompts Accessibility on first launch only (avoids re-prompting after Homebrew updates). Creates `NotificationManager`, `HotkeyManager`, `AppUpdateWatcher`, shows `OnboardingWindow` on first launch. After "Reset Permission" relaunch: opens Shortcuts tab + System Settings, polls `AXIsProcessTrusted` (1s, max 5min), auto-relaunches when granted. `applicationShouldHandleReopen` opens Settings when re-launched from /Applications. |
 | `StatusBarController.swift` | Menu bar icon (`dock.rectangle` SF Symbol) + dropdown menu with SF Symbol icons per item. Implements `NSMenuDelegate`, `SmartDockServiceDelegate`. Exposes `showSettings()` for re-open handling. Passes `HotkeyManager` to `SettingsWindow`. Menu items: Settings, Shortcuts, About open SettingsWindow on the corresponding tab. |
-| `SettingsWindow.swift` | Tabbed glass NSWindow (`NSVisualEffectView`) with 3 tabs: **Settings** (dock config card with mode control + general + buttons), **Shortcuts** (5 hotkey rows), **About** (version, links). Tab switching auto-saves dirty Settings and cancels hotkey recording. Apply button centered in card. Observes `smartDockStateDidChange` to refresh UI. |
+| `SettingsWindow.swift` | Tabbed glass NSWindow (`NSVisualEffectView`) with 3 tabs: **Settings** (dock config card with mode control + general + buttons), **Shortcuts** (5 hotkey rows), **About** (version, links). Tab switching auto-saves dirty Settings and cancels hotkey recording. Apply button centered in card. Resizable (380×500 to 600×900) with ⌘0 to reset to default 420×660. Observes `smartDockStateDidChange` to refresh UI. |
 | `NotificationManager.swift` | Posts macOS banner notifications (`UNUserNotificationCenter`) on profile switch. Observes `.smartDockStateDidChange`. Cooldown 3s. Lazy authorization request. `UNUserNotificationCenterDelegate` for foreground banners. |
 | `HotkeyManager.swift` | Global keyboard shortcuts via `NSEvent.addGlobalMonitorForEvents` + `addLocalMonitorForEvents`. `HotkeyAction` enum: `.toggleAutohide`, `.refreshNow`, `.switchToExternal`, `.switchToBuiltin`, `.openSettings`. Cached bindings, rate limiting 0.3s, `isRecording` flag pauses dispatch during recording. |
 | `OnboardingWindow.swift` | Welcome screen shown once on first launch. Glass window with app description, feature list, "Get Started" button. Sets `hasSeenOnboarding` on close. |
@@ -176,6 +176,7 @@ Swift Package (swift-tools-version 6.2), two targets: **SmartDockCore** (testabl
 - Debounce with 1-second settle delay before checking display count. CG fires multiple callbacks during transitions.
 - Track `lastExternalCount` — only fire `onConfigurationChanged` when the external display count **actually** changes.
 - `CGDisplayIsBuiltin()` distinguishes built-in from external displays.
+- `externalDisplayCount()` additionally filters by `CGDisplayIsActive` + `!CGDisplayIsAsleep` — skips sleeping monitors, clamshell mode, phantom USB-C hub connections.
 
 ### Wake & Space Change Observers
 - `NSWorkspace.didWakeNotification` + `screensDidWakeNotification` — after macOS sleep/wake, force re-check with 2-second delay (longer than CG debounce). Uses separate `pendingWakeCheck` work item so CG callbacks can't cancel it. Always re-applies config regardless of count change.
