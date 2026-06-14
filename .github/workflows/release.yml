@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 env:
-  XCODE_PATH: /Applications/Xcode_26.3.app
+  XCODE_PATH: /Applications/Xcode_26.5.app
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
