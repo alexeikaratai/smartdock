@@ -1,11 +1,11 @@
-.PHONY: help build test clean icon app run sign notarize fix install release bump deps outdated doctor actions-check
+.PHONY: help build test clean icon app run sign notarize fix install release bump deps outdated doctor actions-check logs
 
 .DEFAULT_GOAL := help
 
 # === Config ===
 APP_NAME     := SmartDock
 BUNDLE_ID    := com.smartdock.app
-VERSION      := 1.9.2
+VERSION      := 1.9.3
 BUILD_DIR    := .build/release
 APP_DIR      := build/$(APP_NAME).app
 CONTENTS     := $(APP_DIR)/Contents
@@ -98,11 +98,11 @@ notarize: dmg
 	@echo "✅ Notarized and stapled"
 
 # === Version Bump ===
-# Usage: make bump V=1.9.2
+# Usage: make bump V=1.9.3
 
 bump:
 ifndef V
-	$(error Usage: make bump V=1.9.2)
+	$(error Usage: make bump V=1.9.3)
 endif
 	@echo "📌 Bumping version to $(V)..."
 	sed -i '' 's/^VERSION      := .*/VERSION      := $(V)/' Makefile
@@ -183,6 +183,7 @@ help:
 	@echo "    make outdated      Check Xcode/Swift/Actions versions"
 	@echo "    make actions-check Compare GitHub Actions versions vs latest (requires gh)"
 	@echo "    make doctor        Verify dev environment (swift, xcode, gh)"
+	@echo "    make logs          Stream live SmartDock logs (Ctrl+C to stop)"
 	@echo ""
 	@echo "  Current version: $(VERSION)"
 	@echo ""
@@ -240,6 +241,10 @@ actions-check:
 		fi; \
 		printf "%-35s %-12s %-12s %s\n" "$$action" "$$current" "$$latest" "$$status"; \
 	done
+
+logs:
+	@echo "📜 Streaming SmartDock logs (Ctrl+C to stop)..."
+	@log stream --predicate 'subsystem == "com.smartdock.app"' --info --style compact
 
 doctor:
 	@echo "🩺 Checking dev environment..."

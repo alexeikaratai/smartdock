@@ -22,7 +22,7 @@ final class SettingsWindow: NSObject {
     // MARK: - Properties
 
     private var window: NSWindow?
-    private var resetSizeMonitor: Any?
+    private var keyMonitor: Any?
     private let service: SmartDockService
     private let hotkeyManager: HotkeyManager
     private let prefs = UserPreferences.shared
@@ -115,7 +115,7 @@ final class SettingsWindow: NSObject {
         w.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
-        installResetSizeMonitor()
+        installKeyMonitor()
 
         selectedMode = service.hasExternalDisplay ? .external : .builtin
         modeControl.selectedSegment = selectedMode.rawValue
@@ -123,17 +123,25 @@ final class SettingsWindow: NSObject {
         selectTab(tab)
     }
 
-    /// Installs a local key monitor for ⌘0 — resets window to default size.
-    private func installResetSizeMonitor() {
-        resetSizeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self,
-                  event.modifierFlags.contains(.command),
-                  event.charactersIgnoringModifiers == "0" else {
-                return event
+    /// Installs a local key monitor for ⌘0 (reset window size) and Escape (close window).
+    private func installKeyMonitor() {
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+
+            // ⌘0 — reset window to default size
+            if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "0" {
+                self.window?.setContentSize(Self.defaultContentSize)
+                self.window?.center()
+                return nil
             }
-            self.window?.setContentSize(Self.defaultContentSize)
-            self.window?.center()
-            return nil
+
+            // Escape — close window (but skip if recording a hotkey; that flow owns Escape)
+            if event.keyCode == 53, self.recordingAction == nil {
+                self.window?.performClose(nil)
+                return nil
+            }
+
+            return event
         }
     }
 
@@ -1114,9 +1122,9 @@ final class SettingsWindow: NSObject {
 extension SettingsWindow: NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         if recordingAction != nil { stopRecording() }
-        if let monitor = resetSizeMonitor {
+        if let monitor = keyMonitor {
             NSEvent.removeMonitor(monitor)
-            resetSizeMonitor = nil
+            keyMonitor = nil
         }
         window = nil
     }
