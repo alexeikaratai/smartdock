@@ -46,7 +46,7 @@ final class StatusBarController: NSObject {
             let config = service.currentConfig
             button.image = iconCache[config.position]?[!config.autohide]
                 ?? iconCache[.bottom]?[true]
-            button.toolTip = "SmartDock"
+            button.toolTip = tooltipText()
         }
 
         buildMenu()
@@ -188,7 +188,15 @@ final class StatusBarController: NSObject {
             let config = service.currentConfig
             button.image = iconCache[config.position]?[!config.autohide]
                 ?? iconCache[.bottom]?[true]
+            button.toolTip = tooltipText()
         }
+    }
+
+    private func tooltipText() -> String {
+        let profile = service.hasExternalDisplay ? "External Monitor" : "Built-in Only"
+        let config = service.currentConfig
+        let autohide = config.autohide ? "hidden" : "visible"
+        return "SmartDock — \(profile)\nDock: \(config.position.displayName), \(autohide)"
     }
 
     private func statusText() -> String {
