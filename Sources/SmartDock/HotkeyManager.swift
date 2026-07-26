@@ -91,9 +91,10 @@ final class HotkeyManager: NSObject {
         let isTrusted = AXIsProcessTrusted()
         Log.info("Hotkey start: AXIsProcessTrusted=\(isTrusted), bindings=\(cachedBindings.count)")
 
+        // Never log event details here — this closure runs for every keystroke
+        // system-wide, and keyCodes in the unified log would expose typed text.
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return }
-            Log.info("Global keyDown received: keyCode=\(event.keyCode) modifiers=\(event.modifierFlags.rawValue)")
             self.handleKeyEvent(event)
         }
 

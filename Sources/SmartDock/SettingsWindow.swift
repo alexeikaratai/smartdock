@@ -3,6 +3,9 @@ import SmartDockCore
 
 /// Settings window for SmartDock.
 /// Three tabs: Settings (dock config + general), Shortcuts (hotkey bindings), About.
+///
+/// The self-contained pieces live in their own types: `PositionPicker`,
+/// `AccessibilityWarningView`, `AboutTabView`, `HotkeyRecorder`.
 @MainActor
 final class SettingsWindow: NSObject {
 
@@ -24,12 +27,11 @@ final class SettingsWindow: NSObject {
     private var window: NSWindow?
     private var keyMonitor: Any?
     private let service: SmartDockService
-    private let hotkeyManager: HotkeyManager
+    private let hotkeyRecorder: HotkeyRecorder
     private let prefs = UserPreferences.shared
 
     private var currentTab: Tab = .settings
     private var selectedMode: Mode = .external
-    private var selectedPosition: DockPosition = .bottom
 
     // Controls — Top-level
     private var headerIconView: NSImageView!
@@ -41,15 +43,11 @@ final class SettingsWindow: NSObject {
 
     // Controls — Settings tab
     private var modeControl: NSSegmentedControl!
-    private var positionButtons: [DockPosition: NSButton] = [:]
-    private var positionImageViews: [DockPosition: NSImageView] = [:]
-    private var positionLabels: [DockPosition: NSTextField] = [:]
+    private var positionPicker: PositionPicker!
     private var autohideCheckbox: NSButton!
     private var iconSizeSlider: NSSlider!
-    private var iconSizeLabel: NSTextField!
     private var magnificationCheckbox: NSButton!
     private var magSizeSlider: NSSlider!
-    private var magSizeLabel: NSTextField!
     private var applyButton: NSButton!
     private var launchAtLoginCheckbox: NSButton!
     private var notificationsCheckbox: NSButton!
@@ -57,28 +55,17 @@ final class SettingsWindow: NSObject {
 
     // Controls — Shortcuts tab
     private var hotkeyButtons: [HotkeyAction: NSButton] = [:]
-    private var recordingMonitor: Any?
-    private var recordingAction: HotkeyAction?
-    private var accessibilityWarningView: NSView!
-
-    // Cached position icons
-    private lazy var positionIconCache: [DockPosition: [Bool: NSImage]] = {
-        var cache: [DockPosition: [Bool: NSImage]] = [:]
-        for position in DockPosition.allCases {
-            cache[position] = [
-                true: drawPositionIcon(for: position, selected: true),
-                false: drawPositionIcon(for: position, selected: false),
-            ]
-        }
-        return cache
-    }()
 
     // MARK: - Init
 
     init(service: SmartDockService, hotkeyManager: HotkeyManager) {
         self.service = service
-        self.hotkeyManager = hotkeyManager
+        self.hotkeyRecorder = HotkeyRecorder(hotkeyManager: hotkeyManager)
         super.init()
+
+        hotkeyRecorder.onFinish = { [weak self] in
+            self?.updateHotkeyButtons()
+        }
 
         NotificationCenter.default.addObserver(
             self,
@@ -135,8 +122,8 @@ final class SettingsWindow: NSObject {
                 return nil
             }
 
-            // Escape — close window (but skip if recording a hotkey; that flow owns Escape)
-            if event.keyCode == 53, self.recordingAction == nil {
+            // Escape — close window (but skip while recording a hotkey; that flow owns Escape)
+            if event.keyCode == 53, !self.hotkeyRecorder.isRecording {
                 self.window?.performClose(nil)
                 return nil
             }
@@ -150,18 +137,11 @@ final class SettingsWindow: NSObject {
     private static let defaultContentSize = NSSize(width: 420, height: 660)
 
     private func makeWindow() -> NSWindow {
-        let w = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: Self.defaultContentSize.width, height: Self.defaultContentSize.height),
-            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
+        let (w, contentView) = UI.glassWindow(
+            title: "SmartDock",
+            size: Self.defaultContentSize,
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView]
         )
-        w.title = "SmartDock"
-        w.isReleasedWhenClosed = false
-        w.titlebarAppearsTransparent = true
-        w.titleVisibility = .hidden
-        w.isMovableByWindowBackground = true
-        w.backgroundColor = .clear
 
         // Bounded resize range — user can shrink down to minimum readable size.
         w.contentMinSize = NSSize(width: 380, height: 500)
@@ -171,25 +151,6 @@ final class SettingsWindow: NSObject {
         // Don't persist resized frame across sessions — always open at default.
         w.setFrameAutosaveName("")
 
-        let vibrancy = NSVisualEffectView()
-        vibrancy.translatesAutoresizingMaskIntoConstraints = false
-        vibrancy.material = .hudWindow
-        vibrancy.blendingMode = .behindWindow
-        vibrancy.state = .active
-
-        let contentView = NSView()
-        contentView.translatesAutoresizingMaskIntoConstraints = false
-
-        w.contentView = vibrancy
-        vibrancy.addSubview(contentView)
-
-        NSLayoutConstraint.activate([
-            contentView.topAnchor.constraint(equalTo: vibrancy.topAnchor),
-            contentView.leadingAnchor.constraint(equalTo: vibrancy.leadingAnchor),
-            contentView.trailingAnchor.constraint(equalTo: vibrancy.trailingAnchor),
-            contentView.bottomAnchor.constraint(equalTo: vibrancy.bottomAnchor),
-        ])
-
         buildUI(in: contentView)
         return w
     }
@@ -197,7 +158,6 @@ final class SettingsWindow: NSObject {
     // MARK: - UI Construction
 
     private func buildUI(in container: NSView) {
-        let version = Bundle.main.shortVersion
         let margin: CGFloat = 24
 
         // --- Header ---
@@ -206,10 +166,11 @@ final class SettingsWindow: NSObject {
         headerIconView.imageAlignment = .alignCenter
         container.addSubview(headerIconView)
 
-        let nameLabel = makeLabel(text: "SmartDock", font: .systemFont(ofSize: 18, weight: .semibold))
+        let nameLabel = UI.label("SmartDock", font: .systemFont(ofSize: 18, weight: .semibold))
         container.addSubview(nameLabel)
 
-        let versionLabel = makeLabel(text: "v\(version) · Made with \u{2764} by Alex Karatai", font: .systemFont(ofSize: 11))
+        let versionLabel = UI.label("v\(Bundle.main.shortVersion) · Made with \u{2764} by Alex Karatai",
+                                    font: .systemFont(ofSize: 11))
         versionLabel.textColor = .tertiaryLabelColor
         container.addSubview(versionLabel)
 
@@ -235,15 +196,13 @@ final class SettingsWindow: NSObject {
         shortcutsContainer.isHidden = true
         container.addSubview(shortcutsContainer)
 
-        aboutContainer = NSView()
-        aboutContainer.translatesAutoresizingMaskIntoConstraints = false
+        aboutContainer = AboutTabView()
         aboutContainer.isHidden = true
         container.addSubview(aboutContainer)
 
         // --- Build tab contents ---
         buildSettingsTab(in: settingsContainer)
         buildShortcutsTab(in: shortcutsContainer)
-        buildAboutTab(in: aboutContainer)
 
         // --- Top-level layout ---
         NSLayoutConstraint.activate([
@@ -274,7 +233,6 @@ final class SettingsWindow: NSObject {
             aboutContainer.topAnchor.constraint(equalTo: tabControl.bottomAnchor, constant: 14),
             aboutContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             aboutContainer.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-
         ])
     }
 
@@ -295,49 +253,44 @@ final class SettingsWindow: NSObject {
         modeControl.segmentStyle = .automatic
 
         // Glass card — mode control goes inside as first element
-        let card = makeGlassCard()
+        let card = UI.glassCard()
         container.addSubview(card)
 
         card.addSubview(modeControl)
 
-        let posLabel = makeLabel(text: "Dock Position", font: .systemFont(ofSize: 13, weight: .medium))
+        let posLabel = UI.label("Dock Position", font: .systemFont(ofSize: 13, weight: .medium))
         card.addSubview(posLabel)
 
-        let posStack = makePositionPicker()
-        card.addSubview(posStack)
+        positionPicker = PositionPicker()
+        positionPicker.onSelectionChange = { [weak self] position in
+            guard let self else { return }
+            self.headerIconView.image = PositionIcon.image(for: position, selected: true)
+            self.markDirty()
+        }
+        card.addSubview(positionPicker)
 
-        autohideCheckbox = NSButton(checkboxWithTitle: "Auto-hide Dock", target: self, action: #selector(settingChanged))
-        autohideCheckbox.translatesAutoresizingMaskIntoConstraints = false
+        autohideCheckbox = UI.checkbox("Auto-hide Dock", target: self, action: #selector(settingChanged))
         card.addSubview(autohideCheckbox)
 
-        let sizeTitle = makeLabel(text: "Icon Size", font: .systemFont(ofSize: 13, weight: .medium))
+        let sizeTitle = UI.label("Icon Size", font: .systemFont(ofSize: 13, weight: .medium))
         card.addSubview(sizeTitle)
 
-        iconSizeSlider = NSSlider(value: 0.29, minValue: 0, maxValue: 1, target: self, action: #selector(sliderChanged))
-        iconSizeSlider.translatesAutoresizingMaskIntoConstraints = false
-        iconSizeSlider.isContinuous = true
+        iconSizeSlider = UI.scaleSlider(value: 0.29, target: self, action: #selector(sliderChanged))
         card.addSubview(iconSizeSlider)
 
-        iconSizeLabel = makeLabel(text: "Small \u{25C0}\u{2500}\u{25B6} Large", font: .systemFont(ofSize: 10))
-        iconSizeLabel.textColor = .tertiaryLabelColor
-        iconSizeLabel.alignment = .center
+        let iconSizeLabel = makeScaleHintLabel()
         card.addSubview(iconSizeLabel)
 
-        magnificationCheckbox = NSButton(checkboxWithTitle: "Magnification", target: self, action: #selector(settingChanged))
-        magnificationCheckbox.translatesAutoresizingMaskIntoConstraints = false
+        magnificationCheckbox = UI.checkbox("Magnification", target: self, action: #selector(settingChanged))
         card.addSubview(magnificationCheckbox)
 
-        let magTitle = makeLabel(text: "Magnification Size", font: .systemFont(ofSize: 13, weight: .medium))
+        let magTitle = UI.label("Magnification Size", font: .systemFont(ofSize: 13, weight: .medium))
         card.addSubview(magTitle)
 
-        magSizeSlider = NSSlider(value: 0.43, minValue: 0, maxValue: 1, target: self, action: #selector(sliderChanged))
-        magSizeSlider.translatesAutoresizingMaskIntoConstraints = false
-        magSizeSlider.isContinuous = true
+        magSizeSlider = UI.scaleSlider(value: 0.43, target: self, action: #selector(sliderChanged))
         card.addSubview(magSizeSlider)
 
-        magSizeLabel = makeLabel(text: "Small \u{25C0}\u{2500}\u{25B6} Large", font: .systemFont(ofSize: 10))
-        magSizeLabel.textColor = .tertiaryLabelColor
-        magSizeLabel.alignment = .center
+        let magSizeLabel = makeScaleHintLabel()
         card.addSubview(magSizeLabel)
 
         applyButton = NSButton(title: "Apply", target: self, action: #selector(applySettings))
@@ -349,44 +302,35 @@ final class SettingsWindow: NSObject {
         card.addSubview(applyButton)
 
         // General + buttons outside card
-        let generalHeader = makeLabel(text: "GENERAL", font: .systemFont(ofSize: 11, weight: .medium))
+        let generalHeader = UI.label("GENERAL", font: .systemFont(ofSize: 11, weight: .medium))
         generalHeader.textColor = .secondaryLabelColor
         container.addSubview(generalHeader)
 
-        launchAtLoginCheckbox = NSButton(checkboxWithTitle: "Launch at Login", target: self, action: #selector(toggleLaunchAtLogin))
-        launchAtLoginCheckbox.translatesAutoresizingMaskIntoConstraints = false
+        launchAtLoginCheckbox = UI.checkbox("Launch at Login", target: self,
+                                            action: #selector(toggleLaunchAtLogin))
         launchAtLoginCheckbox.state = LaunchAtLogin.isEnabled ? .on : .off
         container.addSubview(launchAtLoginCheckbox)
 
-        notificationsCheckbox = NSButton(checkboxWithTitle: "Notify on Profile Switch", target: self, action: #selector(toggleNotifications))
-        notificationsCheckbox.translatesAutoresizingMaskIntoConstraints = false
+        notificationsCheckbox = UI.checkbox("Notify on Profile Switch", target: self,
+                                            action: #selector(toggleNotifications))
         notificationsCheckbox.state = prefs.notificationsEnabled ? .on : .off
         container.addSubview(notificationsCheckbox)
 
-        syncFromSystemCheckbox = NSButton(checkboxWithTitle: "Auto-import System changes", target: self, action: #selector(toggleSyncFromSystem))
-        syncFromSystemCheckbox.translatesAutoresizingMaskIntoConstraints = false
+        syncFromSystemCheckbox = UI.checkbox("Auto-import System changes", target: self,
+                                             action: #selector(toggleSyncFromSystem))
         syncFromSystemCheckbox.state = prefs.syncFromSystemEnabled ? .on : .off
         container.addSubview(syncFromSystemCheckbox)
 
-        let syncButton = NSButton(title: "Sync from System", target: self, action: #selector(syncFromSystem))
-        syncButton.translatesAutoresizingMaskIntoConstraints = false
-        syncButton.bezelStyle = .rounded
-        syncButton.controlSize = .small
+        let syncButton = UI.smallButton("Sync from System", target: self, action: #selector(syncFromSystem))
         container.addSubview(syncButton)
 
-        let refreshButton = NSButton(title: "Refresh Now", target: self, action: #selector(refreshNow))
-        refreshButton.translatesAutoresizingMaskIntoConstraints = false
-        refreshButton.bezelStyle = .rounded
-        refreshButton.controlSize = .small
+        let refreshButton = UI.smallButton("Refresh Now", target: self, action: #selector(refreshNow))
         container.addSubview(refreshButton)
 
-        let quitButton = NSButton(title: "Quit SmartDock", target: self, action: #selector(quitApp))
-        quitButton.translatesAutoresizingMaskIntoConstraints = false
-        quitButton.bezelStyle = .rounded
-        quitButton.controlSize = .small
+        let quitButton = UI.smallButton("Quit SmartDock", target: self, action: #selector(quitApp))
         container.addSubview(quitButton)
 
-        statusLabel = makeLabel(text: statusText(), font: .systemFont(ofSize: 11))
+        statusLabel = UI.label(statusText(), font: .systemFont(ofSize: 11))
         statusLabel.textColor = .tertiaryLabelColor
         container.addSubview(statusLabel)
 
@@ -403,12 +347,12 @@ final class SettingsWindow: NSObject {
             posLabel.topAnchor.constraint(equalTo: modeControl.bottomAnchor, constant: 14),
             posLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
 
-            posStack.topAnchor.constraint(equalTo: posLabel.bottomAnchor, constant: 10),
-            posStack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
-            posStack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14),
-            posStack.heightAnchor.constraint(equalToConstant: 60),
+            positionPicker.topAnchor.constraint(equalTo: posLabel.bottomAnchor, constant: 10),
+            positionPicker.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
+            positionPicker.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14),
+            positionPicker.heightAnchor.constraint(equalToConstant: PositionPicker.buttonHeight),
 
-            autohideCheckbox.topAnchor.constraint(equalTo: posStack.bottomAnchor, constant: 14),
+            autohideCheckbox.topAnchor.constraint(equalTo: positionPicker.bottomAnchor, constant: 14),
             autohideCheckbox.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
 
             sizeTitle.topAnchor.constraint(equalTo: autohideCheckbox.bottomAnchor, constant: 16),
@@ -435,6 +379,7 @@ final class SettingsWindow: NSObject {
             magSizeSlider.topAnchor.constraint(equalTo: magTitle.bottomAnchor, constant: 6),
             magSizeSlider.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
             magSizeSlider.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14),
+
             applyButton.topAnchor.constraint(equalTo: magSizeSlider.bottomAnchor, constant: 16),
             applyButton.centerXAnchor.constraint(equalTo: card.centerXAnchor),
             applyButton.widthAnchor.constraint(equalToConstant: 120),
@@ -473,26 +418,26 @@ final class SettingsWindow: NSObject {
     private func buildShortcutsTab(in container: NSView) {
         let margin: CGFloat = 24
 
-        let header = makeLabel(text: "Configure global keyboard shortcuts.", font: .systemFont(ofSize: 12))
+        let header = UI.label("Configure global keyboard shortcuts.", font: .systemFont(ofSize: 12))
         header.textColor = .secondaryLabelColor
         container.addSubview(header)
 
-        // Accessibility warning — only shown when permission is missing
-        accessibilityWarningView = makeAccessibilityWarning()
-        container.addSubview(accessibilityWarningView)
+        // Only shown when Accessibility permission is missing
+        let accessibilityWarning = AccessibilityWarningView()
+        container.addSubview(accessibilityWarning)
 
         var hotkeyLabels: [NSTextField] = []
         for action in HotkeyAction.allCases {
-            let label = makeLabel(text: action.displayName, font: .systemFont(ofSize: 13))
+            let label = UI.label(action.displayName, font: .systemFont(ofSize: 13))
             container.addSubview(label)
             hotkeyLabels.append(label)
 
-            let btn = makeHotkeyButton(for: action)
-            container.addSubview(btn)
-            hotkeyButtons[action] = btn
+            let button = makeHotkeyButton(for: action)
+            container.addSubview(button)
+            hotkeyButtons[action] = button
         }
 
-        let hint = makeLabel(text: "Click to record, Esc to clear", font: .systemFont(ofSize: 10))
+        let hint = UI.label("Click to record, Esc to clear", font: .systemFont(ofSize: 10))
         hint.textColor = .tertiaryLabelColor
         container.addSubview(hint)
 
@@ -501,21 +446,21 @@ final class SettingsWindow: NSObject {
             header.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
             header.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
 
-            accessibilityWarningView.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 10),
-            accessibilityWarningView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin - 4),
-            accessibilityWarningView.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -(margin - 4)),
+            accessibilityWarning.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 10),
+            accessibilityWarning.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin - 4),
+            accessibilityWarning.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -(margin - 4)),
         ])
 
-        var previousAnchor = accessibilityWarningView.bottomAnchor
+        var previousAnchor = accessibilityWarning.bottomAnchor
         for (index, action) in HotkeyAction.allCases.enumerated() {
             let label = hotkeyLabels[index]
-            let btn = hotkeyButtons[action]!
+            guard let button = hotkeyButtons[action] else { continue }
             NSLayoutConstraint.activate([
                 label.topAnchor.constraint(equalTo: previousAnchor, constant: 12),
                 label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
-                btn.centerYAnchor.constraint(equalTo: label.centerYAnchor),
-                btn.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -margin),
-                btn.widthAnchor.constraint(equalToConstant: 120),
+                button.centerYAnchor.constraint(equalTo: label.centerYAnchor),
+                button.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -margin),
+                button.widthAnchor.constraint(equalToConstant: 120),
             ])
             previousAnchor = label.bottomAnchor
         }
@@ -524,84 +469,6 @@ final class SettingsWindow: NSObject {
             hint.topAnchor.constraint(equalTo: previousAnchor, constant: 10),
             hint.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
             hint.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor, constant: -8),
-        ])
-    }
-
-    // MARK: - About Tab
-
-    private func buildAboutTab(in container: NSView) {
-        let version = Bundle.main.shortVersion
-
-        let iconView = NSImageView()
-        iconView.translatesAutoresizingMaskIntoConstraints = false
-        let iconConfig = NSImage.SymbolConfiguration(pointSize: 36, weight: .light)
-        if let icon = NSImage(systemSymbolName: "dock.rectangle", accessibilityDescription: "SmartDock") {
-            iconView.image = icon.withSymbolConfiguration(iconConfig)
-            iconView.contentTintColor = .controlAccentColor
-        }
-        container.addSubview(iconView)
-
-        let nameLabel = makeLabel(text: "SmartDock", font: .systemFont(ofSize: 18, weight: .semibold))
-        nameLabel.alignment = .center
-        container.addSubview(nameLabel)
-
-        let versionLabel = makeLabel(text: "v\(version) · by Alex Karatai", font: .systemFont(ofSize: 11))
-        versionLabel.textColor = .tertiaryLabelColor
-        versionLabel.alignment = .center
-        container.addSubview(versionLabel)
-
-        let descLabel = makeLabel(
-            text: "Automatically adjusts Dock settings for your display setup.",
-            font: .systemFont(ofSize: 12)
-        )
-        descLabel.textColor = .secondaryLabelColor
-        descLabel.alignment = .center
-        descLabel.maximumNumberOfLines = 0
-        descLabel.lineBreakMode = .byWordWrapping
-        container.addSubview(descLabel)
-
-        let githubButton = NSButton(title: "GitHub", target: self, action: #selector(openGitHub))
-        githubButton.translatesAutoresizingMaskIntoConstraints = false
-        githubButton.bezelStyle = .rounded
-        githubButton.controlSize = .small
-        container.addSubview(githubButton)
-
-        let changelogButton = NSButton(title: "Changelog", target: self, action: #selector(openChangelog))
-        changelogButton.translatesAutoresizingMaskIntoConstraints = false
-        changelogButton.bezelStyle = .rounded
-        changelogButton.controlSize = .small
-        container.addSubview(changelogButton)
-
-        let footerLabel = makeLabel(text: "Made with \u{2764} by Alex Karatai", font: .systemFont(ofSize: 10))
-        footerLabel.textColor = .tertiaryLabelColor
-        footerLabel.alignment = .center
-        container.addSubview(footerLabel)
-
-        NSLayoutConstraint.activate([
-            iconView.topAnchor.constraint(equalTo: container.topAnchor, constant: 40),
-            iconView.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-            iconView.widthAnchor.constraint(equalToConstant: 44),
-            iconView.heightAnchor.constraint(equalToConstant: 44),
-
-            nameLabel.topAnchor.constraint(equalTo: iconView.bottomAnchor, constant: 10),
-            nameLabel.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-
-            versionLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 2),
-            versionLabel.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-
-            descLabel.topAnchor.constraint(equalTo: versionLabel.bottomAnchor, constant: 16),
-            descLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 30),
-            descLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -30),
-
-            githubButton.topAnchor.constraint(equalTo: descLabel.bottomAnchor, constant: 18),
-            githubButton.trailingAnchor.constraint(equalTo: container.centerXAnchor, constant: -8),
-
-            changelogButton.centerYAnchor.constraint(equalTo: githubButton.centerYAnchor),
-            changelogButton.leadingAnchor.constraint(equalTo: container.centerXAnchor, constant: 8),
-
-            footerLabel.topAnchor.constraint(greaterThanOrEqualTo: githubButton.bottomAnchor, constant: 20),
-            footerLabel.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-            footerLabel.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor, constant: -8),
         ])
     }
 
@@ -619,8 +486,8 @@ final class SettingsWindow: NSObject {
         }
 
         // Cancel hotkey recording if leaving Shortcuts
-        if currentTab == .shortcuts && tab != .shortcuts && recordingAction != nil {
-            stopRecording()
+        if currentTab == .shortcuts && tab != .shortcuts && hotkeyRecorder.isRecording {
+            hotkeyRecorder.stop()
         }
 
         currentTab = tab
@@ -631,157 +498,12 @@ final class SettingsWindow: NSObject {
         aboutContainer.isHidden = tab != .about
     }
 
-    // MARK: - Position Icon Picker
-
-    private func makePositionPicker() -> NSStackView {
-        let stack = NSStackView()
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        stack.orientation = .horizontal
-        stack.spacing = 10
-        stack.distribution = .fillEqually
-
-        for position in DockPosition.allCases {
-            let btn = makePositionButton(for: position)
-            positionButtons[position] = btn
-            stack.addArrangedSubview(btn)
-        }
-
-        return stack
-    }
-
-    private func makePositionButton(for position: DockPosition) -> NSButton {
-        let btn = NSButton()
-        btn.translatesAutoresizingMaskIntoConstraints = false
-        btn.title = ""
-        btn.bezelStyle = .smallSquare
-        btn.isBordered = false
-        btn.setButtonType(.momentaryPushIn)
-        btn.wantsLayer = true
-        btn.layer?.cornerRadius = 8
-        btn.target = self
-        btn.action = #selector(positionButtonTapped(_:))
-        btn.tag = DockPosition.allCases.firstIndex(of: position) ?? 0
-
-        let imageView = NSImageView()
-        imageView.translatesAutoresizingMaskIntoConstraints = false
-        imageView.image = positionIconCache[position]?[false]
-        imageView.imageAlignment = .alignCenter
-        btn.addSubview(imageView)
-        positionImageViews[position] = imageView
-
-        let label = NSTextField(labelWithString: position.displayName)
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = .systemFont(ofSize: 10, weight: .medium)
-        label.textColor = .secondaryLabelColor
-        label.alignment = .center
-        btn.addSubview(label)
-        positionLabels[position] = label
-
-        NSLayoutConstraint.activate([
-            btn.heightAnchor.constraint(equalToConstant: 60),
-            imageView.centerXAnchor.constraint(equalTo: btn.centerXAnchor),
-            imageView.topAnchor.constraint(equalTo: btn.topAnchor, constant: 8),
-            imageView.widthAnchor.constraint(equalToConstant: 44),
-            imageView.heightAnchor.constraint(equalToConstant: 32),
-            label.centerXAnchor.constraint(equalTo: btn.centerXAnchor),
-            label.topAnchor.constraint(equalTo: imageView.bottomAnchor, constant: 4),
-        ])
-
-        return btn
-    }
-
-    private func updatePositionSelection() {
-        for (position, btn) in positionButtons {
-            let isSelected = position == selectedPosition
-            btn.layer?.backgroundColor = isSelected
-                ? NSColor.controlAccentColor.withAlphaComponent(0.2).cgColor
-                : NSColor.clear.cgColor
-            positionImageViews[position]?.image = positionIconCache[position]?[isSelected]
-            positionLabels[position]?.textColor = isSelected ? .controlAccentColor : .secondaryLabelColor
-        }
-    }
-
-    private func drawPositionIcon(for position: DockPosition, selected: Bool) -> NSImage {
-        let size = NSSize(width: 44, height: 32)
-        return NSImage(size: size, flipped: true) { rect in
-            let monitorRect = rect.insetBy(dx: 3, dy: 3)
-            let accentColor = NSColor.controlAccentColor
-
-            let outline = NSBezierPath(roundedRect: monitorRect, xRadius: 4, yRadius: 4)
-            if selected {
-                accentColor.withAlphaComponent(0.08).setFill()
-                outline.fill()
-                accentColor.withAlphaComponent(0.6).setStroke()
-            } else {
-                NSColor.tertiaryLabelColor.withAlphaComponent(0.5).setStroke()
-            }
-            outline.lineWidth = 1.2
-            outline.stroke()
-
-            let barColor = selected ? accentColor : NSColor.secondaryLabelColor
-            let dotColor = selected
-                ? accentColor.withAlphaComponent(0.5)
-                : NSColor.tertiaryLabelColor
-
-            let barRect: NSRect
-            switch position {
-            case .bottom:
-                barRect = NSRect(x: monitorRect.minX + 5, y: monitorRect.maxY - 6,
-                                 width: monitorRect.width - 10, height: 3.5)
-            case .left:
-                barRect = NSRect(x: monitorRect.minX + 2, y: monitorRect.minY + 4,
-                                 width: 3.5, height: monitorRect.height - 8)
-            case .right:
-                barRect = NSRect(x: monitorRect.maxX - 5.5, y: monitorRect.minY + 4,
-                                 width: 3.5, height: monitorRect.height - 8)
-            }
-
-            barColor.setFill()
-            NSBezierPath(roundedRect: barRect, xRadius: 1.5, yRadius: 1.5).fill()
-
-            let isHorizontal = position == .bottom
-            let dotCount = isHorizontal ? 4 : 3
-            let dotSize: CGFloat = 2
-            let dotSpacing: CGFloat = isHorizontal ? 4 : 3.5
-            let totalSpan = CGFloat(dotCount) * dotSize + CGFloat(dotCount - 1) * dotSpacing
-
-            dotColor.setFill()
-            for i in 0..<dotCount {
-                let offset = CGFloat(i) * (dotSize + dotSpacing)
-                let dotRect: NSRect
-                if isHorizontal {
-                    let startX = barRect.midX - totalSpan / 2
-                    let dotY = barRect.minY + (barRect.height - dotSize) / 2
-                    dotRect = NSRect(x: startX + offset, y: dotY,
-                                     width: dotSize, height: dotSize)
-                } else {
-                    let dotX = barRect.minX + (barRect.width - dotSize) / 2
-                    let startY = barRect.midY - totalSpan / 2
-                    dotRect = NSRect(x: dotX, y: startY + offset,
-                                     width: dotSize, height: dotSize)
-                }
-                NSBezierPath(roundedRect: dotRect, xRadius: 0.5, yRadius: 0.5).fill()
-            }
-
-            return true
-        }
-    }
-
     // MARK: - Actions
 
     @objc private func modeChanged(_ sender: NSSegmentedControl) {
         if applyButton.isEnabled { saveAndApply() }
         selectedMode = Mode(rawValue: sender.selectedSegment) ?? .external
         loadCurrentMode()
-    }
-
-    @objc private func positionButtonTapped(_ sender: NSButton) {
-        let idx = sender.tag
-        guard idx >= 0, idx < DockPosition.allCases.count else { return }
-        selectedPosition = DockPosition.allCases[idx]
-        updatePositionSelection()
-        headerIconView.image = drawPositionIcon(for: selectedPosition, selected: true)
-        markDirty()
     }
 
     @objc private func settingChanged(_ sender: Any) {
@@ -828,81 +550,11 @@ final class SettingsWindow: NSObject {
 
     @objc private func hotkeyButtonClicked(_ sender: NSButton) {
         guard sender.tag >= 0, sender.tag < HotkeyAction.allCases.count else { return }
-        let action = HotkeyAction.allCases[sender.tag]
-        if recordingAction != nil { stopRecording(); return }
-        startRecording(action: action, button: sender)
-    }
-
-    @objc private func openGitHub() {
-        if let url = URL(string: "https://github.com/alexeikaratai/smartdock") {
-            NSWorkspace.shared.open(url)
-        }
-    }
-
-    @objc private func openChangelog() {
-        if let url = URL(string: "https://github.com/alexeikaratai/smartdock/releases") {
-            NSWorkspace.shared.open(url)
-        }
-    }
-
-    // MARK: - Hotkey Recording
-
-    private func startRecording(action: HotkeyAction, button: NSButton) {
-        recordingAction = action
-        hotkeyManager.isRecording = true
-        button.title = "Press shortcut..."
-
-        recordingMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self else { return event }
-            self.handleRecordedKey(event)
-            return nil
-        }
-    }
-
-    private func stopRecording() {
-        if let monitor = recordingMonitor {
-            NSEvent.removeMonitor(monitor)
-            recordingMonitor = nil
-        }
-        recordingAction = nil
-        hotkeyManager.isRecording = false
-        hotkeyManager.reloadBindings()
-        updateHotkeyButtons()
-    }
-
-    private func handleRecordedKey(_ event: NSEvent) {
-        guard let action = recordingAction else { return }
-
-        if event.keyCode == 53 {
-            prefs.setHotkey(nil, for: action.rawValue)
-            stopRecording()
+        if hotkeyRecorder.isRecording {
+            hotkeyRecorder.stop()
             return
         }
-
-        let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
-        let hasModifier = modifiers.contains(.command) || modifiers.contains(.control)
-            || modifiers.contains(.option)
-        guard hasModifier else { return }
-
-        let displayName = event.charactersIgnoringModifiers?.uppercased() ?? "?"
-        let binding = HotkeyBinding(
-            keyCode: event.keyCode,
-            modifiers: modifiers.rawValue,
-            displayName: displayName
-        )
-        prefs.setHotkey(binding, for: action.rawValue)
-        stopRecording()
-    }
-
-    private func updateHotkeyButtons() {
-        for action in HotkeyAction.allCases {
-            hotkeyButtons[action]?.title = hotkeyDisplayString(for: action)
-        }
-    }
-
-    private func hotkeyDisplayString(for action: HotkeyAction) -> String {
-        guard let binding = prefs.hotkey(for: action.rawValue) else { return "Click to set" }
-        return HotkeyManager.displayString(for: binding)
+        hotkeyRecorder.start(HotkeyAction.allCases[sender.tag], in: sender)
     }
 
     /// Display state changed — refresh Settings UI.
@@ -919,30 +571,23 @@ final class SettingsWindow: NSObject {
     // MARK: - Load / Save
 
     private func loadCurrentMode() {
-        let config = selectedMode == .external ? prefs.externalConfig : prefs.builtinConfig
+        let config = activeConfig
 
-        selectedPosition = config.position
-        updatePositionSelection()
-
+        positionPicker.selectedPosition = config.position
         autohideCheckbox.state = config.autohide ? .on : .off
         iconSizeSlider.doubleValue = config.iconSize
         magnificationCheckbox.state = config.magnification ? .on : .off
         magSizeSlider.doubleValue = config.magnificationSize
         magSizeSlider.isEnabled = config.magnification
 
+        headerIconView.image = PositionIcon.image(for: config.position, selected: true)
         updateStatus()
-        updateHeaderIcon()
-    }
-
-    private func updateHeaderIcon() {
-        let config = selectedMode == .external ? prefs.externalConfig : prefs.builtinConfig
-        headerIconView.image = drawPositionIcon(for: config.position, selected: true)
     }
 
     private func saveAndApply() {
         let config = DockConfiguration(
             autohide: autohideCheckbox.state == .on,
-            position: selectedPosition,
+            position: positionPicker.selectedPosition,
             iconSize: iconSizeSlider.doubleValue,
             magnification: magnificationCheckbox.state == .on,
             magnificationSize: magSizeSlider.doubleValue
@@ -962,6 +607,13 @@ final class SettingsWindow: NSObject {
         updateStatus()
     }
 
+    /// Stored config for the mode currently shown in the Settings tab.
+    private var activeConfig: DockConfiguration {
+        selectedMode == .external ? prefs.externalConfig : prefs.builtinConfig
+    }
+
+    // MARK: - Helpers
+
     private func updateStatus() { statusLabel.stringValue = statusText() }
 
     private func statusText() -> String {
@@ -969,151 +621,28 @@ final class SettingsWindow: NSObject {
         return "Current: \(mode)"
     }
 
-    // MARK: - Helpers
-
-    private func makeLabel(text: String, font: NSFont) -> NSTextField {
-        let label = NSTextField(labelWithString: text)
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = font
+    /// "Small ◀─▶ Large" caption shown beside a size slider.
+    private func makeScaleHintLabel() -> NSTextField {
+        let label = UI.label("Small \u{25C0}\u{2500}\u{25B6} Large", font: .systemFont(ofSize: 10))
+        label.textColor = .tertiaryLabelColor
+        label.alignment = .center
         return label
     }
 
     private func makeHotkeyButton(for action: HotkeyAction) -> NSButton {
-        let btn = NSButton(title: hotkeyDisplayString(for: action), target: self, action: #selector(hotkeyButtonClicked))
-        btn.translatesAutoresizingMaskIntoConstraints = false
-        btn.bezelStyle = .rounded
-        btn.controlSize = .small
-        btn.tag = HotkeyAction.allCases.firstIndex(of: action) ?? 0
-        return btn
-    }
-
-    /// Yellow warning banner shown when Accessibility permission is missing.
-    /// Hidden if permission is already granted.
-    private func makeAccessibilityWarning() -> NSView {
-        let view = NSView()
-        view.translatesAutoresizingMaskIntoConstraints = false
-        view.wantsLayer = true
-        view.layer?.cornerRadius = 8
-        view.layer?.backgroundColor = NSColor.systemYellow.withAlphaComponent(0.15).cgColor
-        view.layer?.borderWidth = 0.5
-        view.layer?.borderColor = NSColor.systemYellow.withAlphaComponent(0.4).cgColor
-        view.isHidden = AccessibilityChecker.isGranted
-
-        let icon = NSImageView()
-        icon.translatesAutoresizingMaskIntoConstraints = false
-        icon.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)
-        icon.contentTintColor = .systemYellow
-        view.addSubview(icon)
-
-        let title = makeLabel(text: "Hotkeys require Accessibility permission",
-                              font: .systemFont(ofSize: 12, weight: .medium))
-        view.addSubview(title)
-
-        let subtitle = makeLabel(
-            text: "If the checkbox is on but hotkeys still don't work, the permission is broken (common after Homebrew updates). Use Reset to fix it.",
-            font: .systemFont(ofSize: 11)
+        let button = UI.smallButton(
+            HotkeyRecorder.displayTitle(for: action),
+            target: self,
+            action: #selector(hotkeyButtonClicked)
         )
-        subtitle.textColor = .secondaryLabelColor
-        subtitle.maximumNumberOfLines = 0
-        subtitle.lineBreakMode = .byWordWrapping
-        subtitle.preferredMaxLayoutWidth = 340
-        view.addSubview(subtitle)
-
-        let openButton = NSButton(title: "Open System Settings", target: self,
-                                  action: #selector(openAccessibilitySettings))
-        openButton.translatesAutoresizingMaskIntoConstraints = false
-        openButton.bezelStyle = .rounded
-        openButton.controlSize = .small
-        view.addSubview(openButton)
-
-        let resetButton = NSButton(title: "Reset Permission", target: self,
-                                   action: #selector(resetAccessibilityPermission))
-        resetButton.translatesAutoresizingMaskIntoConstraints = false
-        resetButton.bezelStyle = .rounded
-        resetButton.controlSize = .small
-        view.addSubview(resetButton)
-
-        NSLayoutConstraint.activate([
-            icon.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
-            icon.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
-            icon.widthAnchor.constraint(equalToConstant: 18),
-            icon.heightAnchor.constraint(equalToConstant: 18),
-
-            title.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
-            title.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 8),
-            title.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
-
-            subtitle.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 2),
-            subtitle.leadingAnchor.constraint(equalTo: title.leadingAnchor),
-            subtitle.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
-
-            openButton.topAnchor.constraint(equalTo: subtitle.bottomAnchor, constant: 8),
-            openButton.leadingAnchor.constraint(equalTo: title.leadingAnchor),
-            openButton.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -12),
-
-            resetButton.centerYAnchor.constraint(equalTo: openButton.centerYAnchor),
-            resetButton.leadingAnchor.constraint(equalTo: openButton.trailingAnchor, constant: 8),
-        ])
-
-        return view
+        button.tag = HotkeyAction.allCases.firstIndex(of: action) ?? 0
+        return button
     }
 
-    @objc private func openAccessibilitySettings() {
-        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
-        NSWorkspace.shared.open(url)
-    }
-
-    @objc private func resetAccessibilityPermission() {
-        let alert = NSAlert()
-        alert.messageText = "Reset Accessibility Permission?"
-        alert.informativeText = "This will remove SmartDock from the Accessibility list and restart the app. You'll be prompted to grant permission again. Administrator password is required."
-        alert.addButton(withTitle: "Reset & Restart")
-        alert.addButton(withTitle: "Cancel")
-        alert.alertStyle = .warning
-
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-
-        // Set flag so next launch opens Shortcuts tab + watches for permission grant
-        prefs.pendingAccessibilityGrant = true
-
-        // Run tccutil with admin privileges via osascript.
-        // Quit and relaunch SmartDock so the system re-checks permission.
-        let bundleID = Bundle.main.bundleIdentifier ?? "com.smartdock.app"
-        let bundlePath = Bundle.main.bundlePath
-        let script = """
-            do shell script "/usr/bin/tccutil reset Accessibility \(bundleID)" with administrator privileges
-            """
-
-        let appleScript = NSAppleScript(source: script)
-        var error: NSDictionary?
-        appleScript?.executeAndReturnError(&error)
-
-        if let error {
-            Log.error("Failed to reset Accessibility: \(error)")
-            let failAlert = NSAlert()
-            failAlert.messageText = "Reset Failed"
-            failAlert.informativeText = "Could not reset Accessibility permission. You can run this command manually:\n\nsudo tccutil reset Accessibility \(bundleID)"
-            failAlert.runModal()
-            return
+    private func updateHotkeyButtons() {
+        for action in HotkeyAction.allCases {
+            hotkeyButtons[action]?.title = HotkeyRecorder.displayTitle(for: action)
         }
-
-        // Relaunch via shell — wait for current PID to exit before opening
-        // new instance to avoid two instances running in parallel.
-        AppRelauncher.relaunch(bundlePath: bundlePath)
-    }
-
-    private func makeGlassCard() -> NSVisualEffectView {
-        let card = NSVisualEffectView()
-        card.translatesAutoresizingMaskIntoConstraints = false
-        card.material = .popover
-        card.blendingMode = .withinWindow
-        card.state = .active
-        card.wantsLayer = true
-        card.layer?.cornerRadius = 12
-        card.layer?.masksToBounds = true
-        card.layer?.borderWidth = 0.5
-        card.layer?.borderColor = NSColor.white.withAlphaComponent(0.15).cgColor
-        return card
     }
 }
 
@@ -1121,7 +650,7 @@ final class SettingsWindow: NSObject {
 
 extension SettingsWindow: NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
-        if recordingAction != nil { stopRecording() }
+        if hotkeyRecorder.isRecording { hotkeyRecorder.stop() }
         if let monitor = keyMonitor {
             NSEvent.removeMonitor(monitor)
             keyMonitor = nil

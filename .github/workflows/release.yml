@@ -9,8 +9,7 @@ permissions:
   contents: write
 
 env:
-  XCODE_PATH: /Applications/Xcode_26.3.app
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  XCODE_PATH: /Applications/Xcode_26.6.app
 
 jobs:
 
@@ -18,17 +17,17 @@ jobs:
 
   test:
     name: 🧪 Test
-    runs-on: macos-15
+    runs-on: macos-26
 
     steps:
       - name: 📥 Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: 🔧 Select Xcode
         run: sudo xcode-select -s ${{ env.XCODE_PATH }}
 
       - name: 📦 Restore SPM cache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .build
           key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved', 'Package.swift') }}
@@ -41,18 +40,18 @@ jobs:
 
   build:
     name: 🔨 Build
-    runs-on: macos-15
+    runs-on: macos-26
     needs: test
 
     steps:
       - name: 📥 Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: 🔧 Select Xcode
         run: sudo xcode-select -s ${{ env.XCODE_PATH }}
 
       - name: 📦 Restore SPM cache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .build
           key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved', 'Package.swift') }}
@@ -63,14 +62,10 @@ jobs:
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: 📌 Update version in project files
-        run: |
-          VERSION=${{ steps.version.outputs.VERSION }}
-          sed -i '' "s/^VERSION      := .*/VERSION      := ${VERSION}/" Makefile
-          sed -i '' "/CFBundleShortVersionString/{n;s|<string>.*</string>|<string>${VERSION}</string>|;}" Resources/Info.plist
-          BUILD=$(sed -n '/CFBundleVersion/{n;s/.*<string>\(.*\)<\/string>.*/\1/p;}' Resources/Info.plist)
-          NEW_BUILD=$(( BUILD + 1 ))
-          sed -i '' "/CFBundleVersion/{n;s|<string>.*</string>|<string>${NEW_BUILD}</string>|;}" Resources/Info.plist
-          echo "Version: ${VERSION}, Build: ${NEW_BUILD}"
+        # Delegates to `make bump` so the list of files carrying the version lives
+        # in exactly one place. It self-verifies via `make version-check` and fails
+        # the build if any reference is left stale.
+        run: make bump V=${{ steps.version.outputs.VERSION }}
 
       - name: 🔨 Build app bundle
         run: make app
@@ -88,7 +83,7 @@ jobs:
 
   release:
     name: 🎉 Release
-    runs-on: macos-15
+    runs-on: macos-26
     needs: build
 
     steps:
@@ -123,7 +118,7 @@ jobs:
 
   homebrew:
     name: 🍺 Homebrew
-    runs-on: macos-15
+    runs-on: macos-26
     needs: release
 
     steps:

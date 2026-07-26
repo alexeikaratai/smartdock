@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.9.3-blue?style=flat-square" alt="Version 1.9.3"/>
+  <img src="https://img.shields.io/badge/version-2.0.0-blue?style=flat-square" alt="Version 2.0.0"/>
   <img src="https://img.shields.io/badge/macOS-14.0%2B-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS 14+"/>
   <img src="https://img.shields.io/badge/Swift-6.2-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 6.2"/>
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License"/>
@@ -95,8 +95,17 @@ Sources/
     ├── OnboardingWindow.swift        # First-launch welcome screen
     ├── NotificationManager.swift     # macOS banner notifications
     ├── HotkeyManager.swift           # Global keyboard shortcuts (5 actions)
+    ├── HotkeyRecorder.swift          # Captures a keystroke into a binding
+    ├── AppRelauncher.swift           # Safe relaunch — waits for PID exit first
+    ├── AppUpdateWatcher.swift        # Detects Homebrew upgrade, prompts relaunch
     ├── LaunchAtLogin.swift           # SMAppService wrapper
-    └── AccessibilityChecker.swift    # First-launch Accessibility prompt
+    ├── AccessibilityChecker.swift    # First-launch Accessibility prompt
+    └── Views/                        # Self-contained UI pieces
+        ├── UI.swift                  # Shared control & glass window factories
+        ├── PositionIcon.swift        # Cached dock-position thumbnails
+        ├── PositionPicker.swift      # Position button row
+        ├── AboutTabView.swift        # About tab contents
+        └── AccessibilityWarningView.swift  # Permission banner & reset flow
 ```
 
 ### Key Design Decisions
@@ -116,13 +125,20 @@ Sources/
 
 ## 🔐 Permissions
 
-On first launch, SmartDock prompts for **Accessibility** permission (**System Settings → Privacy & Security → Accessibility**). This is needed for global keyboard shortcuts. Core dock switching works without it via Automation permission (granted automatically for AppleScript → System Events).
+SmartDock asks for two separate permissions:
+
+| Permission | Needed for | When |
+|---|---|---|
+| **Automation** (System Events) | Core dock switching via AppleScript | macOS prompts once, the first time SmartDock changes the Dock |
+| **Accessibility** | Global keyboard shortcuts only | Prompted on first launch — **optional**, everything else works without it |
+
+Both live in **System Settings → Privacy & Security**. If hotkeys stop working after a Homebrew update, ad-hoc signing has invalidated the Accessibility grant — use **Settings → Shortcuts → Reset Permission**.
 
 ## 🛠️ Requirements
 
-- macOS 14.0+ (Sonoma)
-- Swift 6.2+
-- Xcode 16+ / Command Line Tools (`xcode-select --install`)
+- macOS 14.0+ (Sonoma) to **run**
+- Swift 6.2+ to **build** — the package declares `swift-tools-version: 6.2`
+- Xcode 26+ / matching Command Line Tools (`xcode-select --install`). Swift 6.2 first shipped in Xcode 26, so earlier Xcode versions cannot build this package.
 
 ## 👤 Author
 

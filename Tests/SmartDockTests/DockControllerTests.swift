@@ -8,23 +8,9 @@ final class DockControllerTests: XCTestCase {
 
     func testMockDefaultState() {
         let dock = MockDockController()
-        XCTAssertFalse(dock.isAutoHideEnabled())
-        XCTAssertEqual(dock.setAutoHideCallCount, 0)
-        XCTAssertEqual(dock.applyCallCount, 0)
-    }
-
-    func testMockTracksSetAutoHide() {
-        let dock = MockDockController()
-
-        dock.setAutoHide(true)
-        XCTAssertTrue(dock.autoHideState)
-        XCTAssertEqual(dock.setAutoHideCallCount, 1)
-        XCTAssertEqual(dock.lastAutoHideValue, true)
-
-        dock.setAutoHide(false)
         XCTAssertFalse(dock.autoHideState)
-        XCTAssertEqual(dock.setAutoHideCallCount, 2)
-        XCTAssertEqual(dock.lastAutoHideValue, false)
+        XCTAssertNil(dock.lastAppliedConfig)
+        XCTAssertEqual(dock.applyCallCount, 0)
     }
 
     func testMockTracksApply() {
@@ -74,6 +60,78 @@ final class DockControllerTests: XCTestCase {
         XCTAssertNotEqual(a, c)
     }
 
+    // MARK: - approximatelyEquals (system sync loop prevention)
+
+    // `DockController.handleExternalChange` uses this to tell our own writes
+    // (echoed back through KVO) from real System Settings edits. A false positive
+    // makes SmartDock ignore the user; a false negative makes it fight System
+    // Settings in a loop.
+
+    func testApproximatelyEqualsIdenticalConfigs() {
+        let config = DockConfiguration(autohide: true, position: .left, iconSize: 0.3,
+                                       magnification: true, magnificationSize: 0.6)
+        XCTAssertTrue(config.approximatelyEquals(config))
+    }
+
+    func testApproximatelyEqualsIgnoresSubPixelSizeNoise() {
+        // 1px of tilesize is ~0.009 of scale — must not read as a user edit.
+        let a = DockConfiguration(iconSize: 0.3000, magnificationSize: 0.6000)
+        let b = DockConfiguration(iconSize: 0.3089, magnificationSize: 0.6089)
+        XCTAssertTrue(a.approximatelyEquals(b))
+        XCTAssertTrue(b.approximatelyEquals(a))
+    }
+
+    /// The 0.01 tolerance exists to absorb exactly one pixel of tilesize rounding.
+    /// Anchored to real pixel values rather than to 0.01 itself: the comparison is
+    /// knife-edge at exactly 0.01 (`abs(0.30 - 0.31) == 0.010000000000000009`), but
+    /// tilesize is an integer so a difference that small never occurs in practice.
+    func testApproximatelyEqualsAbsorbsOnePixelButNotTwo() {
+        let base = DockConfiguration(iconSize: DockConfiguration.pixelsToScale(48))
+        let onePixelUp = DockConfiguration(iconSize: DockConfiguration.pixelsToScale(49))
+        let twoPixelsUp = DockConfiguration(iconSize: DockConfiguration.pixelsToScale(50))
+
+        XCTAssertTrue(base.approximatelyEquals(onePixelUp))   // ~0.0089 — rounding noise
+        XCTAssertFalse(base.approximatelyEquals(twoPixelsUp)) // ~0.0179 — a real edit
+    }
+
+    func testApproximatelyEqualsDetectsRealSizeChange() {
+        let a = DockConfiguration(iconSize: 0.30)
+        let b = DockConfiguration(iconSize: 0.50)
+        XCTAssertFalse(a.approximatelyEquals(b))
+    }
+
+    func testApproximatelyEqualsDetectsMagnificationSizeChange() {
+        let a = DockConfiguration(magnification: true, magnificationSize: 0.40)
+        let b = DockConfiguration(magnification: true, magnificationSize: 0.80)
+        XCTAssertFalse(a.approximatelyEquals(b))
+    }
+
+    func testApproximatelyEqualsDetectsAutohideToggle() {
+        let a = DockConfiguration(autohide: false)
+        let b = DockConfiguration(autohide: true)
+        XCTAssertFalse(a.approximatelyEquals(b))
+    }
+
+    func testApproximatelyEqualsDetectsPositionChange() {
+        let a = DockConfiguration(position: .bottom)
+        XCTAssertFalse(a.approximatelyEquals(DockConfiguration(position: .left)))
+        XCTAssertFalse(a.approximatelyEquals(DockConfiguration(position: .right)))
+    }
+
+    func testApproximatelyEqualsDetectsMagnificationToggle() {
+        let a = DockConfiguration(magnification: false)
+        let b = DockConfiguration(magnification: true)
+        XCTAssertFalse(a.approximatelyEquals(b))
+    }
+
+    /// Unlike `==`, size differences below tolerance must still compare equal.
+    func testApproximatelyEqualsIsLooserThanEquatable() {
+        let a = DockConfiguration(iconSize: 0.3000)
+        let b = DockConfiguration(iconSize: 0.3050)
+        XCTAssertNotEqual(a, b)
+        XCTAssertTrue(a.approximatelyEquals(b))
+    }
+
     // MARK: - Scale Conversion
 
     func testPixelToScaleMin() {
@@ -114,28 +172,23 @@ final class DockControllerTests: XCTestCase {
         XCTAssertNotNil(dock)
     }
 
-    func testRealControllerReadsAutoHideState() {
-        let dock = DockController()
-        _ = dock.isAutoHideEnabled()
-    }
-
     // MARK: - Integration Scenario
 
     func testFullCycleWithMock() {
         let dock = MockDockController()
 
         // Initial state — Dock is visible
-        XCTAssertFalse(dock.isAutoHideEnabled())
+        XCTAssertFalse(dock.autoHideState)
 
         // Apply external config (dock visible)
         let externalConfig = DockConfiguration(autohide: false, position: .bottom, iconSize: 0.29)
         dock.apply(externalConfig)
-        XCTAssertFalse(dock.isAutoHideEnabled())
+        XCTAssertFalse(dock.autoHideState)
 
         // Apply builtin config (dock hidden)
         let builtinConfig = DockConfiguration(autohide: true, position: .left, iconSize: 0.18)
         dock.apply(builtinConfig)
-        XCTAssertTrue(dock.isAutoHideEnabled())
+        XCTAssertTrue(dock.autoHideState)
 
         XCTAssertEqual(dock.applyCallCount, 2)
     }

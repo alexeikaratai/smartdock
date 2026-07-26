@@ -20,15 +20,33 @@ swift test --filter SmartDockTests.SmartDockServiceTests/testStartBeginsMonitori
 ## Version & Release
 
 ```bash
-make bump V=1.9.3   # update version in Makefile + Info.plist, increment build number
+make bump V=1.2.3   # update the version everywhere + increment build number
+make version-check  # verify all version references agree (bump runs this itself)
 make release        # build + zip + gh release create (working tree must be clean)
 make install        # copy .app to /Applications
 make fix            # xattr -cr + codesign (fix Gatekeeper quarantine)
 ```
 
-Version is defined in two places — keep them in sync (use `make bump`):
-- `Makefile` line 6: `VERSION := x.y.z`
-- `Resources/Info.plist`: `CFBundleShortVersionString` + `CFBundleVersion` (build number)
+**Never edit a version by hand — always `make bump`.** The version is written in four places, and `bump` is the only thing that knows all of them:
+
+| Where | What |
+|---|---|
+| `Makefile` | `VERSION := x.y.z` in the `# === Config ===` block — **source of truth** |
+| `Resources/Info.plist` | `CFBundleShortVersionString` |
+| `Resources/Info.plist` | `CFBundleVersion` — build number, incremented by 1 (never set from `V`) |
+| `README.md` | shields.io badge — both the URL and its `alt` text |
+
+`bump` finishes by running `version-check`, which fails if any reference is stale. `release.yml` calls `make bump` rather than re-implementing it — if you add a fifth place, add it to the `bump` target and to `version-check`, and CI picks it up for free.
+
+Examples in docs use `V=1.2.3` on purpose: a placeholder that never collides with a real version, so grepping the current version only finds actual definitions.
+
+Diagnostics:
+```bash
+make doctor         # verify dev environment (swift, xcode, codesign, gh, git)
+make outdated       # print Swift/Xcode/Actions versions in use
+make actions-check  # compare GitHub Actions versions against latest (requires gh)
+make logs           # stream live SmartDock logs (subsystem com.smartdock.app)
+```
 
 ## CI/CD
 
@@ -36,7 +54,7 @@ Two GitHub Actions workflows in `.github/workflows/`:
 
 **`ci.yml`** — runs on push to `main`/`dev` and PRs to `main`:
 - Concurrency group per branch — cancels in-progress runs on new push
-- SPM cache (`actions/cache@v5` on `.build` dir)
+- SPM cache (`actions/cache` on `.build` dir)
 - `swift test` + `swift build -c release`
 
 **`release.yml`** — runs on `v*` tag push. Four jobs in a pipeline:
@@ -48,7 +66,9 @@ Two GitHub Actions workflows in `.github/workflows/`:
 - **Release**: downloads artifact, creates GitHub Release with `gh release create`
 - **Homebrew**: computes sha256, updates Cask + Formula in `alexeikaratai/homebrew-tap`
 
-Xcode version is set via `env.XCODE_PATH` at workflow level — single place to update.
+Both workflows set the Xcode version via `env.XCODE_PATH` at workflow level — one place per file, never inline in a step. The runner (`runs-on:`) and `XCODE_PATH` must agree: check the [runner image readme](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md) for which Xcode versions are actually installed before bumping either.
+
+Action versions are pinned by major (`@v7`). Run `make actions-check` to see how they compare to latest — don't hardcode them into this file, it goes stale.
 
 ## Architecture
 
@@ -59,7 +79,7 @@ Swift Package (swift-tools-version 6.2), two targets: **SmartDockCore** (testabl
 | File | Responsibility |
 |---|---|
 | `DockConfiguration.swift` | `DockConfiguration` value type (position, autohide, icon size as 0.0–1.0 scale, magnification). `HotkeyBinding` value type (keyCode + modifiers + displayName). `UserPreferences` persists per-mode configs via UserDefaults with migration from old pixel format. Also stores: `notificationsEnabled`, `syncFromSystemEnabled`, `hasSeenOnboarding`, `hasPromptedAccessibility`, `pendingAccessibilityGrant`, hotkey bindings. `DockPosition` enum. First-launch: `initializeDefaultsIfNeeded(from:)` reads system config, sets external=autohide off, builtin=autohide on. |
-| `DisplayMonitor.swift` | Detects external monitor connect/disconnect via `CGDisplayRegisterReconfigurationCallback`. Debounces (1s settle delay). Filters by add/remove/enable/disable CG flags only. Also observes `didWakeNotification`, `screensDidWakeNotification` (2s delay re-check). No space change observer — AppleScript triggers space notifications causing feedback loops. Conforms to `DisplayMonitoring`. |
+| `DisplayMonitor.swift` | Detects external monitor connect/disconnect via `CGDisplayRegisterReconfigurationCallback`. Debounces (1s settle delay). Filters by add/remove/enable/disable CG flags only, via the testable free function `shouldReactToDisplayChange(_:)`. Also observes `didWakeNotification`, `screensDidWakeNotification` (2s delay re-check). No space change observer — AppleScript triggers space notifications causing feedback loops. Conforms to `DisplayMonitoring`. |
 | `DockController.swift` | Applies `DockConfiguration` via `NSAppleScript` → System Events. Diff-based: reads current system config via fresh `UserDefaults(suiteName: "com.apple.dock")` and only applies properties that actually differ. Observes external dock preference changes via KVO on `UserDefaults(suiteName: "com.apple.dock")` using private `DockPrefsObserver` helper (NSObject for KVO). Debounces 0.5s, compares with `lastAppliedConfig` to filter own changes. Conforms to `DockControlling`. |
 | `SmartDockService.swift` | Orchestrator: reads `UserPreferences`, applies appropriate config based on display state. Handles external dock changes (System Settings sync): updates active profile when system config diverges from `lastAppliedConfig`. Has `SmartDockServiceDelegate`. Posts `Notification.Name.smartDockStateDidChange` only when state actually changes. |
 | `Log.swift` | Centralized `Logger` API. Subsystem `com.smartdock.app`. Categories: `general`, `display`. |
@@ -70,7 +90,8 @@ Swift Package (swift-tools-version 6.2), two targets: **SmartDockCore** (testabl
 |---|---|
 | `App.swift` | `@main` AppDelegate with manual `NSApplication` run loop (no storyboards). Prompts Accessibility on first launch only (avoids re-prompting after Homebrew updates). Creates `NotificationManager`, `HotkeyManager`, `AppUpdateWatcher`, shows `OnboardingWindow` on first launch. After "Reset Permission" relaunch: opens Shortcuts tab + System Settings, polls `AXIsProcessTrusted` (1s, max 5min), auto-relaunches when granted. `applicationShouldHandleReopen` opens Settings when re-launched from /Applications. |
 | `StatusBarController.swift` | Menu bar icon (`dock.rectangle` SF Symbol) + dropdown menu with SF Symbol icons per item. Implements `NSMenuDelegate`, `SmartDockServiceDelegate`. Exposes `showSettings()` for re-open handling. Passes `HotkeyManager` to `SettingsWindow`. Menu items: Settings, Shortcuts, About open SettingsWindow on the corresponding tab. |
-| `SettingsWindow.swift` | Tabbed glass NSWindow (`NSVisualEffectView`) with 3 tabs: **Settings** (dock config card with mode control + general + buttons), **Shortcuts** (5 hotkey rows), **About** (version, links). Tab switching auto-saves dirty Settings and cancels hotkey recording. Apply button centered in card. Resizable (380×500 to 600×900) with ⌘0 to reset to default 420×660. Observes `smartDockStateDidChange` to refresh UI. |
+| `SettingsWindow.swift` | Tabbed glass NSWindow (`NSVisualEffectView`) with 3 tabs: **Settings** (dock config card with mode control + general + buttons), **Shortcuts** (5 hotkey rows), **About** (version, links). Tab switching auto-saves dirty Settings and cancels hotkey recording. Apply button centered in card. Resizable (380×500 to 600×900) with ⌘0 to reset to default 420×660. Observes `smartDockStateDidChange` to refresh UI. Delegates self-contained pieces to `Views/` and `HotkeyRecorder`. |
+| `HotkeyRecorder.swift` | Captures a keystroke and stores it as a `HotkeyBinding`. Pauses `HotkeyManager` while recording so the key being bound doesn't fire its own action. Escape clears the binding; a Cmd/Ctrl/Opt modifier is required. `onFinish` tells the host to refresh its buttons. |
 | `NotificationManager.swift` | Posts macOS banner notifications (`UNUserNotificationCenter`) on profile switch. Observes `.smartDockStateDidChange`. Cooldown 3s. Lazy authorization request. `UNUserNotificationCenterDelegate` for foreground banners. |
 | `HotkeyManager.swift` | Global keyboard shortcuts via `NSEvent.addGlobalMonitorForEvents` + `addLocalMonitorForEvents`. `HotkeyAction` enum: `.toggleAutohide`, `.refreshNow`, `.switchToExternal`, `.switchToBuiltin`, `.openSettings`. Cached bindings, rate limiting 0.3s, `isRecording` flag pauses dispatch during recording. |
 | `OnboardingWindow.swift` | Welcome screen shown once on first launch. Glass window with app description, feature list, "Get Started" button. Sets `hasSeenOnboarding` on close. |
@@ -78,6 +99,18 @@ Swift Package (swift-tools-version 6.2), two targets: **SmartDockCore** (testabl
 | `AppUpdateWatcher.swift` | Watches `Bundle.main.executablePath` via `DispatchSource.makeFileSystemObjectSource` for delete/write/rename events. On Homebrew upgrade: debounce 2s, prompt user "SmartDock was updated. Relaunch?". Uses `AppRelauncher` for safe relaunch. |
 | `LaunchAtLogin.swift` | `SMAppService.mainApp` wrapper. |
 | `AccessibilityChecker.swift` | `AXIsProcessTrusted()` check. Prompts system dialog only on first launch (`hasPromptedAccessibility` flag). Accessibility needed only for global hotkeys — core dock switching works without it. |
+
+### View layer (`Sources/SmartDock/Views/`)
+
+Self-contained UI pieces extracted out of `SettingsWindow`. Each owns its own layout and actions; the host only wires callbacks.
+
+| File | Responsibility |
+|---|---|
+| `UI.swift` | Static factories shared by all windows: `label`, `smallButton`, `checkbox`, `scaleSlider`, `glassCard`, `glassWindow`. `glassWindow` returns the window plus the content view to build into — the window's own `contentView` is the `NSVisualEffectView` behind it. |
+| `PositionIcon.swift` | Draws the monitor thumbnails for the position picker and Settings header. Pure drawing, so each (position, selected) pair is rendered once and cached. |
+| `PositionPicker.swift` | `NSStackView` subclass — one icon+label button per `DockPosition`. Owns its highlighting; `selectedPosition` repaints via `didSet`, `onSelectionChange` fires only on user taps (not on programmatic loads). |
+| `AboutTabView.swift` | `NSView` subclass with the About tab contents: icon, version, description, GitHub/Changelog links. |
+| `AccessibilityWarningView.swift` | `NSView` subclass — yellow banner shown on the Shortcuts tab while Accessibility is missing. Owns "Open System Settings" and the `tccutil reset` + relaunch flow. Hidden when `AccessibilityChecker.isGranted`. |
 
 ### Tests (`Tests/SmartDockTests/`)
 
@@ -161,7 +194,7 @@ Swift Package (swift-tools-version 6.2), two targets: **SmartDockCore** (testabl
 - Menu bar app: `LSUIElement = true` in Info.plist. No Dock icon. Do NOT call `NSApp.setActivationPolicy(.accessory)` — it's redundant with LSUIElement and can cause status items to disappear during launch.
 - Glass/vibrancy: `NSVisualEffectView` with `.hudWindow` (window) or `.popover` (cards) material.
 - Use `NSLayoutConstraint.activate([...])` for batch constraint activation — never `constraint.isActive = true` one by one.
-- Slider values: update label during drag (`isContinuous = true`), mark dirty state. Changes apply only when user clicks Apply button — no auto-save on mouseUp.
+- Size sliders are `isContinuous = true` and only mark dirty state on drag — they do **not** display a numeric value. The label beside each slider is a static "Small ◀─▶ Large" hint (`makeScaleHintLabel()`). Changes apply only when the user clicks Apply — no auto-save on mouseUp.
 - SF Symbols: always provide programmatic fallback for icons. Set `isTemplate = true` for menu bar icons.
 
 ### AppleScript / System Events
@@ -171,8 +204,10 @@ Swift Package (swift-tools-version 6.2), two targets: **SmartDockCore** (testabl
 
 ### CoreGraphics Display Callbacks
 - Use `CGDisplayRegisterReconfigurationCallback` — event-driven, no polling/timers.
-- Filter the C callback: only react to **add/remove/enable/disable** flags (`0x10 | 0x20 | 0x100 | 0x200`). Ignore mode changes, moves, desktop shape changes — these fire during Mission Control and fullscreen transitions.
-- Ignore `beginConfigurationChange` flag (rawValue 1) — react only to completion.
+- Filter the C callback through `shouldReactToDisplayChange(_:)` — an internal free function in `DisplayMonitor.swift`, extracted so the filtering rules are unit-testable without a real display.
+- Only react to **add/remove/enable/disable** (`.addFlag`, `.removeFlag`, `.enabledFlag`, `.disabledFlag`). Ignore mode changes, moves, mirroring and desktop shape changes — these fire during Mission Control and fullscreen transitions.
+- Ignore `.beginConfigurationFlag` — react only to completion. It is skipped even when bundled with topology flags, since the completion callback follows.
+- Use the named `CGDisplayChangeSummaryFlags` constants, never raw hex.
 - Debounce with 1-second settle delay before checking display count. CG fires multiple callbacks during transitions.
 - Track `lastExternalCount` — only fire `onConfigurationChanged` when the external display count **actually** changes.
 - `CGDisplayIsBuiltin()` distinguishes built-in from external displays.
@@ -224,6 +259,8 @@ Swift Package (swift-tools-version 6.2), two targets: **SmartDockCore** (testabl
 - `MockDisplayMonitor.simulateDisplayChange(externalCount:)` triggers the callback chain.
 - Tests use `swift test` (sequential) — `UserPreferences.shared` singleton causes flaky failures with `--parallel`.
 - `setUp` resets all `com.smartdock.*` UserDefaults keys and sets explicit defaults (`externalConfig`, `builtinConfig`, `syncFromSystemEnabled`).
+- Pure logic that the system would otherwise hide (CG flag filtering, `approximatelyEquals`) is extracted into free functions/methods and tested directly — prefer that over leaving it untested inside a C callback.
+- Don't assert on floating-point knife edges. `approximatelyEquals` uses a 0.01 tolerance, but `abs(0.30 - 0.31) == 0.010000000000000009` — anchor size assertions to `pixelsToScale()` values instead, which is what the tolerance actually exists for.
 
 ### Logging
 - Use `Log.info()`, `Log.error()`, `Log.displayChange()` — never `print()`. Categories: `general`, `display`.
@@ -254,10 +291,17 @@ Sources/
     ├── OnboardingWindow.swift    # First-launch welcome screen
     ├── NotificationManager.swift # macOS banner notifications on profile switch
     ├── HotkeyManager.swift       # Global keyboard shortcuts (5 actions)
+    ├── HotkeyRecorder.swift      # Captures a keystroke and stores it as a binding
     ├── AppRelauncher.swift       # Safe relaunch — waits for PID exit before spawning new instance
     ├── AppUpdateWatcher.swift    # FS watcher on executable — detects Homebrew upgrade, prompts relaunch
     ├── LaunchAtLogin.swift       # SMAppService wrapper
-    └── AccessibilityChecker.swift # First-launch-only Accessibility prompt
+    ├── AccessibilityChecker.swift # First-launch-only Accessibility prompt
+    └── Views/
+        ├── UI.swift                        # Shared control + glass window factories
+        ├── PositionIcon.swift              # Cached monitor thumbnails per dock position
+        ├── PositionPicker.swift            # NSStackView of position buttons
+        ├── AboutTabView.swift              # About tab contents
+        └── AccessibilityWarningView.swift  # Permission banner + tccutil reset flow
 Tests/SmartDockTests/
     ├── Mocks.swift               # MockDisplayMonitor, MockDockController, MockServiceDelegate
     ├── SmartDockServiceTests.swift

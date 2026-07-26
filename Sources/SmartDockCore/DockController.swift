@@ -8,13 +8,6 @@ public protocol DockControlling: AnyObject {
     /// Called when system dock settings change externally (e.g. via System Settings).
     var onExternalConfigChanged: ((DockConfiguration) -> Void)? { get set }
 
-    /// Current autohide state
-    func isAutoHideEnabled() -> Bool
-
-    /// Set the autohide state. Returns true on success.
-    @discardableResult
-    func setAutoHide(_ enabled: Bool) -> Bool
-
     /// Apply a full dock configuration. Diff-based — only changes properties that differ from system state.
     /// Uses AppleScript → System Events for immediate dock update.
     @discardableResult
@@ -52,22 +45,6 @@ public final class DockController: DockControlling {
     public init() {}
 
     // MARK: - DockControlling
-
-    public func isAutoHideEnabled() -> Bool {
-        readSystemConfig().autohide
-    }
-
-    @discardableResult
-    public func setAutoHide(_ enabled: Bool) -> Bool {
-        runAppleScript("""
-            tell application "System Events"
-                tell dock preferences
-                    set autohide to \(enabled)
-                end tell
-            end tell
-            """
-        )
-    }
 
     /// Read current dock settings directly from the system.
     /// Creates a fresh UserDefaults instance to avoid stale cached values

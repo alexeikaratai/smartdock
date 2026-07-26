@@ -40,32 +40,19 @@ final class MockDisplayMonitor: DisplayMonitoring {
 final class MockDockController: DockControlling {
     var onExternalConfigChanged: ((DockConfiguration) -> Void)?
 
-    var autoHideState: Bool = false
-    var setAutoHideCallCount = 0
-    var lastAutoHideValue: Bool?
     var applyCallCount = 0
     var lastAppliedConfig: DockConfiguration?
     var mockSystemConfig = DockConfiguration()
     var startObservingCallCount = 0
     var stopObservingCallCount = 0
 
-    func isAutoHideEnabled() -> Bool {
-        autoHideState
-    }
-
-    @discardableResult
-    func setAutoHide(_ enabled: Bool) -> Bool {
-        setAutoHideCallCount += 1
-        lastAutoHideValue = enabled
-        autoHideState = enabled
-        return true
-    }
+    /// Autohide state resulting from the last applied config.
+    var autoHideState: Bool { lastAppliedConfig?.autohide ?? false }
 
     @discardableResult
     func apply(_ config: DockConfiguration) -> Bool {
         applyCallCount += 1
         lastAppliedConfig = config
-        autoHideState = config.autohide
         return true
     }
 
