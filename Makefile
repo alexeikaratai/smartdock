@@ -1,11 +1,11 @@
-.PHONY: help build test clean icon app run sign notarize fix install release bump deps outdated doctor actions-check logs
+.PHONY: help build test clean icon app run sign notarize fix install release bump version-check deps outdated doctor actions-check logs
 
 .DEFAULT_GOAL := help
 
 # === Config ===
 APP_NAME     := SmartDock
 BUNDLE_ID    := com.smartdock.app
-VERSION      := 1.9.3
+VERSION      := 2.0.0
 BUILD_DIR    := .build/release
 APP_DIR      := build/$(APP_NAME).app
 CONTENTS     := $(APP_DIR)/Contents
@@ -98,23 +98,59 @@ notarize: dmg
 	@echo "✅ Notarized and stapled"
 
 # === Version Bump ===
-# Usage: make bump V=1.9.3
+# Usage: make bump V=1.2.3
+#
+# Single entry point for changing the version. Updates every place it is written:
+#   Makefile            VERSION := x.y.z          (source of truth)
+#   Info.plist          CFBundleShortVersionString + CFBundleVersion (build, +1)
+#   README.md           shields.io badge URL + its alt text
+# Then runs version-check so a missed spot fails loudly instead of shipping stale.
+# CI calls this target too — do not duplicate the sed logic in workflows.
 
 bump:
 ifndef V
-	$(error Usage: make bump V=1.9.3)
+	$(error Usage: make bump V=1.2.3)
 endif
 	@echo "📌 Bumping version to $(V)..."
+	@# Makefile — source of truth
 	sed -i '' 's/^VERSION      := .*/VERSION      := $(V)/' Makefile
+	@# Info.plist — short version string
 	sed -i '' '/CFBundleShortVersionString/{n;s|<string>.*</string>|<string>$(V)</string>|;}' Resources/Info.plist
+	@# Info.plist — build number, monotonically incremented
 	@BUILD=$$(sed -n '/CFBundleVersion/{n;s/.*<string>\(.*\)<\/string>.*/\1/p;}' Resources/Info.plist) && \
 		NEW_BUILD=$$(( $$BUILD + 1 )) && \
 		sed -i '' "/CFBundleVersion/{n;s|<string>.*</string>|<string>$$NEW_BUILD</string>|;}" Resources/Info.plist
+	@# README — badge URL and alt text both carry the version
+	sed -i '' -e 's|badge/version-[0-9][0-9.]*-|badge/version-$(V)-|' \
+	          -e 's|alt="Version [0-9][0-9.]*"|alt="Version $(V)"|' README.md
+	@$(MAKE) --no-print-directory version-check
 	@echo "✅ Version: $(V), Build: $$(sed -n '/CFBundleVersion/{n;s/.*<string>\(.*\)<\/string>.*/\1/p;}' Resources/Info.plist)"
+
+# Verify every version reference matches the Makefile's VERSION.
+# Run standalone at any time; `bump` runs it automatically.
+version-check:
+	@echo "🔎 Version references (expected $(VERSION)):"
+	@plist=$$(sed -n '/CFBundleShortVersionString/{n;s/.*<string>\(.*\)<\/string>.*/\1/p;}' Resources/Info.plist); \
+	badge=$$(sed -n 's|.*badge/version-\([0-9][0-9.]*\)-.*|\1|p' README.md | head -1); \
+	alt=$$(sed -n 's|.*alt="Version \([0-9][0-9.]*\)".*|\1|p' README.md | head -1); \
+	fail=0; \
+	for entry in "Info.plist:$$plist" "README badge:$$badge" "README alt:$$alt"; do \
+		name="$${entry%%:*}"; value="$${entry##*:}"; \
+		if [ "$$value" = "$(VERSION)" ]; then \
+			printf "  ✅ %-14s %s\n" "$$name" "$$value"; \
+		else \
+			printf "  ❌ %-14s %s\n" "$$name" "$${value:-<not found>}"; \
+			fail=1; \
+		fi; \
+	done; \
+	if [ $$fail -eq 1 ]; then \
+		echo "❌ Version mismatch — run: make bump V=$(VERSION)"; \
+		exit 1; \
+	fi
 
 # === Release ===
 
-release: app
+release: version-check app
 	@echo "🚀 Releasing v$(VERSION)..."
 	@# Ensure working tree is clean — commit changes before releasing
 	@if [ -n "$$(git status --porcelain)" ]; then \
@@ -170,7 +206,8 @@ help:
 	@echo "    make fix           Fix Gatekeeper quarantine on /Applications/SmartDock.app"
 	@echo ""
 	@echo "  Version & Release:"
-	@echo "    make bump V=1.2.3  Bump version in Makefile + Info.plist"
+	@echo "    make bump V=1.2.3  Bump version everywhere (Makefile, Info.plist, README badge)"
+	@echo "    make version-check Verify all version references agree"
 	@echo "    make release       Build + zip + create GitHub release"
 	@echo ""
 	@echo "  Distribution (requires Developer ID):"

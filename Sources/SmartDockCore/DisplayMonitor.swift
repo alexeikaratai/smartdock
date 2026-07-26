@@ -207,34 +207,39 @@ public final class DisplayMonitor: DisplayMonitoring {
     }
 }
 
+// MARK: - Callback Filtering
+
+/// Whether a CoreGraphics reconfiguration callback describes a real change in
+/// which displays are attached.
+///
+/// CG fires this callback for far more than connect/disconnect: Mission Control and
+/// fullscreen transitions report `desktopShapeChanged`, resolution changes report
+/// `setMode`, and rearranging displays reports `moved`. Re-applying dock config during
+/// those transitions interferes with macOS's own dock show/hide behavior, so only
+/// add/remove/enable/disable counts.
+///
+/// CG also calls twice per change — once with `beginConfiguration` and once on
+/// completion. We react only to completion, when the new configuration is in place.
+func shouldReactToDisplayChange(_ flags: CGDisplayChangeSummaryFlags) -> Bool {
+    guard !flags.contains(.beginConfigurationFlag) else { return false }
+
+    let topologyFlags: CGDisplayChangeSummaryFlags = [
+        .addFlag,
+        .removeFlag,
+        .enabledFlag,
+        .disabledFlag,
+    ]
+    return !flags.isDisjoint(with: topologyFlags)
+}
+
 // MARK: - C Callback
 
-/// CoreGraphics calls the callback twice: with the beginConfigurationChange flag
-/// and then without it (completion). We react only to completion,
-/// when the new configuration is already applied.
-///
-/// We also filter by flags: only react to actual display add/remove/enable/disable
-/// events. This avoids reacting to space transitions (Mission Control, fullscreen
-/// enter/exit) which fire `kCGDisplayDesktopShapeChangedFlag` or
-/// `kCGDisplaySetModeFlag` — re-applying dock config during these transitions
-/// can interfere with macOS's normal dock show/hide behavior.
 private func displayReconfigurationCallback(
     _ display: CGDirectDisplayID,
     _ flags: CGDisplayChangeSummaryFlags,
     _ userInfo: UnsafeMutableRawPointer?
 ) {
-    // Ignore the start of reconfiguration — react only to completion.
-    guard !flags.contains(CGDisplayChangeSummaryFlags(rawValue: 1)) else { return }
-
-    // Only react to actual display topology changes (add/remove/enable/disable).
-    let addRemoveFlags = CGDisplayChangeSummaryFlags(rawValue:
-        0x10 |   // kCGDisplayAddFlag
-        0x20 |   // kCGDisplayRemoveFlag
-        0x100 |  // kCGDisplayEnabledFlag
-        0x200    // kCGDisplayDisabledFlag
-    )
-    guard !flags.isDisjoint(with: addRemoveFlags) else { return }
-
+    guard shouldReactToDisplayChange(flags) else { return }
     guard let userInfo = userInfo else { return }
     let monitor = Unmanaged<DisplayMonitor>.fromOpaque(userInfo).takeUnretainedValue()
 

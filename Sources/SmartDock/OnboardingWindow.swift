@@ -31,38 +31,11 @@ final class OnboardingWindow: NSObject {
     // MARK: - Window Construction
 
     private func makeWindow() -> NSWindow {
-        let w = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 400, height: 400),
-            styleMask: [.titled, .closable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
+        let (w, contentView) = UI.glassWindow(
+            title: "Welcome to SmartDock",
+            size: NSSize(width: 400, height: 400),
+            styleMask: [.titled, .closable, .fullSizeContentView]
         )
-        w.title = "Welcome to SmartDock"
-        w.isReleasedWhenClosed = false
-        w.titlebarAppearsTransparent = true
-        w.titleVisibility = .hidden
-        w.isMovableByWindowBackground = true
-        w.backgroundColor = .clear
-
-        let vibrancy = NSVisualEffectView()
-        vibrancy.translatesAutoresizingMaskIntoConstraints = false
-        vibrancy.material = .hudWindow
-        vibrancy.blendingMode = .behindWindow
-        vibrancy.state = .active
-
-        let contentView = NSView()
-        contentView.translatesAutoresizingMaskIntoConstraints = false
-
-        w.contentView = vibrancy
-        vibrancy.addSubview(contentView)
-
-        NSLayoutConstraint.activate([
-            contentView.topAnchor.constraint(equalTo: vibrancy.topAnchor),
-            contentView.leadingAnchor.constraint(equalTo: vibrancy.leadingAnchor),
-            contentView.trailingAnchor.constraint(equalTo: vibrancy.trailingAnchor),
-            contentView.bottomAnchor.constraint(equalTo: vibrancy.bottomAnchor),
-        ])
-
         buildUI(in: contentView)
         return w
     }
@@ -83,20 +56,20 @@ final class OnboardingWindow: NSObject {
         container.addSubview(iconView)
 
         // App name
-        let nameLabel = makeLabel(text: "SmartDock", font: .systemFont(ofSize: 22, weight: .semibold))
+        let nameLabel = UI.label("SmartDock", font: .systemFont(ofSize: 22, weight: .semibold))
         nameLabel.alignment = .center
         container.addSubview(nameLabel)
 
         // Version
         let version = Bundle.main.shortVersion
-        let versionLabel = makeLabel(text: "v\(version) · by Alex Karatai", font: .systemFont(ofSize: 11))
+        let versionLabel = UI.label("v\(version) · by Alex Karatai", font: .systemFont(ofSize: 11))
         versionLabel.textColor = .tertiaryLabelColor
         versionLabel.alignment = .center
         container.addSubview(versionLabel)
 
         // Description
-        let descLabel = makeLabel(
-            text: "SmartDock automatically adjusts your Dock settings when you connect or disconnect an external monitor.",
+        let descLabel = UI.label(
+            "SmartDock automatically adjusts your Dock settings when you connect or disconnect an external monitor.",
             font: .systemFont(ofSize: 13)
         )
         descLabel.textColor = .secondaryLabelColor
@@ -118,7 +91,7 @@ final class OnboardingWindow: NSObject {
         featureStack.spacing = 6
 
         for feature in features {
-            let label = makeLabel(text: "  \(feature)", font: .systemFont(ofSize: 12))
+            let label = UI.label("  \(feature)", font: .systemFont(ofSize: 12))
             label.textColor = .secondaryLabelColor
             featureStack.addArrangedSubview(label)
         }
@@ -163,15 +136,6 @@ final class OnboardingWindow: NSObject {
     @objc private func getStarted() {
         window?.close() // windowWillClose sets hasSeenOnboarding = true
         onComplete?()
-    }
-
-    // MARK: - Helpers
-
-    private func makeLabel(text: String, font: NSFont) -> NSTextField {
-        let label = NSTextField(labelWithString: text)
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = font
-        return label
     }
 }
 
