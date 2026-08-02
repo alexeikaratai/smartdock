@@ -55,7 +55,10 @@ Two GitHub Actions workflows in `.github/workflows/`:
 **`ci.yml`** — runs on push to `main`/`dev` and PRs to `main`:
 - Concurrency group per branch — cancels in-progress runs on new push
 - SPM cache (`actions/cache` on `.build` dir)
-- `swift test` + `swift build -c release`
+- `make version-check` → `swift test` → `swift build -c release`
+- `make app` + `codesign --verify --strict` — exercises icon generation, entitlements and ad-hoc signing, which `swift build` never touches. Without this step those only run at release time, so a break would surface mid-release instead of on the PR. The `codesign --display --entitlements` output also asserts all three entitlements actually made it into the bundle.
+
+**`dependabot.yml`** — monthly grouped PR for GitHub Actions bumps. Only the `github-actions` ecosystem is configured: the package has no external SPM dependencies, so a `swift` entry would do nothing.
 
 **`release.yml`** — runs on `v*` tag push. Four jobs in a pipeline:
 ```

@@ -32,8 +32,22 @@ jobs:
           key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved', 'Package.swift') }}
           restore-keys: spm-${{ runner.os }}-
 
+      - name: 🔢 Check version consistency
+        run: make version-check
+
       - name: 🧪 Run tests
         run: swift test
 
       - name: 🔨 Build release
         run: swift build -c release
+
+      # Exercises the parts `swift build` never touches: icon generation,
+      # entitlements and ad-hoc codesigning. Without this they are only ever
+      # run at release time, so a break surfaces mid-release instead of on the PR.
+      - name: 📦 Build .app bundle
+        run: make app
+
+      - name: 🔏 Verify bundle signature
+        run: |
+          codesign --verify --strict --verbose=2 build/SmartDock.app
+          codesign --display --entitlements - build/SmartDock.app
