@@ -1,0 +1,19 @@
+version: 2
+
+updates:
+  # GitHub Actions only. The Swift package declares no external SPM dependencies
+  # (Apple frameworks are linked directly), so there is nothing for the `swift`
+  # ecosystem to watch — adding it would just produce empty runs.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    # One grouped PR per month rather than a separate PR per action.
+    groups:
+      actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: ci
+    labels:
+      - dependencies
