@@ -12,11 +12,24 @@ enum HotkeyAction: String, CaseIterable, Sendable {
 
     var displayName: String {
         switch self {
-        case .toggleAutohide:  return "Toggle Autohide"
-        case .refreshNow:      return "Refresh Now"
+        case .toggleAutohide: return "Toggle Autohide"
+        case .refreshNow: return "Refresh Now"
         case .switchToExternal: return "Apply External Profile"
-        case .switchToBuiltin:  return "Apply Built-in Profile"
-        case .openSettings:    return "Open Settings"
+        case .switchToBuiltin: return "Apply Built-in Profile"
+        case .openSettings: return "Open Settings"
+        }
+    }
+
+    /// The action a `smartdock://` URL maps to, so URLs and hotkeys run through
+    /// one execution path. Exhaustive on purpose — adding a case to either enum
+    /// breaks the build until the mapping is updated.
+    init(_ command: URLCommand) {
+        switch command {
+        case .refresh: self = .refreshNow
+        case .switchToExternal: self = .switchToExternal
+        case .switchToBuiltin: self = .switchToBuiltin
+        case .toggleAutohide: self = .toggleAutohide
+        case .openSettings: self = .openSettings
         }
     }
 }
@@ -69,7 +82,8 @@ final class HotkeyManager: NSObject {
 
     @objc private func handleAppActivation(_ notification: Notification) {
         guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-              app.bundleIdentifier == Bundle.main.bundleIdentifier else { return }
+            app.bundleIdentifier == Bundle.main.bundleIdentifier
+        else { return }
         // Restart monitors so they re-check Accessibility status
         if !cachedBindings.isEmpty {
             start()
@@ -101,7 +115,7 @@ final class HotkeyManager: NSObject {
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             if self.handleKeyEvent(event) {
-                return nil // consumed
+                return nil  // consumed
             }
             return event
         }
@@ -150,14 +164,10 @@ final class HotkeyManager: NSObject {
         guard !isRecording, !cachedBindings.isEmpty else { return false }
         guard Date().timeIntervalSince(lastExecutionTime) >= executionCooldown else { return false }
 
-        // Strip CapsLock and Function flags — only match Cmd/Ctrl/Opt/Shift.
-        let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift]).rawValue
-        let keyCode = event.keyCode
-
         for (action, binding) in cachedBindings {
-            if binding.keyCode == keyCode && binding.modifiers == modifiers {
+            if binding.matches(keyCode: event.keyCode, modifiers: event.modifierFlags) {
                 lastExecutionTime = Date()
-                executeAction(action)
+                perform(action)
                 return true
             }
         }
@@ -172,7 +182,8 @@ final class HotkeyManager: NSObject {
         }
     }
 
-    private func executeAction(_ action: HotkeyAction) {
+    /// Runs an action. Shared by the hotkey monitors and the `smartdock://` URL scheme.
+    func perform(_ action: HotkeyAction) {
         switch action {
         case .toggleAutohide:
             toggleAutohide()
@@ -215,24 +226,5 @@ final class HotkeyManager: NSObject {
 
         service.refresh()
         Log.info("Hotkey: toggled autohide → \(!current.autohide)")
-    }
-}
-
-// MARK: - Hotkey Display Helpers
-
-extension HotkeyManager {
-
-    /// Format a hotkey binding for display, e.g. "⌃⌥H".
-    static func displayString(for binding: HotkeyBinding) -> String {
-        let flags = NSEvent.ModifierFlags(rawValue: UInt(binding.modifiers))
-        var parts: [String] = []
-
-        if flags.contains(.control) { parts.append("⌃") }
-        if flags.contains(.option)  { parts.append("⌥") }
-        if flags.contains(.shift)   { parts.append("⇧") }
-        if flags.contains(.command) { parts.append("⌘") }
-
-        parts.append(binding.displayName)
-        return parts.joined()
     }
 }

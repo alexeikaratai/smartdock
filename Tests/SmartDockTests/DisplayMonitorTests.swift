@@ -1,5 +1,6 @@
 import CoreGraphics
 import XCTest
+
 @testable import SmartDockCore
 
 @MainActor

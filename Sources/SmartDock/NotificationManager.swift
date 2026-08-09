@@ -1,6 +1,6 @@
 import Cocoa
-import UserNotifications
 import SmartDockCore
+import UserNotifications
 
 // MARK: - Notifications
 
@@ -23,6 +23,9 @@ extension Notification.Name {
 /// Observes `.smartDockStateDidChange` — same pattern as SettingsWindow.
 @MainActor
 final class NotificationManager: NSObject {
+
+    /// Called when the user clicks a profile-switch banner.
+    var onNotificationClicked: (() -> Void)?
 
     private let prefs = UserPreferences.shared
     private var lastNotificationDate: Date?
@@ -92,7 +95,8 @@ final class NotificationManager: NSObject {
         guard prefs.notificationsEnabled else { return }
 
         guard let userInfo = notification.userInfo,
-              let hasExternal = userInfo[SmartDockService.hasExternalKey] as? Bool else {
+            let hasExternal = userInfo[SmartDockService.hasExternalKey] as? Bool
+        else {
             return
         }
 
@@ -105,7 +109,8 @@ final class NotificationManager: NSObject {
 
         // Cooldown: prevent spam during rapid connect/disconnect
         if let lastDate = lastNotificationDate,
-           Date().timeIntervalSince(lastDate) < cooldown {
+            Date().timeIntervalSince(lastDate) < cooldown
+        {
             return
         }
 
@@ -154,7 +159,8 @@ final class NotificationManager: NSObject {
     private func deliverNotification(hasExternal: Bool) {
         let content = UNMutableNotificationContent()
         content.title = "SmartDock"
-        content.body = hasExternal
+        content.body =
+            hasExternal
             ? "Switched to External Monitor config"
             : "Switched to Built-in Only config"
         content.sound = .default
@@ -184,5 +190,18 @@ extension NotificationManager: UNUserNotificationCenterDelegate {
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
         [.banner, .sound]
+    }
+
+    /// Clicking the banner opens Settings — the banner says the profile changed,
+    /// so the obvious follow-up is seeing what it changed to.
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse
+    ) async {
+        guard response.actionIdentifier == UNNotificationDefaultActionIdentifier else { return }
+        await MainActor.run {
+            Log.info("Notification clicked — opening Settings")
+            onNotificationClicked?()
+        }
     }
 }

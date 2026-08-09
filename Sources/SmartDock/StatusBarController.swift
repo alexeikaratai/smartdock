@@ -44,7 +44,8 @@ final class StatusBarController: NSObject {
 
         if let button = statusItem.button {
             let config = service.currentConfig
-            button.image = iconCache[config.position]?[!config.autohide]
+            button.image =
+                iconCache[config.position]?[!config.autohide]
                 ?? iconCache[.bottom]?[true]
             button.toolTip = tooltipText()
         }
@@ -61,7 +62,7 @@ final class StatusBarController: NSObject {
         let headerItem = NSMenuItem(title: "SmartDock v\(version)", action: nil, keyEquivalent: "")
         headerItem.isEnabled = false
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+            .font: NSFont.systemFont(ofSize: 13, weight: .semibold)
         ]
         headerItem.attributedTitle = NSAttributedString(string: "SmartDock v\(version)", attributes: attrs)
         menu.addItem(headerItem)
@@ -186,7 +187,8 @@ final class StatusBarController: NSObject {
             // Use our saved config, not readSystemConfig() — the system config can
             // be in a transient state during fullscreen or dock transitions.
             let config = service.currentConfig
-            button.image = iconCache[config.position]?[!config.autohide]
+            button.image =
+                iconCache[config.position]?[!config.autohide]
                 ?? iconCache[.bottom]?[true]
             button.toolTip = tooltipText()
         }

@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import SmartDockCore
 
 @MainActor
@@ -116,7 +117,7 @@ final class SmartDockServiceTests: XCTestCase {
         monitor.simulateDisplayChange(externalCount: 1)
         monitor.simulateDisplayChange(externalCount: 0)
 
-        XCTAssertEqual(delegate.stateUpdates.count, 3) // start + 2 changes
+        XCTAssertEqual(delegate.stateUpdates.count, 3)  // start + 2 changes
         XCTAssertFalse(delegate.stateUpdates[0].hasExternal)
         XCTAssertTrue(delegate.stateUpdates[1].hasExternal)
         XCTAssertFalse(delegate.stateUpdates[2].hasExternal)
@@ -132,8 +133,9 @@ final class SmartDockServiceTests: XCTestCase {
         service.stop()
         monitor.simulateDisplayChange(externalCount: 1)
 
-        XCTAssertEqual(dock.applyCallCount, callsAfterStart,
-                       "Dock should not be touched when service is disabled")
+        XCTAssertEqual(
+            dock.applyCallCount, callsAfterStart,
+            "Dock should not be touched when service is disabled")
     }
 
     // MARK: - Refresh
@@ -156,8 +158,9 @@ final class SmartDockServiceTests: XCTestCase {
         service.start()
 
         XCTAssertNotNil(dock.lastAppliedConfig)
-        XCTAssertFalse(dock.lastAppliedConfig!.autohide,
-                       "External mode should have autohide=false (dock visible)")
+        XCTAssertFalse(
+            dock.lastAppliedConfig!.autohide,
+            "External mode should have autohide=false (dock visible)")
     }
 
     func testBuiltinConfigHasAutohideOn() {
@@ -167,8 +170,9 @@ final class SmartDockServiceTests: XCTestCase {
         service.start()
 
         XCTAssertNotNil(dock.lastAppliedConfig)
-        XCTAssertTrue(dock.lastAppliedConfig!.autohide,
-                      "Built-in mode should have autohide=true (dock hidden)")
+        XCTAssertTrue(
+            dock.lastAppliedConfig!.autohide,
+            "Built-in mode should have autohide=true (dock hidden)")
     }
 
     func testDisconnectSwitchesToBuiltinConfig() {
@@ -184,8 +188,9 @@ final class SmartDockServiceTests: XCTestCase {
         monitor.simulateDisplayChange(externalCount: 0)
 
         XCTAssertFalse(service.hasExternalDisplay)
-        XCTAssertTrue(dock.lastAppliedConfig!.autohide,
-                      "After disconnect, should apply builtin config with autohide=true")
+        XCTAssertTrue(
+            dock.lastAppliedConfig!.autohide,
+            "After disconnect, should apply builtin config with autohide=true")
     }
 
     func testConnectSwitchesToExternalConfig() {
@@ -201,8 +206,9 @@ final class SmartDockServiceTests: XCTestCase {
         monitor.simulateDisplayChange(externalCount: 1)
 
         XCTAssertTrue(service.hasExternalDisplay)
-        XCTAssertFalse(dock.lastAppliedConfig!.autohide,
-                       "After connect, should apply external config with autohide=false")
+        XCTAssertFalse(
+            dock.lastAppliedConfig!.autohide,
+            "After connect, should apply external config with autohide=false")
     }
 
     // MARK: - Display Change Re-apply
@@ -214,8 +220,9 @@ final class SmartDockServiceTests: XCTestCase {
 
         monitor.onConfigurationChanged?()
 
-        XCTAssertEqual(dock.applyCallCount, callsAfterStart + 1,
-                       "Display change should trigger apply")
+        XCTAssertEqual(
+            dock.applyCallCount, callsAfterStart + 1,
+            "Display change should trigger apply")
     }
 
     func testDisplayChangePreservesCorrectMode() {
@@ -227,8 +234,9 @@ final class SmartDockServiceTests: XCTestCase {
         monitor.onConfigurationChanged?()
 
         XCTAssertTrue(service.hasExternalDisplay)
-        XCTAssertFalse(dock.lastAppliedConfig!.autohide,
-                       "Display change with external monitors should keep external config")
+        XCTAssertFalse(
+            dock.lastAppliedConfig!.autohide,
+            "Display change with external monitors should keep external config")
     }
 
     func testDisplayChangeIgnoredWhenDisabled() {
@@ -239,8 +247,9 @@ final class SmartDockServiceTests: XCTestCase {
         service.stop()
         monitor.onConfigurationChanged?()
 
-        XCTAssertEqual(dock.applyCallCount, callsAfterStart,
-                       "Display change should be ignored when service is disabled")
+        XCTAssertEqual(
+            dock.applyCallCount, callsAfterStart,
+            "Display change should be ignored when service is disabled")
     }
 
     // MARK: - Rapid State Changes
@@ -259,8 +268,9 @@ final class SmartDockServiceTests: XCTestCase {
         monitor.simulateDisplayChange(externalCount: 0)
 
         XCTAssertFalse(service.hasExternalDisplay)
-        XCTAssertTrue(dock.lastAppliedConfig!.autohide,
-                      "After rapid changes ending with no external, should be builtin config")
+        XCTAssertTrue(
+            dock.lastAppliedConfig!.autohide,
+            "After rapid changes ending with no external, should be builtin config")
     }
 
     // MARK: - External Dock Change (System Sync)
@@ -275,8 +285,9 @@ final class SmartDockServiceTests: XCTestCase {
         let newConfig = DockConfiguration(autohide: false, position: .left)
         dock.simulateExternalDockChange(newConfig)
 
-        XCTAssertEqual(prefs.builtinConfig.position, .left,
-                       "External change should update active (built-in) profile")
+        XCTAssertEqual(
+            prefs.builtinConfig.position, .left,
+            "External change should update active (built-in) profile")
         XCTAssertFalse(prefs.builtinConfig.autohide)
     }
 
@@ -290,8 +301,9 @@ final class SmartDockServiceTests: XCTestCase {
         let newConfig = DockConfiguration(autohide: true, position: .right)
         dock.simulateExternalDockChange(newConfig)
 
-        XCTAssertEqual(prefs.externalConfig.position, .right,
-                       "External change should update active (external) profile")
+        XCTAssertEqual(
+            prefs.externalConfig.position, .right,
+            "External change should update active (external) profile")
         XCTAssertTrue(prefs.externalConfig.autohide)
     }
 
@@ -305,8 +317,9 @@ final class SmartDockServiceTests: XCTestCase {
         let newConfig = DockConfiguration(autohide: false, position: .left)
         dock.simulateExternalDockChange(newConfig)
 
-        XCTAssertEqual(prefs.builtinConfig.position, .bottom,
-                       "External change should be ignored when service is disabled")
+        XCTAssertEqual(
+            prefs.builtinConfig.position, .bottom,
+            "External change should be ignored when service is disabled")
     }
 
     func testExternalDockChangeIgnoredWhenSyncDisabled() {
@@ -319,8 +332,9 @@ final class SmartDockServiceTests: XCTestCase {
         let newConfig = DockConfiguration(autohide: false, position: .left)
         dock.simulateExternalDockChange(newConfig)
 
-        XCTAssertEqual(prefs.builtinConfig.position, .bottom,
-                       "External change should be ignored when sync is disabled")
+        XCTAssertEqual(
+            prefs.builtinConfig.position, .bottom,
+            "External change should be ignored when sync is disabled")
     }
 
     func testExternalDockChangeNotifiesDelegate() {
@@ -333,8 +347,9 @@ final class SmartDockServiceTests: XCTestCase {
         let newConfig = DockConfiguration(autohide: false, position: .left)
         dock.simulateExternalDockChange(newConfig)
 
-        XCTAssertEqual(delegate.stateUpdates.count, countBefore + 1,
-                       "External change should notify delegate")
+        XCTAssertEqual(
+            delegate.stateUpdates.count, countBefore + 1,
+            "External change should notify delegate")
     }
 
     func testStartBeginsObservingSystemChanges() {
@@ -358,7 +373,8 @@ final class SmartDockServiceTests: XCTestCase {
 
         service.refresh()
 
-        XCTAssertFalse(dock.lastAppliedConfig!.autohide,
-                       "Refresh should apply current mode's config")
+        XCTAssertFalse(
+            dock.lastAppliedConfig!.autohide,
+            "Refresh should apply current mode's config")
     }
 }

@@ -1,4 +1,5 @@
 import Foundation
+
 @testable import SmartDockCore
 
 // MARK: - Mock Display Monitor

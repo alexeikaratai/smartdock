@@ -1,0 +1,64 @@
+name: 🐛 Bug report
+description: Something in SmartDock does not work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this.
+
+        The fastest way to get a fix: open **SmartDock → About → Copy Diagnostic Info**
+        and paste the result into the Diagnostics field below. It contains the app
+        version, macOS build, permission status and display state — nothing personal.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect instead?
+      placeholder: |
+        I connected my external monitor and the Dock stayed on the left,
+        even though the External profile is set to Bottom.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Set External profile to Bottom, Built-in to Left
+        2. Disconnect the monitor — Dock moves left (correct)
+        3. Reconnect the monitor — Dock stays left (wrong)
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: From About → Copy Diagnostic Info
+      render: text
+    validations:
+      required: false
+
+  - type: input
+    id: displays
+    attributes:
+      label: Display setup
+      placeholder: MacBook Pro 14" + LG HDR 4K over USB-C, extended display
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Optional but very helpful. Run this, reproduce the problem, then paste the output:
+        ```
+        log stream --predicate 'subsystem == "com.smartdock.app"' --info --style compact
+        ```
+      render: text
+    validations:
+      required: false

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE dictionary SYSTEM "file://localhost/System/Library/DTDs/sdef.dtd">
+
+<!--
+    SmartDock scripting terminology.
+
+    Every command here maps to a `URLCommand` case in SmartDockCore and runs through
+    HotkeyManager.perform — the same path as global hotkeys and `smartdock://` URLs.
+    Adding a command means adding it in three places: this file, a NSScriptCommand
+    subclass in ScriptingSupport.swift, and the URLCommand enum.
+
+    The four-character codes below are part of the public API. Scripts identify
+    commands and enumerators by code, not by name, so changing one silently breaks
+    every script already written against it. AppleScriptCommandTests pins the
+    enumerator codes to these exact values and checks them against this file.
+-->
+<dictionary title="SmartDock Terminology">
+
+    <suite name="SmartDock Suite" code="SmDk"
+           description="Commands for controlling SmartDock.">
+
+        <enumeration name="dock profile" code="Dpro"
+                     description="Which set of dock settings to apply.">
+            <enumerator name="external" code="Dext"
+                        description="The External Monitor profile."/>
+            <enumerator name="builtin" code="Dblt"
+                        description="The Built-in Only profile."/>
+        </enumeration>
+
+        <command name="refresh" code="SmDkRfsh"
+                 description="Re-apply the dock configuration for the current display setup.">
+            <cocoa class="SDRefreshCommand"/>
+        </command>
+
+        <command name="switch to" code="SmDkSwch"
+                 description="Activate a specific dock profile, ignoring the current display setup.">
+            <cocoa class="SDSwitchCommand"/>
+            <direct-parameter type="dock profile"
+                              description="The profile to activate."/>
+        </command>
+
+        <command name="toggle autohide" code="SmDkTglA"
+                 description="Flip auto-hide on the active profile.">
+            <cocoa class="SDToggleAutohideCommand"/>
+        </command>
+
+        <command name="show settings" code="SmDkShSt"
+                 description="Open the SmartDock settings window.">
+            <cocoa class="SDShowSettingsCommand"/>
+        </command>
+
+    </suite>
+
+</dictionary>

@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.0.1-blue?style=flat-square" alt="Version 2.0.1"/>
+  <img src="https://img.shields.io/badge/version-2.1.0-blue?style=flat-square" alt="Version 2.1.0"/>
   <img src="https://img.shields.io/badge/macOS-14.0%2B-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS 14+"/>
   <img src="https://img.shields.io/badge/Swift-6.2-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 6.2"/>
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License"/>
@@ -31,6 +31,8 @@ SmartDock lives in your menu bar and automatically switches Dock configuration w
 | 🔄 | **System sync** | Auto-imports Dock changes from System Settings via KVO |
 | 🔔 | **Notifications** | macOS banner when profile switches (optional) |
 | ⌨️ | **Global hotkeys** | 5 customizable shortcuts — toggle autohide, refresh, switch profiles, open settings |
+| 🔗 | **URL scheme** | `smartdock://` commands for Raycast, Alfred, Shortcuts.app and shell scripts |
+| 📜 | **AppleScript** | Scriptable from Script Editor, `osascript`, Automator and Shortcuts |
 | 🎨 | **Glass UI** | Tabbed settings window (Settings / Shortcuts / About) with `NSVisualEffectView` |
 | 🚀 | **Launch at Login** | Native `SMAppService` integration |
 | 🛡️ | **Smooth transitions** | Per-property AppleScript — no Dock restart needed |
@@ -72,11 +74,54 @@ cd smartdock
 make run
 ```
 
+## 🔗 Automation
+
+SmartDock registers a `smartdock://` URL scheme, so any tool that can open a URL
+can drive it — Raycast, Alfred, Shortcuts.app, or a plain shell script:
+
+```bash
+open smartdock://refresh            # re-apply the config for the current display setup
+open smartdock://switch/external    # force the External Monitor profile
+open smartdock://switch/builtin     # force the Built-in Only profile
+open smartdock://toggle-autohide    # flip auto-hide on the active profile
+open smartdock://settings           # open the Settings window
+```
+
+### AppleScript
+
+SmartDock ships a scripting dictionary — open it in Script Editor with
+**File → Open Dictionary…**, or drive the app directly:
+
+```applescript
+tell application "SmartDock"
+    refresh              -- re-apply the config for the current display setup
+    switch to external   -- force the External Monitor profile
+    switch to builtin    -- force the Built-in Only profile
+    toggle autohide      -- flip auto-hide on the active profile
+    show settings        -- open the Settings window
+end tell
+```
+
+From the shell:
+
+```bash
+osascript -e 'tell application "SmartDock" to switch to external'
+```
+
+Hotkeys, URLs and AppleScript all run through one code path, so the three can never
+disagree about what a command does.
+
 ## 🧪 Run Tests
 
 ```bash
-make test
+make test       # run the suite (sequentially — see CONTRIBUTING.md)
+make coverage   # run it with a per-file coverage table
+make lint       # verify formatting — CI gates on this
+make format     # apply formatting
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for conventions, the style rules that are
+switched off on purpose, and what the coverage numbers do and don't cover.
 
 ## 🏗️ Architecture
 
@@ -87,9 +132,13 @@ Sources/
 │   ├── DisplayMonitor.swift          # CG callback + debounce for display changes
 │   ├── DockController.swift          # AppleScript Dock control + KVO system sync
 │   ├── SmartDockService.swift        # Orchestrator: display state → dock config
+│   ├── URLCommand.swift              # smartdock:// URL parsing
+│   ├── AppleScriptCommand.swift      # dock profile ↔ Apple Event code mapping
+│   ├── DiagnosticReport.swift        # Bug-report snapshot formatting
 │   └── Log.swift                     # Logger API (macOS 14+)
 └── SmartDock/                        # AppKit UI layer
     ├── App.swift                     # @main entry, manual NSApplication run loop
+    ├── ScriptingSupport.swift        # NSScriptCommand subclasses for the sdef
     ├── StatusBarController.swift     # Menu bar icon & dropdown with SF Symbol icons
     ├── SettingsWindow.swift          # Tabbed glass window (Settings / Shortcuts / About)
     ├── OnboardingWindow.swift        # First-launch welcome screen
@@ -120,6 +169,7 @@ Sources/
 | **Event-driven detection** | `CGDisplayRegisterReconfigurationCallback` — no timers, no polling |
 | **Diff-based apply** | Only runs AppleScript for properties that actually changed — no dock flash |
 | **KVO system sync** | Observes `com.apple.dock` UserDefaults — auto-imports changes from System Settings |
+| **One command path** | Hotkeys, `smartdock://` URLs and AppleScript all reach `HotkeyManager.perform` — three front doors, one implementation |
 | **Hotkey caching** | Bindings cached in memory — no UserDefaults reads on every keystroke |
 | **Wake recovery** | Re-applies config after sleep/wake to fix macOS resetting dock state |
 

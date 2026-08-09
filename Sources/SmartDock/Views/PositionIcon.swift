@@ -42,21 +42,25 @@ enum PositionIcon {
             outline.stroke()
 
             let barColor = selected ? accentColor : NSColor.secondaryLabelColor
-            let dotColor = selected
+            let dotColor =
+                selected
                 ? accentColor.withAlphaComponent(0.5)
                 : NSColor.tertiaryLabelColor
 
             let barRect: NSRect
             switch position {
             case .bottom:
-                barRect = NSRect(x: monitorRect.minX + 5, y: monitorRect.maxY - 6,
-                                 width: monitorRect.width - 10, height: 3.5)
+                barRect = NSRect(
+                    x: monitorRect.minX + 5, y: monitorRect.maxY - 6,
+                    width: monitorRect.width - 10, height: 3.5)
             case .left:
-                barRect = NSRect(x: monitorRect.minX + 2, y: monitorRect.minY + 4,
-                                 width: 3.5, height: monitorRect.height - 8)
+                barRect = NSRect(
+                    x: monitorRect.minX + 2, y: monitorRect.minY + 4,
+                    width: 3.5, height: monitorRect.height - 8)
             case .right:
-                barRect = NSRect(x: monitorRect.maxX - 5.5, y: monitorRect.minY + 4,
-                                 width: 3.5, height: monitorRect.height - 8)
+                barRect = NSRect(
+                    x: monitorRect.maxX - 5.5, y: monitorRect.minY + 4,
+                    width: 3.5, height: monitorRect.height - 8)
             }
 
             barColor.setFill()
@@ -75,13 +79,15 @@ enum PositionIcon {
                 if isHorizontal {
                     let startX = barRect.midX - totalSpan / 2
                     let dotY = barRect.minY + (barRect.height - dotSize) / 2
-                    dotRect = NSRect(x: startX + offset, y: dotY,
-                                     width: dotSize, height: dotSize)
+                    dotRect = NSRect(
+                        x: startX + offset, y: dotY,
+                        width: dotSize, height: dotSize)
                 } else {
                     let dotX = barRect.minX + (barRect.width - dotSize) / 2
                     let startY = barRect.midY - totalSpan / 2
-                    dotRect = NSRect(x: dotX, y: startY + offset,
-                                     width: dotSize, height: dotSize)
+                    dotRect = NSRect(
+                        x: dotX, y: startY + offset,
+                        width: dotSize, height: dotSize)
                 }
                 NSBezierPath(roundedRect: dotRect, xRadius: 0.5, yRadius: 0.5).fill()
             }

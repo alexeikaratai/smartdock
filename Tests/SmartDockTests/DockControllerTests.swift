@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import SmartDockCore
 
 @MainActor
@@ -68,8 +69,9 @@ final class DockControllerTests: XCTestCase {
     // Settings in a loop.
 
     func testApproximatelyEqualsIdenticalConfigs() {
-        let config = DockConfiguration(autohide: true, position: .left, iconSize: 0.3,
-                                       magnification: true, magnificationSize: 0.6)
+        let config = DockConfiguration(
+            autohide: true, position: .left, iconSize: 0.3,
+            magnification: true, magnificationSize: 0.6)
         XCTAssertTrue(config.approximatelyEquals(config))
     }
 
@@ -90,8 +92,8 @@ final class DockControllerTests: XCTestCase {
         let onePixelUp = DockConfiguration(iconSize: DockConfiguration.pixelsToScale(49))
         let twoPixelsUp = DockConfiguration(iconSize: DockConfiguration.pixelsToScale(50))
 
-        XCTAssertTrue(base.approximatelyEquals(onePixelUp))   // ~0.0089 — rounding noise
-        XCTAssertFalse(base.approximatelyEquals(twoPixelsUp)) // ~0.0179 — a real edit
+        XCTAssertTrue(base.approximatelyEquals(onePixelUp))  // ~0.0089 — rounding noise
+        XCTAssertFalse(base.approximatelyEquals(twoPixelsUp))  // ~0.0179 — a real edit
     }
 
     func testApproximatelyEqualsDetectsRealSizeChange() {
@@ -197,8 +199,9 @@ final class DockControllerTests: XCTestCase {
 
     func testMockReadSystemConfig() {
         let dock = MockDockController()
-        let custom = DockConfiguration(autohide: true, position: .right, iconSize: 0.43,
-                                        magnification: true, magnificationSize: 0.71)
+        let custom = DockConfiguration(
+            autohide: true, position: .right, iconSize: 0.43,
+            magnification: true, magnificationSize: 0.71)
         dock.mockSystemConfig = custom
 
         let read = dock.readSystemConfig()

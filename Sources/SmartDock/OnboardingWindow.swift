@@ -134,7 +134,7 @@ final class OnboardingWindow: NSObject {
     // MARK: - Actions
 
     @objc private func getStarted() {
-        window?.close() // windowWillClose sets hasSeenOnboarding = true
+        window?.close()  // windowWillClose sets hasSeenOnboarding = true
         onComplete?()
     }
 }

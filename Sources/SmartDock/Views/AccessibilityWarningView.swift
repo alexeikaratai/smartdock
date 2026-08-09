@@ -41,8 +41,9 @@ final class AccessibilityWarningView: NSView {
         icon.contentTintColor = .systemYellow
         addSubview(icon)
 
-        let title = UI.label("Hotkeys require Accessibility permission",
-                             font: .systemFont(ofSize: 12, weight: .medium))
+        let title = UI.label(
+            "Hotkeys require Accessibility permission",
+            font: .systemFont(ofSize: 12, weight: .medium))
         addSubview(title)
 
         let subtitle = UI.label(
@@ -58,12 +59,14 @@ final class AccessibilityWarningView: NSView {
         subtitle.preferredMaxLayoutWidth = 340
         addSubview(subtitle)
 
-        let openButton = UI.smallButton("Open System Settings", target: self,
-                                        action: #selector(openAccessibilitySettings))
+        let openButton = UI.smallButton(
+            "Open System Settings", target: self,
+            action: #selector(openAccessibilitySettings))
         addSubview(openButton)
 
-        let resetButton = UI.smallButton("Reset Permission", target: self,
-                                         action: #selector(resetAccessibilityPermission))
+        let resetButton = UI.smallButton(
+            "Reset Permission", target: self,
+            action: #selector(resetAccessibilityPermission))
         addSubview(resetButton)
 
         NSLayoutConstraint.activate([

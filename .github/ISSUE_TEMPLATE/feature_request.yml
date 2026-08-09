@@ -1,0 +1,29 @@
+name: ✨ Feature request
+description: Suggest an idea for SmartDock
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the situation you run into, not the solution you have in mind.
+      placeholder: |
+        I use two different external monitors — one ultrawide, one portrait —
+        and they need different Dock positions, but both share the External profile.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: What would you like SmartDock to do?
+      validations:
+        required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Anything you tried instead?
+      description: Other apps, scripts, or workarounds — and why they fell short.
+    validations:
+      required: false
