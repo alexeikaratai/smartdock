@@ -1,11 +1,11 @@
-.PHONY: help build test clean icon app run sign notarize fix install release bump version-check deps outdated doctor actions-check logs
+.PHONY: help build test clean icon app run sign notarize fix install release bump version-check deps outdated doctor actions-check logs format lint coverage
 
 .DEFAULT_GOAL := help
 
 # === Config ===
 APP_NAME     := SmartDock
 BUNDLE_ID    := com.smartdock.app
-VERSION      := 2.0.1
+VERSION      := 2.1.0
 BUILD_DIR    := .build/release
 APP_DIR      := build/$(APP_NAME).app
 CONTENTS     := $(APP_DIR)/Contents
@@ -24,6 +24,41 @@ test:
 	@echo "🧪 Running tests..."
 	swift test
 
+# === Formatting & Linting ===
+# swift-format ships inside the Xcode toolchain — reached via xcrun, never a bare
+# `swift-format` (not on PATH) and never `swift format` (absent before Swift 6.2).
+# Rules live in .swift-format; `lint` is what CI gates on, `format` is the fixer.
+
+SWIFT_FORMAT := xcrun swift-format
+SWIFT_SOURCES := Sources Tests
+
+format:
+	@echo "🎨 Formatting Swift sources..."
+	@$(SWIFT_FORMAT) format --in-place --recursive $(SWIFT_SOURCES)
+	@echo "✅ Formatted"
+
+lint:
+	@echo "🔎 Linting Swift sources..."
+	@$(SWIFT_FORMAT) lint --strict --recursive $(SWIFT_SOURCES) && \
+		echo "✅ No violations" || \
+		{ echo "❌ Formatting violations — run: make format"; exit 1; }
+
+# === Coverage ===
+# Prints a per-file table for SmartDockCore. The SmartDock target is an executable
+# and is not linked into the test bundle, so it never appears here — that gap is
+# intentional and documented in CONTRIBUTING.md.
+
+coverage:
+	@echo "🧪 Running tests with coverage..."
+	@swift test --enable-code-coverage
+	@echo ""
+	@bin=$$(swift build --show-bin-path); \
+	prof=$$(swift test --show-codecov-path); \
+	xcrun llvm-cov report \
+		"$$bin/SmartDockPackageTests.xctest/Contents/MacOS/SmartDockPackageTests" \
+		-instr-profile="$$(dirname $$prof)/default.profdata" \
+		-ignore-filename-regex='.build|Tests/'
+
 # === App Bundle ===
 
 icon:
@@ -41,6 +76,9 @@ app: build icon
 
 	@# Resources
 	cp Resources/Info.plist $(CONTENTS)/Info.plist
+	@# Scripting dictionary — the path in Info.plist's OSAScriptingDefinition is
+	@# resolved relative to Contents/Resources, so the name must not change.
+	cp Resources/$(APP_NAME).sdef $(RESOURCES)/$(APP_NAME).sdef
 	@if [ -f Resources/AppIcon.icns ]; then \
 		cp Resources/AppIcon.icns $(RESOURCES)/AppIcon.icns; \
 	fi
@@ -201,6 +239,11 @@ help:
 	@echo "    make run           Build + open the app"
 	@echo "    make clean         Remove all build artifacts"
 	@echo ""
+	@echo "  Code quality:"
+	@echo "    make format        Reformat Swift sources in place (swift-format)"
+	@echo "    make lint          Check formatting without writing — CI gates on this"
+	@echo "    make coverage      Run tests and print a per-file coverage table"
+	@echo ""
 	@echo "  Install:"
 	@echo "    make install       Copy .app to /Applications"
 	@echo "    make fix           Fix Gatekeeper quarantine on /Applications/SmartDock.app"
@@ -288,6 +331,8 @@ doctor:
 	@echo ""
 	@printf "  Swift:       "; command -v swift >/dev/null && swift --version | head -1 || echo "❌ not installed"
 	@printf "  Xcode:       "; command -v xcodebuild >/dev/null && xcodebuild -version | head -1 || echo "❌ not installed"
+	@printf "  swift-format:"; xcrun --find swift-format >/dev/null 2>&1 && echo " ✅ $$(xcrun swift-format --version)" || echo " ❌ not in toolchain (needs Xcode 26+)"
+	@printf "  llvm-cov:    "; xcrun --find llvm-cov >/dev/null 2>&1 && echo "✅ available" || echo "❌ not in toolchain"
 	@printf "  codesign:    "; command -v codesign >/dev/null && echo "✅ available" || echo "❌ not installed"
 	@printf "  gh:          "; command -v gh >/dev/null && gh --version | head -1 || echo "❌ not installed (brew install gh)"
 	@printf "  git:         "; command -v git >/dev/null && git --version || echo "❌ not installed"

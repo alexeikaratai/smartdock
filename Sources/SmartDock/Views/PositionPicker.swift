@@ -91,7 +91,8 @@ final class PositionPicker: NSStackView {
     private func updateSelection() {
         for (position, button) in buttons {
             let isSelected = position == selectedPosition
-            button.layer?.backgroundColor = isSelected
+            button.layer?.backgroundColor =
+                isSelected
                 ? NSColor.controlAccentColor.withAlphaComponent(0.2).cgColor
                 : NSColor.clear.cgColor
             imageViews[position]?.image = PositionIcon.image(for: position, selected: isSelected)

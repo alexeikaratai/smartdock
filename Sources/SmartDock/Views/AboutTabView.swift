@@ -1,17 +1,24 @@
 import Cocoa
+import SmartDockCore
 
 // MARK: - About Tab
 
-/// Contents of the Settings window's About tab: app identity plus links.
+/// Contents of the Settings window's About tab: app identity, links, and a
+/// one-click diagnostic dump for bug reports.
 @MainActor
 final class AboutTabView: NSView {
 
     private static let repoURL = "https://github.com/alexeikaratai/smartdock"
     private static let releasesURL = "https://github.com/alexeikaratai/smartdock/releases"
 
+    private let service: SmartDockService
+    private var copyButton: NSButton!
+    private var copyResetWork: DispatchWorkItem?
+
     // MARK: - Init
 
-    init() {
+    init(service: SmartDockService) {
+        self.service = service
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
         buildUI()
@@ -37,8 +44,9 @@ final class AboutTabView: NSView {
         nameLabel.alignment = .center
         addSubview(nameLabel)
 
-        let versionLabel = UI.label("v\(Bundle.main.shortVersion) · by Alex Karatai",
-                                    font: .systemFont(ofSize: 11))
+        let versionLabel = UI.label(
+            "v\(Bundle.main.shortVersion) · by Alex Karatai",
+            font: .systemFont(ofSize: 11))
         versionLabel.textColor = .tertiaryLabelColor
         versionLabel.alignment = .center
         addSubview(versionLabel)
@@ -58,6 +66,9 @@ final class AboutTabView: NSView {
 
         let changelogButton = UI.smallButton("Changelog", target: self, action: #selector(openChangelog))
         addSubview(changelogButton)
+
+        copyButton = UI.smallButton("Copy Diagnostic Info", target: self, action: #selector(copyDiagnostics))
+        addSubview(copyButton)
 
         let footerLabel = UI.label("Made with \u{2764} by Alex Karatai", font: .systemFont(ofSize: 10))
         footerLabel.textColor = .tertiaryLabelColor
@@ -86,7 +97,10 @@ final class AboutTabView: NSView {
             changelogButton.centerYAnchor.constraint(equalTo: githubButton.centerYAnchor),
             changelogButton.leadingAnchor.constraint(equalTo: centerXAnchor, constant: 8),
 
-            footerLabel.topAnchor.constraint(greaterThanOrEqualTo: githubButton.bottomAnchor, constant: 20),
+            copyButton.topAnchor.constraint(equalTo: githubButton.bottomAnchor, constant: 10),
+            copyButton.centerXAnchor.constraint(equalTo: centerXAnchor),
+
+            footerLabel.topAnchor.constraint(greaterThanOrEqualTo: copyButton.bottomAnchor, constant: 20),
             footerLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
             footerLabel.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -8),
         ])
@@ -102,5 +116,49 @@ final class AboutTabView: NSView {
     @objc private func openChangelog() {
         guard let url = URL(string: Self.releasesURL) else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    @objc private func copyDiagnostics() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(makeReport().formatted, forType: .string)
+
+        // Confirm in place — a modal for a clipboard write would be heavy-handed.
+        copyButton.title = "Copied \u{2713}"
+        copyResetWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.copyButton.title = "Copy Diagnostic Info"
+            self?.copyResetWork = nil
+        }
+        copyResetWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
+
+        Log.info("Diagnostic info copied to clipboard")
+    }
+
+    // MARK: - Private
+
+    private func makeReport() -> DiagnosticReport {
+        let prefs = UserPreferences.shared
+        let info = Bundle.main.infoDictionary
+
+        return DiagnosticReport(
+            appVersion: Bundle.main.shortVersion,
+            buildNumber: info?["CFBundleVersion"] as? String ?? "?",
+            systemVersion: ProcessInfo.processInfo.operatingSystemVersionString,
+            isAccessibilityGranted: AccessibilityChecker.isGranted,
+            externalDisplayCount: service.externalDisplayCount,
+            hasExternalDisplay: service.hasExternalDisplay,
+            externalConfig: prefs.externalConfig,
+            builtinConfig: prefs.builtinConfig,
+            notificationsEnabled: prefs.notificationsEnabled,
+            syncFromSystemEnabled: prefs.syncFromSystemEnabled,
+            hotkeys: HotkeyAction.allCases.map { action in
+                DiagnosticReport.Hotkey(
+                    action: action.displayName,
+                    shortcut: prefs.hotkey(for: action.rawValue)?.displayString
+                )
+            }
+        )
     }
 }

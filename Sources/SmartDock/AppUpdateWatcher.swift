@@ -7,12 +7,12 @@ import SmartDockCore
 final class AppUpdateWatcher {
 
     /// Accessed from deinit (nonisolated) — must be nonisolated(unsafe).
-    private nonisolated(unsafe) var source: DispatchSourceFileSystemObject?
+    private nonisolated(unsafe) var source: (any DispatchSourceFileSystemObject)?
     private var pendingPrompt: DispatchWorkItem?
     private var hasPrompted = false
 
     func start() {
-        guard source == nil else { return } // idempotent
+        guard source == nil else { return }  // idempotent
         guard let path = Bundle.main.executablePath else { return }
 
         let fd = open(path, O_EVTONLY)

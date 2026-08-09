@@ -10,6 +10,12 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege: CI only ever reads the repository. Without this block the
+# workflow inherits whatever the repository default is, which can include write
+# access — an unnecessary blast radius for a job that runs code from pull requests.
+permissions:
+  contents: read
+
 env:
   XCODE_PATH: /Applications/Xcode_26.6.app
 
@@ -35,8 +41,41 @@ jobs:
       - name: 🔢 Check version consistency
         run: make version-check
 
-      - name: 🧪 Run tests
-        run: swift test
+      # Runs before the build so a formatting-only PR fails in seconds
+      # rather than after a full compile.
+      - name: 🎨 Check formatting
+        run: make lint
+
+      # `make coverage` runs the same suite as `swift test`, with instrumentation.
+      # One step instead of two so the suite is not compiled and run twice.
+      #
+      # `shell: bash` is required, not cosmetic: the default runner shell is
+      # `bash -e` without pipefail, so piping into tee would mask a failing
+      # test run behind tee's exit code.
+      - name: 🧪 Run tests with coverage
+        shell: bash
+        run: make coverage | tee coverage.txt
+
+      # Surfaces the table on the run's summary page, so reviewers see the
+      # numbers without opening the log. Runs even on failure, but only if the
+      # report was actually produced.
+      - name: 📊 Coverage summary
+        if: always()
+        shell: bash
+        run: |
+          if [ ! -s coverage.txt ]; then
+            echo "No coverage report produced — skipping summary."
+            exit 0
+          fi
+          {
+            echo '### 📊 Code coverage — SmartDockCore'
+            echo ''
+            echo '```'
+            cat coverage.txt
+            echo '```'
+            echo ''
+            echo '_The `SmartDock` executable target is not linked into the test bundle, so it does not appear here._'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 🔨 Build release
         run: swift build -c release

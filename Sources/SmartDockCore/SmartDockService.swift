@@ -29,7 +29,7 @@ public protocol SmartDockServiceDelegate: AnyObject {
 @MainActor
 public final class SmartDockService {
 
-    public weak var delegate: SmartDockServiceDelegate?
+    public weak var delegate: (any SmartDockServiceDelegate)?
 
     /// Whether the service is active
     public private(set) var isEnabled: Bool = false
@@ -37,18 +37,22 @@ public final class SmartDockService {
     /// Last known state (whether there is an external monitor)
     public private(set) var hasExternalDisplay: Bool = false
 
+    /// Number of active external displays, read live. Used by diagnostics —
+    /// `hasExternalDisplay` is the cached state the profile decision was made on.
+    public var externalDisplayCount: Int { displayMonitor.externalDisplayCount() }
+
     /// The dock configuration we last applied (not the transient system state).
     public private(set) var currentConfig: DockConfiguration = DockConfiguration()
 
-    private let displayMonitor: DisplayMonitoring
-    public let dockController: DockControlling
+    private let displayMonitor: any DisplayMonitoring
+    public let dockController: any DockControlling
     private let prefs: UserPreferences
 
     // MARK: - Init
 
     public init(
-        displayMonitor: DisplayMonitoring = DisplayMonitor(),
-        dockController: DockControlling = DockController(),
+        displayMonitor: any DisplayMonitoring = DisplayMonitor(),
+        dockController: any DockControlling = DockController(),
         prefs: UserPreferences = .shared
     ) {
         self.displayMonitor = displayMonitor

@@ -1,6 +1,6 @@
-import Foundation
-import CoreGraphics
 import Cocoa
+import CoreGraphics
+import Foundation
 
 // MARK: - Protocol
 

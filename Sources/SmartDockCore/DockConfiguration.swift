@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 // MARK: - Dock Position
@@ -10,8 +11,8 @@ public enum DockPosition: String, CaseIterable, Sendable {
     public var displayName: String {
         switch self {
         case .bottom: return "Bottom"
-        case .left:   return "Left"
-        case .right:  return "Right"
+        case .left: return "Left"
+        case .right: return "Right"
         }
     }
 }
@@ -24,9 +25,9 @@ public enum DockPosition: String, CaseIterable, Sendable {
 public struct DockConfiguration: Equatable, Sendable {
     public let autohide: Bool
     public let position: DockPosition
-    public let iconSize: Double          // 0.0...1.0, default ~0.29 (48px)
+    public let iconSize: Double  // 0.0...1.0, default ~0.29 (48px)
     public let magnification: Bool
-    public let magnificationSize: Double // 0.0...1.0, default ~0.43 (64px)
+    public let magnificationSize: Double  // 0.0...1.0, default ~0.43 (64px)
 
     public init(
         autohide: Bool = false,
@@ -70,13 +71,54 @@ public struct DockConfiguration: Equatable, Sendable {
 /// Stores a keyboard shortcut: modifier flags + virtual key code + display name.
 public struct HotkeyBinding: Equatable, Sendable {
     public let keyCode: UInt16
-    public let modifiers: UInt         // NSEvent.ModifierFlags.rawValue
-    public let displayName: String     // from charactersIgnoringModifiers, e.g. "H"
+    public let modifiers: UInt  // NSEvent.ModifierFlags.rawValue
+    public let displayName: String  // from charactersIgnoringModifiers, e.g. "H"
 
     public init(keyCode: UInt16, modifiers: UInt, displayName: String) {
         self.keyCode = keyCode
         self.modifiers = modifiers
         self.displayName = displayName
+    }
+}
+
+// MARK: - Hotkey Matching & Display
+
+public extension HotkeyBinding {
+
+    /// The only modifiers a binding ever stores or matches against.
+    ///
+    /// CapsLock, Fn and numeric-pad ride along on ordinary key events, so a
+    /// binding recorded while one of them was set would never match once it
+    /// cleared. Recording and matching must reduce flags through this same
+    /// mask — that is why it lives here instead of at each call site.
+    static let relevantModifiers: NSEvent.ModifierFlags = [.command, .option, .control, .shift]
+
+    /// Reduces raw event flags to the modifiers a binding stores.
+    static func normalize(_ flags: NSEvent.ModifierFlags) -> UInt {
+        flags.intersection(relevantModifiers).rawValue
+    }
+
+    /// Whether the flags carry a modifier strong enough to bind to.
+    /// Shift alone is rejected — a bare (or shifted) letter would swallow typing.
+    static func hasRequiredModifier(_ flags: NSEvent.ModifierFlags) -> Bool {
+        !flags.intersection([.command, .option, .control]).isEmpty
+    }
+
+    /// Whether this binding fires for the given key event values.
+    func matches(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> Bool {
+        self.keyCode == keyCode && self.modifiers == Self.normalize(modifiers)
+    }
+
+    /// Human-readable form in standard macOS modifier order, e.g. `⌃⌥H`.
+    var displayString: String {
+        let flags = NSEvent.ModifierFlags(rawValue: modifiers)
+        var parts: [String] = []
+        if flags.contains(.control) { parts.append("⌃") }
+        if flags.contains(.option) { parts.append("⌥") }
+        if flags.contains(.shift) { parts.append("⇧") }
+        if flags.contains(.command) { parts.append("⌘") }
+        parts.append(displayName)
+        return parts.joined()
     }
 }
 
@@ -116,9 +158,10 @@ public final class UserPreferences {
             magnificationSize: systemConfig.magnificationSize
         )
 
-        Log.info("First launch — initialized defaults from system config: "
-                 + "position=\(systemConfig.position.rawValue) size=\(systemConfig.iconSize) "
-                 + "(external: autohide=false, builtin: autohide=true)")
+        Log.info(
+            "First launch — initialized defaults from system config: "
+                + "position=\(systemConfig.position.rawValue) size=\(systemConfig.iconSize) "
+                + "(external: autohide=false, builtin: autohide=true)")
     }
 
     /// Whether any preferences have been saved (either mode).

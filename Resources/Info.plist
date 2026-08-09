@@ -10,9 +10,9 @@
     <key>CFBundleIdentifier</key>
     <string>com.smartdock.app</string>
     <key>CFBundleVersion</key>
-    <string>6</string>
+    <string>7</string>
     <key>CFBundleShortVersionString</key>
-    <string>2.0.1</string>
+    <string>2.1.0</string>
     <key>CFBundleExecutable</key>
     <string>SmartDock</string>
     <key>CFBundlePackageType</key>
@@ -27,5 +27,22 @@
     <string>Copyright © 2026. All rights reserved.</string>
     <key>NSAppleEventsUsageDescription</key>
     <string>SmartDock needs permission to control Dock visibility when external monitors are connected or disconnected.</string>
+    <key>NSAppleScriptEnabled</key>
+    <true/>
+    <key>OSAScriptingDefinition</key>
+    <string>SmartDock.sdef</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>com.smartdock.app.url</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>smartdock</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>

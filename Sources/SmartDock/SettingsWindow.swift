@@ -169,8 +169,9 @@ final class SettingsWindow: NSObject {
         let nameLabel = UI.label("SmartDock", font: .systemFont(ofSize: 18, weight: .semibold))
         container.addSubview(nameLabel)
 
-        let versionLabel = UI.label("v\(Bundle.main.shortVersion) · Made with \u{2764} by Alex Karatai",
-                                    font: .systemFont(ofSize: 11))
+        let versionLabel = UI.label(
+            "v\(Bundle.main.shortVersion) · Made with \u{2764} by Alex Karatai",
+            font: .systemFont(ofSize: 11))
         versionLabel.textColor = .tertiaryLabelColor
         container.addSubview(versionLabel)
 
@@ -196,7 +197,7 @@ final class SettingsWindow: NSObject {
         shortcutsContainer.isHidden = true
         container.addSubview(shortcutsContainer)
 
-        aboutContainer = AboutTabView()
+        aboutContainer = AboutTabView(service: service)
         aboutContainer.isHidden = true
         container.addSubview(aboutContainer)
 
@@ -306,18 +307,21 @@ final class SettingsWindow: NSObject {
         generalHeader.textColor = .secondaryLabelColor
         container.addSubview(generalHeader)
 
-        launchAtLoginCheckbox = UI.checkbox("Launch at Login", target: self,
-                                            action: #selector(toggleLaunchAtLogin))
+        launchAtLoginCheckbox = UI.checkbox(
+            "Launch at Login", target: self,
+            action: #selector(toggleLaunchAtLogin))
         launchAtLoginCheckbox.state = LaunchAtLogin.isEnabled ? .on : .off
         container.addSubview(launchAtLoginCheckbox)
 
-        notificationsCheckbox = UI.checkbox("Notify on Profile Switch", target: self,
-                                            action: #selector(toggleNotifications))
+        notificationsCheckbox = UI.checkbox(
+            "Notify on Profile Switch", target: self,
+            action: #selector(toggleNotifications))
         notificationsCheckbox.state = prefs.notificationsEnabled ? .on : .off
         container.addSubview(notificationsCheckbox)
 
-        syncFromSystemCheckbox = UI.checkbox("Auto-import System changes", target: self,
-                                             action: #selector(toggleSyncFromSystem))
+        syncFromSystemCheckbox = UI.checkbox(
+            "Auto-import System changes", target: self,
+            action: #selector(toggleSyncFromSystem))
         syncFromSystemCheckbox.state = prefs.syncFromSystemEnabled ? .on : .off
         container.addSubview(syncFromSystemCheckbox)
 
@@ -599,7 +603,8 @@ final class SettingsWindow: NSObject {
             prefs.builtinConfig = config
         }
 
-        let editingActiveMode = (selectedMode == .external && service.hasExternalDisplay)
+        let editingActiveMode =
+            (selectedMode == .external && service.hasExternalDisplay)
             || (selectedMode == .builtin && !service.hasExternalDisplay)
 
         applyButton.isEnabled = false

@@ -38,7 +38,7 @@ final class HotkeyRecorder {
         guard let binding = UserPreferences.shared.hotkey(for: action.rawValue) else {
             return "Click to set"
         }
-        return HotkeyManager.displayString(for: binding)
+        return binding.displayString
     }
 
     func start(_ action: HotkeyAction, in button: NSButton) {
@@ -49,7 +49,7 @@ final class HotkeyRecorder {
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             self.handleRecordedKey(event)
-            return nil // consumed — never let a recorded key reach the app
+            return nil  // consumed — never let a recorded key reach the app
         }
     }
 
@@ -76,15 +76,11 @@ final class HotkeyRecorder {
         }
 
         // Require a non-shift modifier — a bare letter would swallow normal typing.
-        let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
-        let hasModifier = modifiers.contains(.command)
-            || modifiers.contains(.control)
-            || modifiers.contains(.option)
-        guard hasModifier else { return }
+        guard HotkeyBinding.hasRequiredModifier(event.modifierFlags) else { return }
 
         let binding = HotkeyBinding(
             keyCode: event.keyCode,
-            modifiers: modifiers.rawValue,
+            modifiers: HotkeyBinding.normalize(event.modifierFlags),
             displayName: event.charactersIgnoringModifiers?.uppercased() ?? "?"
         )
         prefs.setHotkey(binding, for: action.rawValue)

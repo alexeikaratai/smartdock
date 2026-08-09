@@ -12,6 +12,13 @@ make run            # build + bundle + open
 make clean          # remove build artifacts
 ```
 
+Code quality:
+```bash
+make format         # rewrite sources with swift-format (rules in .swift-format)
+make lint           # check formatting without writing — CI gates on this
+make coverage       # run tests and print a per-file llvm-cov table
+```
+
 Single test:
 ```bash
 swift test --filter SmartDockTests.SmartDockServiceTests/testStartBeginsMonitoring
@@ -55,7 +62,13 @@ Two GitHub Actions workflows in `.github/workflows/`:
 **`ci.yml`** — runs on push to `main`/`dev` and PRs to `main`:
 - Concurrency group per branch — cancels in-progress runs on new push
 - SPM cache (`actions/cache` on `.build` dir)
-- `make version-check` → `swift test` → `swift build -c release`
+- `make version-check` → `make lint` → `make coverage` → `swift build -c release`
+- `make lint` runs **before** the build so a formatting-only PR fails in seconds
+- `make coverage` replaces a bare `swift test`: same suite, plus instrumentation, so the
+  tests are not compiled and run twice. Its table is written to `$GITHUB_STEP_SUMMARY`
+- The coverage step sets `shell: bash` deliberately — the default runner shell is
+  `bash -e` **without** `pipefail`, so `make coverage | tee` would mask a failing test
+  run behind `tee`'s exit code
 - `make app` + `codesign --verify --strict` — exercises icon generation, entitlements and ad-hoc signing, which `swift build` never touches. Without this step those only run at release time, so a break would surface mid-release instead of on the PR. The `codesign --display --entitlements` output also asserts all three entitlements actually made it into the bundle.
 
 **`dependabot.yml`** — monthly grouped PR for GitHub Actions bumps. Only the `github-actions` ecosystem is configured: the package has no external SPM dependencies, so a `swift` entry would do nothing.
@@ -85,12 +98,16 @@ Swift Package (swift-tools-version 6.2), two targets: **SmartDockCore** (testabl
 | `DisplayMonitor.swift` | Detects external monitor connect/disconnect via `CGDisplayRegisterReconfigurationCallback`. Debounces (1s settle delay). Filters by add/remove/enable/disable CG flags only, via the testable free function `shouldReactToDisplayChange(_:)`. Also observes `didWakeNotification`, `screensDidWakeNotification` (2s delay re-check). No space change observer — AppleScript triggers space notifications causing feedback loops. Conforms to `DisplayMonitoring`. |
 | `DockController.swift` | Applies `DockConfiguration` via `NSAppleScript` → System Events. Diff-based: reads current system config via fresh `UserDefaults(suiteName: "com.apple.dock")` and only applies properties that actually differ. Observes external dock preference changes via KVO on `UserDefaults(suiteName: "com.apple.dock")` using private `DockPrefsObserver` helper (NSObject for KVO). Debounces 0.5s, compares with `lastAppliedConfig` to filter own changes. Conforms to `DockControlling`. |
 | `SmartDockService.swift` | Orchestrator: reads `UserPreferences`, applies appropriate config based on display state. Handles external dock changes (System Settings sync): updates active profile when system config diverges from `lastAppliedConfig`. Has `SmartDockServiceDelegate`. Posts `Notification.Name.smartDockStateDidChange` only when state actually changes. |
+| `URLCommand.swift` | Parses `smartdock://` URLs into commands. Pure — lives in Core so it is covered by the test target. Rejects foreign schemes, unknown verbs and ambiguous input (`smartdock://switch` with no target) rather than guessing. |
+| `AppleScriptCommand.swift` | `DockProfile` — the `dock profile` enumeration from `SmartDock.sdef`, mapping four-character Apple Event codes to `URLCommand`. In Core so the codes are testable; `AppleScriptCommandTests` pins them to literals **and** greps the shipped `.sdef` to catch drift between the two hand-written copies. |
+| `DiagnosticReport.swift` | Value type + Markdown formatting for the About tab's **Copy Diagnostic Info**. Holds versions, permission flags, display counts and dock profiles — never anything identifying, since the output is pasted into public issues. |
 | `Log.swift` | Centralized `Logger` API. Subsystem `com.smartdock.app`. Categories: `general`, `display`. |
 
 ### App layer (`Sources/SmartDock/`)
 
 | File | Responsibility |
 |---|---|
+| `ScriptingSupport.swift` | `NSScriptCommand` subclasses backing `SmartDock.sdef`. Each is `@objc(SD…Command)` because the dictionary binds by Objective-C runtime name. `performDefaultImplementation` is inherited `nonisolated`, so it reaches `@MainActor` state via `MainActor.assumeIsolated` — sound because Apple Events are delivered on the main thread, and hopping off it would lose event ordering. Bad input sets `scriptErrorNumber`/`scriptErrorString` rather than guessing a profile. |
 | `App.swift` | `@main` AppDelegate with manual `NSApplication` run loop (no storyboards). Prompts Accessibility on first launch only (avoids re-prompting after Homebrew updates). Creates `NotificationManager`, `HotkeyManager`, `AppUpdateWatcher`, shows `OnboardingWindow` on first launch. After "Reset Permission" relaunch: opens Shortcuts tab + System Settings, polls `AXIsProcessTrusted` (1s, max 5min), auto-relaunches when granted. `applicationShouldHandleReopen` opens Settings when re-launched from /Applications. |
 | `StatusBarController.swift` | Menu bar icon (`dock.rectangle` SF Symbol) + dropdown menu with SF Symbol icons per item. Implements `NSMenuDelegate`, `SmartDockServiceDelegate`. Exposes `showSettings()` for re-open handling. Passes `HotkeyManager` to `SettingsWindow`. Menu items: Settings, Shortcuts, About open SettingsWindow on the corresponding tab. |
 | `SettingsWindow.swift` | Tabbed glass NSWindow (`NSVisualEffectView`) with 3 tabs: **Settings** (dock config card with mode control + general + buttons), **Shortcuts** (5 hotkey rows), **About** (version, links). Tab switching auto-saves dirty Settings and cancels hotkey recording. Apply button centered in card. Resizable (380×500 to 600×900) with ⌘0 to reset to default 420×660. Observes `smartDockStateDidChange` to refresh UI. Delegates self-contained pieces to `Views/` and `HotkeyRecorder`. |
@@ -118,6 +135,7 @@ Self-contained UI pieces extracted out of `SettingsWindow`. Each owns its own la
 ### Tests (`Tests/SmartDockTests/`)
 
 - `Mocks.swift` — `MockDisplayMonitor`, `MockDockController`, `MockServiceDelegate`
+- `AppleScriptCommandTests.swift` — Apple Event code stability, decoding, `.sdef` parity
 - Protocol-based DI: inject mocks via `DisplayMonitoring` / `DockControlling` protocols
 - All tests are `@MainActor`-compatible
 
@@ -166,14 +184,29 @@ Self-contained UI pieces extracted out of `SettingsWindow`. Each owns its own la
 - Log errors via `Log.error()` at the point of failure, don't propagate error messages up
 
 ### Formatting
-- 4-space indentation (Swift standard)
-- Opening brace on same line: `func foo() {`
-- Align multiline function parameters vertically
-- Trailing commas in multi-line arrays/dictionaries
-- No semicolons
-- Blank line between `// MARK: -` sections
-- Max line length: ~120 characters (soft limit, prefer readability over strict wrapping)
-- Use string interpolation `"\(value)"` not concatenation `"" + String(value)`, except for long multi-part log messages where `+` improves readability
+
+**`swift-format` is authoritative — do not hand-format.** Rules live in `.swift-format`
+at the repo root; `make format` applies them and `make lint` fails CI on any deviation.
+The tool ships inside the Xcode toolchain, so this adds no external dependency. Reach it
+via `xcrun swift-format` — a bare `swift-format` is not on `PATH`.
+
+What the config enforces: 4-space indentation, 120-column lines, no semicolons, trailing
+commas in multi-line collections, sorted imports, at most one consecutive blank line.
+
+Do **not** align code into columns by hand — the formatter strips it, and realigning a
+block on every rename is exactly the diff noise the tool exists to remove:
+```swift
+case refresh          = "refresh"   // ✗ formatter collapses this
+case refresh = "refresh"            // ✓
+```
+
+Several rules are disabled on purpose (implicitly unwrapped optionals in `AppDelegate`,
+force-unwraps in AppKit setup, `public extension`, the hand-written `DockConfiguration`
+init). Each exclusion and its reason is tabulated in `CONTRIBUTING.md` — if you find
+yourself wanting to re-enable one, read that first.
+
+Still a judgement call, since no rule covers it: use string interpolation `"\(value)"`
+rather than concatenation, except in long multi-part log messages where `+` reads better.
 
 ### Swift Patterns Used in This Project
 - **Protocol + concrete class** — define protocol first (`DockControlling`), then implementation (`DockController`). All external dependencies consumed via protocol.
@@ -249,6 +282,41 @@ Self-contained UI pieces extracted out of `SettingsWindow`. Each owns its own la
 - `isRecording` flag pauses dispatch during hotkey recording in Settings.
 - Bindings stored in `UserPreferences` as `HotkeyBinding` (keyCode + modifiers + displayName).
 - Display names captured via `event.charactersIgnoringModifiers` — works with any keyboard layout.
+- **Recording and matching must go through `HotkeyBinding` in Core**, never raw flags:
+  `HotkeyBinding.normalize(_:)` when storing, `binding.matches(keyCode:modifiers:)` when
+  dispatching, `binding.displayString` when showing. The mask lives in one place because
+  CapsLock/Fn ride along on ordinary key events — a binding recorded under one flag state
+  would silently stop firing under another. `HotkeyBindingTests` guards this.
+
+### External Commands (URL scheme + AppleScript)
+
+All three input paths — global hotkeys, `smartdock://` URLs and AppleScript — converge
+on `AppDelegate.performCommand(_:)` → `HotkeyAction(command)` → `HotkeyManager.perform(_:)`.
+One execution path, no duplicated behaviour. Keep it that way when adding a command.
+
+- `performCommand` **queues** into `pendingCommands` when `hotkeyManager` is still nil.
+  Both a URL and an Apple Event can *launch* the app, and that event can arrive before
+  `applicationDidFinishLaunching` has built the managers — unwrapping there would crash.
+  `drainPendingCommands()` runs at the end of launch.
+- The `HotkeyAction(URLCommand)` switch is exhaustive on purpose: adding a case to
+  either enum breaks the build until both agree.
+
+**URL scheme** — `smartdock://` registered via `CFBundleURLTypes`; `URLCommand` (Core)
+parses. Parsing rejects rather than guesses: unknown verbs, foreign schemes and
+`smartdock://switch` with no target all return `nil`.
+
+**AppleScript** — `NSAppleScriptEnabled` + `OSAScriptingDefinition` in `Info.plist`,
+dictionary at `Resources/SmartDock.sdef`, commands in `ScriptingSupport.swift`.
+
+- `make app` copies the `.sdef` into `Contents/Resources`. The filename must match
+  `OSAScriptingDefinition` exactly — the path is resolved relative to that directory.
+- Adding a command means touching **three** files: the `.sdef`, an `NSScriptCommand`
+  subclass, and `URLCommand`. Nothing forces them to agree at build time, which is why
+  `AppleScriptCommandTests` checks command/class counts and enumerator codes against the
+  shipped dictionary.
+- **Four-character codes are public API.** Scripts bind by code, not by name, so changing
+  one silently breaks every script already written against it. Treat them as frozen.
+- `show settings`, not `open settings` — `open` collides with the Standard Suite.
 
 ### UserDefaults
 - App preferences: `UserDefaults.standard` with `com.smartdock.` prefix.
@@ -286,9 +354,13 @@ Sources/
 │   ├── DisplayMonitor.swift      # CG callback + debounce + flag filtering
 │   ├── DockController.swift      # AppleScript Dock control + DockPrefsObserver (KVO sync)
 │   ├── SmartDockService.swift    # Orchestrator: display state -> dock config + external sync
+│   ├── URLCommand.swift          # smartdock:// URL parsing
+│   ├── AppleScriptCommand.swift  # DockProfile ↔ Apple Event four-char codes
+│   ├── DiagnosticReport.swift    # Bug-report snapshot + Markdown formatting
 │   └── Log.swift                 # Logger wrapper
 └── SmartDock/
     ├── App.swift                 # @main, manual NSApplication run loop
+    ├── ScriptingSupport.swift    # NSScriptCommand subclasses bound by the sdef
     ├── StatusBarController.swift # Menu bar icon + dropdown with SF Symbol icons
     ├── SettingsWindow.swift      # Tabbed glass window (Settings / Shortcuts / About)
     ├── OnboardingWindow.swift    # First-launch welcome screen
@@ -309,8 +381,14 @@ Tests/SmartDockTests/
     ├── Mocks.swift               # MockDisplayMonitor, MockDockController, MockServiceDelegate
     ├── SmartDockServiceTests.swift
     ├── DisplayMonitorTests.swift
-    └── DockControllerTests.swift
+    ├── DockControllerTests.swift
+    ├── HotkeyBindingTests.swift  # Modifier normalisation, matching, display formatting
+    ├── URLCommandTests.swift     # smartdock:// parsing + rejection
+    ├── AppleScriptCommandTests.swift  # Apple Event codes + .sdef parity
+    └── DiagnosticReportTests.swift
 Resources/
-    ├── Info.plist                # CFBundleShortVersionString + CFBundleVersion
+    ├── Info.plist                # Version, LSUIElement, URL types, sdef reference
+    ├── SmartDock.sdef            # AppleScript dictionary (copied in by `make app`)
     └── SmartDock.entitlements    # Apple Events + scripting targets
+.swift-format                     # Formatting rules — enforced by `make lint` in CI
 ```

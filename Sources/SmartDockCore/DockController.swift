@@ -154,7 +154,8 @@ public final class DockController: DockControlling {
             // If the system config matches what we last applied (within tolerance),
             // this is our own change echoing back — ignore it.
             if let lastApplied = self.lastAppliedConfig,
-               systemConfig.approximatelyEquals(lastApplied) {
+                systemConfig.approximatelyEquals(lastApplied)
+            {
                 return
             }
 
@@ -169,7 +170,8 @@ public final class DockController: DockControlling {
     // MARK: - Per-Property AppleScript
 
     private func applyPosition(_ position: DockPosition) -> Bool {
-        runAppleScript("""
+        runAppleScript(
+            """
             tell application "System Events"
                 tell dock preferences
                     set screen edge to \(position.appleScriptValue)
@@ -179,7 +181,8 @@ public final class DockController: DockControlling {
     }
 
     private func applyAutohide(_ autohide: Bool) -> Bool {
-        runAppleScript("""
+        runAppleScript(
+            """
             tell application "System Events"
                 tell dock preferences
                     set autohide to \(autohide)
@@ -189,7 +192,8 @@ public final class DockController: DockControlling {
     }
 
     private func applyIconSize(_ scale: Double) -> Bool {
-        runAppleScript("""
+        runAppleScript(
+            """
             tell application "System Events"
                 tell dock preferences
                     set dock size to \(scale)
@@ -199,7 +203,8 @@ public final class DockController: DockControlling {
     }
 
     private func applyMagnification(_ enabled: Bool) -> Bool {
-        runAppleScript("""
+        runAppleScript(
+            """
             tell application "System Events"
                 tell dock preferences
                     set magnification to \(enabled)
@@ -209,7 +214,8 @@ public final class DockController: DockControlling {
     }
 
     private func applyMagnificationSize(_ scale: Double) -> Bool {
-        runAppleScript("""
+        runAppleScript(
+            """
             tell application "System Events"
                 tell dock preferences
                     set magnification size to \(scale)
@@ -299,8 +305,8 @@ fileprivate extension DockPosition {
     var appleScriptValue: String {
         switch self {
         case .bottom: return "bottom"
-        case .left:   return "left"
-        case .right:  return "right"
+        case .left: return "left"
+        case .right: return "right"
         }
     }
 }
