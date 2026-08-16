@@ -34,6 +34,74 @@ final class SmartDockServiceTests: XCTestCase {
         service.stop()
     }
 
+    // MARK: - Forcing a Profile
+
+    /// The regression this method exists for.
+    ///
+    /// `applyProfile` used to be "apply the config, then `refresh()`", and `refresh()`
+    /// re-derives the profile from the displays — so forcing built-in while a monitor
+    /// was connected applied it and undid it in the same call. Hotkeys, `smartdock://`
+    /// URLs and AppleScript were all affected, and forcing is only ever useful in
+    /// exactly this situation.
+    func testForcingBuiltinSurvivesWhileAnExternalDisplayIsConnected() {
+        monitor.mockExternalCount = 1
+        service.start()
+        XCTAssertFalse(dock.lastAppliedConfig!.autohide, "external profile applies on start")
+
+        service.applyProfile(external: false)
+
+        XCTAssertTrue(
+            dock.lastAppliedConfig!.autohide,
+            "Built-in profile was requested explicitly and must not be overridden by the display state")
+        XCTAssertTrue(service.currentConfig.autohide, "currentConfig must reflect what is actually applied")
+    }
+
+    func testForcingExternalSurvivesWithNoExternalDisplay() {
+        monitor.mockExternalCount = 0
+        service.start()
+        XCTAssertTrue(dock.lastAppliedConfig!.autohide, "built-in profile applies on start")
+
+        service.applyProfile(external: true)
+
+        XCTAssertFalse(dock.lastAppliedConfig!.autohide)
+        XCTAssertFalse(service.currentConfig.autohide)
+    }
+
+    /// Forcing overrides the display, it does not misreport it — the menu bar and
+    /// diagnostics must still say what hardware is actually attached.
+    func testForcingAProfileLeavesReportedDisplayStateAlone() {
+        monitor.mockExternalCount = 1
+        service.start()
+
+        service.applyProfile(external: false)
+
+        XCTAssertTrue(service.hasExternalDisplay, "A forced profile does not unplug the monitor")
+    }
+
+    /// The override is deliberately not permanent: the next display event hands
+    /// control back to automatic behaviour.
+    func testTheNextDisplayChangeEndsTheOverride() {
+        monitor.mockExternalCount = 1
+        service.start()
+        service.applyProfile(external: false)
+        XCTAssertTrue(dock.lastAppliedConfig!.autohide)
+
+        monitor.simulateDisplayChange(externalCount: 2)
+
+        XCTAssertFalse(
+            dock.lastAppliedConfig!.autohide,
+            "A display change should resume automatic profile selection")
+    }
+
+    func testForcingAProfileDoesNothingWhileStopped() {
+        monitor.mockExternalCount = 1
+        let callsBefore = dock.applyCallCount
+
+        service.applyProfile(external: false)
+
+        XCTAssertEqual(dock.applyCallCount, callsBefore, "A stopped service must not touch the Dock")
+    }
+
     // MARK: - Start / Stop
 
     func testStartBeginsMonitoring() {

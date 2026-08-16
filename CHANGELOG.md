@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.1] — 2026-08-16
+
+### Fixed
+- Forcing a profile now sticks. "Apply Built-in Profile" applied the requested profile
+  and then immediately re-derived one from the connected displays, undoing it within the
+  same call — so forcing built-in while an external monitor was attached did nothing,
+  which is the only situation where forcing is useful. Affected all three entry points
+  equally: hotkey, `smartdock://switch/builtin` and `tell application "SmartDock" to
+  switch to builtin`. The override now holds until the next display change or refresh.
+- A profile with magnification **off** no longer loses its magnified-size setting.
+  `apply` deliberately skips that property while magnification is off — the value is
+  invisible and writing it makes the Dock flash — but the system-sync check compared
+  it anyway. Every apply therefore read the system back as an *external* edit and
+  overwrote the stored value. The two now share one definition, and a test pins them
+  together so they cannot drift again.
+
+### Changed
+- The "which settings actually differ" decision moved out of `DockController` into
+  `DockConfiguration.differences(from:)`. It is the part with the edge cases, and it
+  could not be tested through a controller that talks to the live System Events.
+- `DockController` takes its preferences domain as an argument, so tests read and
+  write a scratch domain instead of the developer's real `com.apple.dock`.
+- The 0.01 size tolerance is now `DockConfiguration.sizeTolerance`, defined once
+  rather than written out at three call sites.
+
+## [2.1.0] — 2026-08-09
+
 ### Added
 - URL scheme for automation — `smartdock://refresh`, `smartdock://switch/external`,
   `smartdock://switch/builtin`, `smartdock://toggle-autohide`, `smartdock://settings`.
@@ -43,6 +70,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Previously the modifier mask was written out separately in `HotkeyManager` and
   `HotkeyRecorder`; if the two had drifted apart, recorded shortcuts would have
   silently stopped firing.
+- `ExistentialAny` and `MemberImportVisibility` are enabled package-wide. Both become
+  the default in a later language mode, so the migration is done rather than pending —
+  and a bare existential now breaks the build instead of accumulating silently.
+
+### Security
+- `ci.yml` declares `permissions: contents: read`. It previously inherited the
+  repository default, which can include write access — more than a job that runs
+  code from pull requests should ever hold.
 
 ## [2.0.1] — 2026-08-02
 
