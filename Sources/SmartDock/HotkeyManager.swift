@@ -201,10 +201,7 @@ final class HotkeyManager: NSObject {
     }
 
     private func applyProfile(external: Bool) {
-        let config = external ? prefs.externalConfig : prefs.builtinConfig
-        service.dockController.apply(config)
-        service.refresh()
-        Log.info("Hotkey: applied \(external ? "external" : "built-in") profile")
+        service.applyProfile(external: external)
     }
 
     private func toggleAutohide() {

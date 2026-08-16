@@ -42,7 +42,16 @@ public final class DockController: DockControlling {
     private var prefsObserver: DockPrefsObserver?
     private var pendingExternalCheck: DispatchWorkItem?
 
-    public init() {}
+    /// Preferences domain the Dock stores its settings in.
+    ///
+    /// Injectable purely so tests can point at a scratch domain — reading and
+    /// writing `com.apple.dock` from a test would reconfigure the developer's
+    /// own Dock while the suite runs.
+    private let suiteName: String
+
+    public init(suiteName: String = "com.apple.dock") {
+        self.suiteName = suiteName
+    }
 
     // MARK: - DockControlling
 
@@ -51,7 +60,7 @@ public final class DockController: DockControlling {
     /// after AppleScript changes dock preferences via System Events.
     /// Sizes are returned as 0.0–1.0 scale (converted from pixel tilesize).
     public func readSystemConfig() -> DockConfiguration {
-        guard let d = UserDefaults(suiteName: "com.apple.dock") else {
+        guard let d = UserDefaults(suiteName: suiteName) else {
             return DockConfiguration()
         }
         let orientationRaw = d.string(forKey: "orientation") ?? "bottom"
@@ -72,42 +81,19 @@ public final class DockController: DockControlling {
         // Read current system state and only apply properties that differ.
         // Each AppleScript poke can cause the Dock to briefly flash — skipping
         // unchanged properties avoids spurious dock appearances.
-        let current = readSystemConfig()
+        let changed = config.differences(from: readSystemConfig())
 
         var allOk = true
-        var changed: [String] = []
-
-        if config.position != current.position {
-            changed.append("position=\(config.position.rawValue)")
-            if !applyPosition(config.position) { allOk = false }
-        }
-
-        if config.autohide != current.autohide {
-            changed.append("autohide=\(config.autohide)")
-            if !applyAutohide(config.autohide) { allOk = false }
-        }
-
-        // Tolerance covers 1-pixel rounding difference (~0.009 scale).
-        if abs(config.iconSize - current.iconSize) > 0.01 {
-            changed.append("size=\(String(format: "%.3f", config.iconSize))")
-            if !applyIconSize(config.iconSize) { allOk = false }
-        }
-
-        if config.magnification != current.magnification {
-            changed.append("magnification=\(config.magnification)")
-            if !applyMagnification(config.magnification) { allOk = false }
-        }
-
-        if config.magnification && abs(config.magnificationSize - current.magnificationSize) > 0.01 {
-            changed.append("magSize=\(String(format: "%.3f", config.magnificationSize))")
-            if !applyMagnificationSize(config.magnificationSize) { allOk = false }
+        for property in changed {
+            if !push(property, of: config) { allOk = false }
         }
 
         if changed.isEmpty {
             Log.info("Dock config unchanged — skipped AppleScript")
         } else {
+            let applied = changed.map { config.describe($0) }.joined(separator: " ")
             let status = allOk ? "" : " [some failed]"
-            Log.info("Dock config applied: \(changed.joined(separator: " "))\(status)")
+            Log.info("Dock config applied: \(applied)\(status)")
         }
 
         // Snapshot what we applied — KVO will fire for our own changes,
@@ -117,6 +103,18 @@ public final class DockController: DockControlling {
         return allOk
     }
 
+    /// Pushes one property to the Dock. Exhaustive on `DockProperty`, so a new
+    /// setting cannot be added to the diff without also being given a way to apply.
+    private func push(_ property: DockProperty, of config: DockConfiguration) -> Bool {
+        switch property {
+        case .position: return applyPosition(config.position)
+        case .autohide: return applyAutohide(config.autohide)
+        case .iconSize: return applyIconSize(config.iconSize)
+        case .magnification: return applyMagnification(config.magnification)
+        case .magnificationSize: return applyMagnificationSize(config.magnificationSize)
+        }
+    }
+
     // MARK: - System Change Observation
 
     public func startObservingSystemChanges() {
@@ -124,7 +122,7 @@ public final class DockController: DockControlling {
 
         lastAppliedConfig = readSystemConfig()
 
-        let observer = DockPrefsObserver()
+        let observer = DockPrefsObserver(suiteName: suiteName)
         observer.onChange = { [weak self] in
             self?.handleExternalChange()
         }
@@ -260,8 +258,15 @@ private final class DockPrefsObserver: NSObject {
     /// Thread-safe flag — accessed from deinit (nonisolated) and @MainActor methods.
     private nonisolated(unsafe) var isObserving = false
 
+    /// Matches the controller's domain — see `DockController.suiteName`.
+    private let suiteName: String
+
+    init(suiteName: String) {
+        self.suiteName = suiteName
+    }
+
     func start() {
-        guard let defaults = UserDefaults(suiteName: "com.apple.dock") else { return }
+        guard let defaults = UserDefaults(suiteName: suiteName) else { return }
         observedDefaults = defaults
         for key in watchedKeys {
             defaults.addObserver(self, forKeyPath: key, options: [.new], context: nil)

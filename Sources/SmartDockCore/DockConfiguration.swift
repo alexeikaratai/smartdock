@@ -55,14 +55,88 @@ public struct DockConfiguration: Equatable, Sendable {
         Int((scale * 112.0 + 16.0).rounded())
     }
 
-    /// Compare with tolerance for size fields (0.01 scale ≈ 1px).
+    /// How far two size values may drift and still count as the same setting.
+    ///
+    /// Sizes round-trip through the Dock as integer pixels, so a value written as
+    /// 0.2857 reads back slightly different. 0.01 scale ≈ 1px. Defined once because
+    /// `approximatelyEquals` and `differences(from:)` must agree exactly — one says
+    /// "nothing changed", the other says "nothing to apply", and a mismatch between
+    /// them makes the app mistake its own no-op for someone else's edit.
+    public static let sizeTolerance = 0.01
+
+    /// Compare with tolerance for size fields.
     /// Used by system sync to detect real changes vs rounding noise.
     public func approximatelyEquals(_ other: DockConfiguration) -> Bool {
-        autohide == other.autohide
-            && position == other.position
-            && magnification == other.magnification
-            && abs(iconSize - other.iconSize) <= 0.01
-            && abs(magnificationSize - other.magnificationSize) <= 0.01
+        guard autohide == other.autohide,
+            position == other.position,
+            magnification == other.magnification,
+            abs(iconSize - other.iconSize) <= Self.sizeTolerance
+        else { return false }
+
+        // Magnified size is invisible while magnification is off, and `differences`
+        // deliberately never applies it then. Comparing it here anyway would report
+        // our own no-op as an external change — and the stored profile would be
+        // overwritten with whatever the system happened to hold.
+        guard magnification else { return true }
+        return abs(magnificationSize - other.magnificationSize) <= Self.sizeTolerance
+    }
+}
+
+// MARK: - Dock Property
+
+/// A single Dock setting that can be pushed to the system.
+///
+/// Each is applied by its own AppleScript block, so one failing does not stop
+/// the others — which is why this is a list of independent properties rather
+/// than one all-or-nothing write.
+public enum DockProperty: String, CaseIterable, Sendable {
+    case position
+    case autohide
+    case iconSize
+    case magnification
+    case magnificationSize
+}
+
+// MARK: - Diffing
+
+public extension DockConfiguration {
+
+    /// The properties of this config that differ from `current`, in the order they
+    /// should be applied.
+    ///
+    /// An empty result means the Dock already matches and no AppleScript needs to
+    /// run at all — which is what keeps frequent re-applies (wake, refresh, display
+    /// change) from making the Dock flash.
+    ///
+    /// Kept pure and separate from the AppleScript that carries it out: the decision
+    /// of *what* to change is the part with edge cases worth testing, and it cannot
+    /// be exercised through a controller that talks to the real System Events.
+    func differences(from current: DockConfiguration) -> [DockProperty] {
+        var changed: [DockProperty] = []
+
+        if position != current.position { changed.append(.position) }
+        if autohide != current.autohide { changed.append(.autohide) }
+        if abs(iconSize - current.iconSize) > Self.sizeTolerance { changed.append(.iconSize) }
+        if magnification != current.magnification { changed.append(.magnification) }
+
+        // Only meaningful while magnification is on. Setting it otherwise would
+        // make the Dock flash for a value the user cannot see.
+        if magnification, abs(magnificationSize - current.magnificationSize) > Self.sizeTolerance {
+            changed.append(.magnificationSize)
+        }
+
+        return changed
+    }
+
+    /// The value this config carries for `property`, rendered for logs.
+    func describe(_ property: DockProperty) -> String {
+        switch property {
+        case .position: return "position=\(position.rawValue)"
+        case .autohide: return "autohide=\(autohide)"
+        case .iconSize: return "size=\(String(format: "%.3f", iconSize))"
+        case .magnification: return "magnification=\(magnification)"
+        case .magnificationSize: return "magSize=\(String(format: "%.3f", magnificationSize))"
+        }
     }
 }
 

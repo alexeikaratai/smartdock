@@ -95,6 +95,33 @@ public final class SmartDockService {
         applyCurrentState()
     }
 
+    /// Apply a profile the user asked for by name, overriding the one the current
+    /// display setup would select.
+    ///
+    /// Deliberately **not** implemented as "apply, then `refresh()`": `refresh()`
+    /// re-derives the profile from the displays, so it would undo the request
+    /// within the same call — and the only time forcing a profile is useful is
+    /// precisely when it disagrees with the displays.
+    ///
+    /// The override holds until the next display change, wake or refresh, at which
+    /// point automatic behaviour resumes.
+    public func applyProfile(external: Bool) {
+        guard isEnabled, !isApplying else { return }
+        isApplying = true
+        defer { isApplying = false }
+
+        let config = external ? prefs.externalConfig : prefs.builtinConfig
+        let changed = config != currentConfig
+
+        currentConfig = config
+        dockController.apply(config)
+        Log.info("Applied \(external ? "external" : "built-in") profile on request")
+
+        // `hasExternalDisplay` keeps reporting the hardware, which has not changed —
+        // only the profile in force has.
+        if changed { notifyStateChanged() }
+    }
+
     // MARK: - Private
 
     private var isApplying = false
