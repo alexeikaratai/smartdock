@@ -14,7 +14,8 @@ final class DiagnosticReportTests: XCTestCase {
         builtinConfig: DockConfiguration = DockConfiguration(autohide: true, position: .left),
         notificationsEnabled: Bool = true,
         syncFromSystemEnabled: Bool = true,
-        hotkeys: [DiagnosticReport.Hotkey] = []
+        hotkeys: [DiagnosticReport.Hotkey] = [],
+        lastApplyOutcome: DockApplyOutcome? = nil
     ) -> DiagnosticReport {
         DiagnosticReport(
             appVersion: "2.0.1",
@@ -27,8 +28,38 @@ final class DiagnosticReportTests: XCTestCase {
             builtinConfig: builtinConfig,
             notificationsEnabled: notificationsEnabled,
             syncFromSystemEnabled: syncFromSystemEnabled,
-            hotkeys: hotkeys
+            hotkeys: hotkeys,
+            lastApplyOutcome: lastApplyOutcome
         )
+    }
+
+    // MARK: - Apply Outcome
+
+    /// Before the first apply there is nothing to say, and an empty line would just
+    /// read as a missing value to whoever is triaging the report.
+    func testUnverifiedApplyIsOmittedEntirely() {
+        XCTAssertFalse(makeReport(lastApplyOutcome: nil).formatted.contains("Last apply"))
+    }
+
+    func testSuccessfulApplyIsReported() {
+        let outcome = DockApplyOutcome(requested: [.position], rejected: [])
+        let output = makeReport(lastApplyOutcome: outcome).formatted
+
+        XCTAssertTrue(output.contains("Last apply"))
+        XCTAssertTrue(output.contains("position"))
+        XCTAssertFalse(output.contains("⚠️"), "A clean apply should not be flagged")
+    }
+
+    /// The whole reason this field is in the report: a setting the Dock refused
+    /// looks exactly like a working app from the user's side, so it has to stand
+    /// out in a pasted issue the way a missing permission does.
+    func testRefusedApplyIsFlagged() {
+        let outcome = DockApplyOutcome(requested: [.autohide], rejected: [.autohide])
+        let output = makeReport(lastApplyOutcome: outcome).formatted
+
+        XCTAssertTrue(output.contains("ignored"), output)
+        XCTAssertTrue(output.contains("autohide"))
+        XCTAssertTrue(output.contains("⚠️"), "A refused setting must be visually obvious")
     }
 
     // MARK: - Identity

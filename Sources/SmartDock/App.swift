@@ -15,10 +15,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var onboardingWindow: OnboardingWindow?
     private let updateWatcher = AppUpdateWatcher()
 
-    /// Commands that arrived before `applicationDidFinishLaunching` built the
-    /// managers — drained once launch completes. Both a `smartdock://` URL and an
-    /// Apple Event can launch the app, so either can land here.
-    private var pendingCommands: [URLCommand] = []
+    /// Holds commands that arrive before `applicationDidFinishLaunching` has built
+    /// the managers, and releases them once it has. Both a `smartdock://` URL and
+    /// an Apple Event can launch the app, so either can land here.
+    private var commandQueue = PendingCommandQueue()
 
     /// Explicit entry point for a menu bar app without storyboard/nib.
     /// The default @main behavior calls NSApplicationMain which expects
@@ -101,14 +101,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// shares one implementation and cannot drift apart.
     func performCommand(_ command: URLCommand) {
         // The command may have launched the app, arriving before
-        // applicationDidFinishLaunching built the managers. Hold it rather
-        // than unwrapping a nil.
-        guard hotkeyManager != nil else {
+        // applicationDidFinishLaunching built the managers. The queue holds it
+        // rather than letting us unwrap a nil.
+        let ready = commandQueue.submit(command)
+        guard !ready.isEmpty else {
             Log.info("Command \(command.rawValue) arrived before launch finished — queued")
-            pendingCommands.append(command)
             return
         }
 
+        for command in ready {
+            run(command)
+        }
+    }
+
+    private func run(_ command: URLCommand) {
         Log.info("External command: \(command.rawValue)")
         hotkeyManager.perform(HotkeyAction(command))
     }
@@ -126,11 +132,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func drainPendingCommands() {
-        guard !pendingCommands.isEmpty else { return }
-        let queued = pendingCommands
-        pendingCommands.removeAll()
+        let queued = commandQueue.markReady()
+        guard !queued.isEmpty else { return }
+
+        Log.info("Running \(queued.count) command(s) queued during launch")
         for command in queued {
-            performCommand(command)
+            run(command)
         }
     }
 

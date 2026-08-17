@@ -154,22 +154,21 @@ final class HotkeyManager: NSObject {
 
     // MARK: - Private
 
-    /// Minimum interval between hotkey executions to prevent rapid-fire.
-    private var lastExecutionTime: Date = .distantPast
-    private let executionCooldown: TimeInterval = 0.3
+    /// Minimum interval between hotkey executions, so holding a shortcut down does
+    /// not fire it dozens of times. Consulted only once a binding has matched —
+    /// an unrelated keystroke must not consume the allowance.
+    private var rateLimiter = RateLimiter(interval: 0.3)
 
     /// Returns true if the event matched a hotkey binding.
     @discardableResult
     private func handleKeyEvent(_ event: NSEvent) -> Bool {
         guard !isRecording, !cachedBindings.isEmpty else { return false }
-        guard Date().timeIntervalSince(lastExecutionTime) >= executionCooldown else { return false }
 
-        for (action, binding) in cachedBindings {
-            if binding.matches(keyCode: event.keyCode, modifiers: event.modifierFlags) {
-                lastExecutionTime = Date()
-                perform(action)
-                return true
-            }
+        for (action, binding) in cachedBindings
+        where binding.matches(keyCode: event.keyCode, modifiers: event.modifierFlags) {
+            guard rateLimiter.allow(at: Date()) else { return false }
+            perform(action)
+            return true
         }
 
         return false

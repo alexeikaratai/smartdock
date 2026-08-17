@@ -28,13 +28,12 @@ final class NotificationManager: NSObject {
     var onNotificationClicked: (() -> Void)?
 
     private let prefs = UserPreferences.shared
-    private var lastNotificationDate: Date?
-    private let cooldown: TimeInterval = 3.0
     private var isAuthorized = false
 
-    /// Tracks last notified external state to avoid spamming notifications
-    /// when only profile settings change (not the actual profile).
-    private var lastNotifiedExternal: Bool?
+    /// Owns both reasons to stay quiet — unchanged profile, and banners arriving
+    /// faster than 3s apart. Lives in Core so the ordering between the two is
+    /// covered by tests; see `ProfileSwitchAnnouncer`.
+    private var announcer = ProfileSwitchAnnouncer(cooldown: 3.0)
 
     // MARK: - Init
 
@@ -100,19 +99,9 @@ final class NotificationManager: NSObject {
             return
         }
 
-        // Only notify on actual profile switch (External↔Built-in),
-        // not on settings changes within the same profile.
-        if let last = lastNotifiedExternal, last == hasExternal {
-            return
-        }
-        lastNotifiedExternal = hasExternal
-
-        // Cooldown: prevent spam during rapid connect/disconnect
-        if let lastDate = lastNotificationDate,
-            Date().timeIntervalSince(lastDate) < cooldown
-        {
-            return
-        }
+        // Announce only a real profile switch (External↔Built-in), not a settings
+        // change within the same profile, and not faster than the cooldown.
+        guard announcer.shouldAnnounce(hasExternal: hasExternal, at: Date()) else { return }
 
         postNotification(hasExternal: hasExternal)
     }
@@ -170,8 +159,6 @@ final class NotificationManager: NSObject {
             content: content,
             trigger: nil
         )
-
-        lastNotificationDate = Date()
 
         UNUserNotificationCenter.current().add(request) { error in
             if let error {

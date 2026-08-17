@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] — 2026-08-17
+
+### Added
+- SmartDock now checks whether the Dock actually accepted a change, instead of
+  trusting AppleScript. `NSAppleScript` reports success as soon as the script *runs* —
+  System Events can accept it and quietly not honour it, and the two are
+  indistinguishable at the call site. The Dock is read back a second later and any
+  setting that did not land is logged and shown in **Copy Diagnostic Info**, flagged
+  the way a missing permission is. Without this, "the app says it applied but nothing
+  happened" was undiagnosable from a bug report.
+
+### Fixed
+- A profile switch suppressed by the notification cooldown no longer counts as
+  announced. The state was recorded before the cooldown check, so a switch the user
+  was never shown was treated as already delivered — and the next genuine switch back
+  to it was dismissed as a duplicate, leaving them never told at all.
+
+### Changed
+- Timing and queueing logic moved from the app target into `SmartDockCore`, where
+  tests can reach it: hotkey rate limiting, the notification cooldown, and the queue
+  that holds commands arriving before launch finishes. All three take the current time
+  as an argument, so the interval edges are asserted exactly rather than by sleeping.
+
 ## [2.1.1] — 2026-08-16
 
 ### Fixed

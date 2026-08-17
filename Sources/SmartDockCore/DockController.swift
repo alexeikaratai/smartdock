@@ -16,6 +16,10 @@ public protocol DockControlling: AnyObject {
     /// Read the current system dock configuration.
     func readSystemConfig() -> DockConfiguration
 
+    /// What the last `apply` actually achieved, established by reading the Dock
+    /// back a moment later. `nil` until the first apply has been verified.
+    var lastApplyOutcome: DockApplyOutcome? { get }
+
     /// Start observing system dock preference changes via KVO.
     func startObservingSystemChanges()
 
@@ -39,8 +43,16 @@ public final class DockController: DockControlling {
     /// changes from external ones in KVO callbacks.
     private var lastAppliedConfig: DockConfiguration?
 
+    public private(set) var lastApplyOutcome: DockApplyOutcome?
+
     private var prefsObserver: DockPrefsObserver?
     private var pendingExternalCheck: DispatchWorkItem?
+    private var pendingVerification: DispatchWorkItem?
+
+    /// Long enough for the Dock to settle after System Events pokes it, and
+    /// deliberately later than the 0.5s KVO debounce so the two do not interleave.
+    /// Shortened in tests so the suite does not spend a second per apply waiting.
+    private let verificationDelay: TimeInterval
 
     /// Preferences domain the Dock stores its settings in.
     ///
@@ -49,8 +61,21 @@ public final class DockController: DockControlling {
     /// own Dock while the suite runs.
     private let suiteName: String
 
-    public init(suiteName: String = "com.apple.dock") {
+    /// Runs one script against System Events.
+    ///
+    /// Injectable for the same reason `suiteName` is: the real implementation
+    /// reconfigures the developer's actual Dock, so `apply` — and the verification
+    /// that follows it — could otherwise only be exercised by hand.
+    private let runScript: (String) -> Bool
+
+    public init(
+        suiteName: String = "com.apple.dock",
+        verificationDelay: TimeInterval = 1.0,
+        runScript: ((String) -> Bool)? = nil
+    ) {
         self.suiteName = suiteName
+        self.verificationDelay = verificationDelay
+        self.runScript = runScript ?? Self.executeAppleScript
     }
 
     // MARK: - DockControlling
@@ -100,7 +125,48 @@ public final class DockController: DockControlling {
         // and we compare against this to filter them out.
         lastAppliedConfig = config
 
+        scheduleVerification(of: config, requested: changed)
+
         return allOk
+    }
+
+    // MARK: - Verification
+
+    /// Reads the Dock back a moment after applying to find out what actually stuck.
+    ///
+    /// `allOk` above only says the AppleScript *ran*; System Events can accept a
+    /// script and quietly not honour it, which is indistinguishable from success at
+    /// the call site. Checking the result closes that blind spot — without it the
+    /// app reports "applied" for changes that never happened.
+    ///
+    /// Asynchronous on purpose: the Dock settles slightly after the script returns,
+    /// and `apply` has to stay synchronous for its callers.
+    private func scheduleVerification(of config: DockConfiguration, requested: [DockProperty]) {
+        pendingVerification?.cancel()
+        pendingVerification = nil
+
+        guard !requested.isEmpty else {
+            lastApplyOutcome = .noWorkNeeded
+            return
+        }
+
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingVerification = nil
+
+            let outcome = DockApplyOutcome.verifying(
+                config, against: self.readSystemConfig(), requested: requested)
+            self.lastApplyOutcome = outcome
+
+            if outcome.isComplete {
+                Log.info("Dock apply verified: \(outcome.summary)")
+            } else {
+                Log.error("\(outcome.summary) — AppleScript reported success but the setting did not land")
+            }
+        }
+
+        pendingVerification = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + verificationDelay, execute: work)
     }
 
     /// Pushes one property to the Dock. Exhaustive on `DockProperty`, so a new
@@ -134,6 +200,8 @@ public final class DockController: DockControlling {
     public func stopObservingSystemChanges() {
         pendingExternalCheck?.cancel()
         pendingExternalCheck = nil
+        pendingVerification?.cancel()
+        pendingVerification = nil
         prefsObserver?.stop()
         prefsObserver = nil
     }
@@ -226,6 +294,13 @@ public final class DockController: DockControlling {
 
     @discardableResult
     private func runAppleScript(_ source: String) -> Bool {
+        runScript(source)
+    }
+
+    /// The real System Events call. Note what it can and cannot tell you: a `false`
+    /// here means the script itself failed, never that the Dock declined to honour
+    /// a script that ran fine. That second case is what `scheduleVerification` is for.
+    private static func executeAppleScript(_ source: String) -> Bool {
         let script = NSAppleScript(source: source)
         var error: NSDictionary?
         script?.executeAndReturnError(&error)

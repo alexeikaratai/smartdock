@@ -35,6 +35,11 @@ public struct DiagnosticReport: Sendable {
     public let syncFromSystemEnabled: Bool
     public let hotkeys: [Hotkey]
 
+    /// What the last dock apply actually achieved. `nil` before the first one has
+    /// been verified. This is the field that distinguishes "the app is misbehaving"
+    /// from "macOS refused the change" — the two look identical to a user.
+    public let lastApplyOutcome: DockApplyOutcome?
+
     public init(
         appVersion: String,
         buildNumber: String,
@@ -46,8 +51,10 @@ public struct DiagnosticReport: Sendable {
         builtinConfig: DockConfiguration,
         notificationsEnabled: Bool,
         syncFromSystemEnabled: Bool,
-        hotkeys: [Hotkey]
+        hotkeys: [Hotkey],
+        lastApplyOutcome: DockApplyOutcome? = nil
     ) {
+        self.lastApplyOutcome = lastApplyOutcome
         self.appVersion = appVersion
         self.buildNumber = buildNumber
         self.systemVersion = systemVersion
@@ -70,6 +77,11 @@ public struct DiagnosticReport: Sendable {
         lines.append("- Accessibility: \(isAccessibilityGranted ? "granted" : "NOT granted")")
         lines.append("- External displays: \(externalDisplayCount)")
         lines.append("- Active profile: \(hasExternalDisplay ? "External Monitor" : "Built-in Only")")
+        if let outcome = lastApplyOutcome {
+            // Flagged like a missing permission — a silently refused setting is the
+            // same class of problem and just as easy to overlook in a pasted report.
+            lines.append("- Last apply: \(outcome.summary)\(outcome.isComplete ? "" : " ⚠️")")
+        }
         lines.append("")
 
         lines.append("**Profiles**")

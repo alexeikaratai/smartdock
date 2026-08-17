@@ -158,7 +158,8 @@ final class AboutTabView: NSView {
                     action: action.displayName,
                     shortcut: prefs.hotkey(for: action.rawValue)?.displayString
                 )
-            }
+            },
+            lastApplyOutcome: service.dockController.lastApplyOutcome
         )
     }
 }
