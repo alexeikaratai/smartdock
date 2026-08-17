@@ -5,7 +5,7 @@
 # === Config ===
 APP_NAME     := SmartDock
 BUNDLE_ID    := com.smartdock.app
-VERSION      := 2.1.1
+VERSION      := 2.2.0
 BUILD_DIR    := .build/release
 APP_DIR      := build/$(APP_NAME).app
 CONTENTS     := $(APP_DIR)/Contents
@@ -142,6 +142,7 @@ notarize: dmg
 #   Makefile            VERSION := x.y.z          (source of truth)
 #   Info.plist          CFBundleShortVersionString + CFBundleVersion (build, +1)
 #   README.md           shields.io badge URL + its alt text
+#   CHANGELOG.md        opens a dated section for the version under [Unreleased]
 # Then runs version-check so a missed spot fails loudly instead of shipping stale.
 # CI calls this target too — do not duplicate the sed logic in workflows.
 
@@ -161,6 +162,15 @@ endif
 	@# README — badge URL and alt text both carry the version
 	sed -i '' -e 's|badge/version-[0-9][0-9.]*-|badge/version-$(V)-|' \
 	          -e 's|alt="Version [0-9][0-9.]*"|alt="Version $(V)"|' README.md
+	@# CHANGELOG — open a dated section for this version directly under [Unreleased],
+	@# so whatever accumulated there becomes the release notes. Skipped when the
+	@# section already exists, which makes re-running bump harmless.
+	@if ! grep -q '^## \[$(V)\]' CHANGELOG.md; then \
+		awk -v ver='$(V)' -v today="$$(date +%Y-%m-%d)" \
+			'{ print } /^## \[Unreleased\]$$/ { print ""; print "## [" ver "] — " today }' \
+			CHANGELOG.md > CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md; \
+		echo "  📝 CHANGELOG: opened section [$(V)]"; \
+	fi
 	@$(MAKE) --no-print-directory version-check
 	@echo "✅ Version: $(V), Build: $$(sed -n '/CFBundleVersion/{n;s/.*<string>\(.*\)<\/string>.*/\1/p;}' Resources/Info.plist)"
 
@@ -171,8 +181,9 @@ version-check:
 	@plist=$$(sed -n '/CFBundleShortVersionString/{n;s/.*<string>\(.*\)<\/string>.*/\1/p;}' Resources/Info.plist); \
 	badge=$$(sed -n 's|.*badge/version-\([0-9][0-9.]*\)-.*|\1|p' README.md | head -1); \
 	alt=$$(sed -n 's|.*alt="Version \([0-9][0-9.]*\)".*|\1|p' README.md | head -1); \
+	changelog=$$(sed -n 's|^## \[\([0-9][0-9.]*\)\].*|\1|p' CHANGELOG.md | head -1); \
 	fail=0; \
-	for entry in "Info.plist:$$plist" "README badge:$$badge" "README alt:$$alt"; do \
+	for entry in "Info.plist:$$plist" "README badge:$$badge" "README alt:$$alt" "CHANGELOG:$$changelog"; do \
 		name="$${entry%%:*}"; value="$${entry##*:}"; \
 		if [ "$$value" = "$(VERSION)" ]; then \
 			printf "  ✅ %-14s %s\n" "$$name" "$$value"; \

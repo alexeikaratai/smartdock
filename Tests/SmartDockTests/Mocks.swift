@@ -47,6 +47,12 @@ final class MockDockController: DockControlling {
     var startObservingCallCount = 0
     var stopObservingCallCount = 0
 
+    private(set) var lastApplyOutcome: DockApplyOutcome?
+
+    /// Properties the mock should pretend the Dock silently refused, so tests can
+    /// reproduce the case where AppleScript succeeds but nothing changes.
+    var mockRejectedProperties: [DockProperty] = []
+
     /// Autohide state resulting from the last applied config.
     var autoHideState: Bool { lastAppliedConfig?.autohide ?? false }
 
@@ -54,6 +60,12 @@ final class MockDockController: DockControlling {
     func apply(_ config: DockConfiguration) -> Bool {
         applyCallCount += 1
         lastAppliedConfig = config
+
+        let requested = config.differences(from: mockSystemConfig)
+        lastApplyOutcome = DockApplyOutcome(
+            requested: requested,
+            rejected: requested.filter { mockRejectedProperties.contains($0) })
+
         return true
     }
 

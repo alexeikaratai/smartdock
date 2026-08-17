@@ -42,8 +42,15 @@ make fix            # xattr -cr + codesign (fix Gatekeeper quarantine)
 | `Resources/Info.plist` | `CFBundleShortVersionString` |
 | `Resources/Info.plist` | `CFBundleVersion` — build number, incremented by 1 (never set from `V`) |
 | `README.md` | shields.io badge — both the URL and its `alt` text |
+| `CHANGELOG.md` | a dated `## [x.y.z]` section, opened directly under `## [Unreleased]` |
 
 `bump` finishes by running `version-check`, which fails if any reference is stale. `release.yml` calls `make bump` rather than re-implementing it — if you add a fifth place, add it to the `bump` target and to `version-check`, and CI picks it up for free.
+
+**Do not delete the `## [Unreleased]` heading from `CHANGELOG.md`.** It is not decoration:
+`bump` inserts the new version's section immediately below it, so removing the line makes
+bump silently stop recording releases. Entries accumulate under `[Unreleased]` as work
+lands, and `bump` converts them into the dated section. The section was forgotten by hand
+on three consecutive releases, which is why `version-check` now gates on it too.
 
 Examples in docs use `V=1.2.3` on purpose: a placeholder that never collides with a real version, so grepping the current version only finds actual definitions.
 
@@ -100,6 +107,9 @@ Swift Package (swift-tools-version 6.2), two targets: **SmartDockCore** (testabl
 | `SmartDockService.swift` | Orchestrator: reads `UserPreferences`, applies appropriate config based on display state. Handles external dock changes (System Settings sync): updates active profile when system config diverges from `lastAppliedConfig`. Has `SmartDockServiceDelegate`. Posts `Notification.Name.smartDockStateDidChange` only when state actually changes. |
 | `URLCommand.swift` | Parses `smartdock://` URLs into commands. Pure — lives in Core so it is covered by the test target. Rejects foreign schemes, unknown verbs and ambiguous input (`smartdock://switch` with no target) rather than guessing. |
 | `AppleScriptCommand.swift` | `DockProfile` — the `dock profile` enumeration from `SmartDock.sdef`, mapping four-character Apple Event codes to `URLCommand`. In Core so the codes are testable; `AppleScriptCommandTests` pins them to literals **and** greps the shipped `.sdef` to catch drift between the two hand-written copies. |
+| `DockApplyOutcome.swift` | What an apply actually achieved, established by reading the Dock back — `NSAppleScript` reports success as soon as the script runs, so a silently-refused setting is otherwise invisible. Only properties that were **requested** can be reported rejected; anything else that differs was changed by something outside the app. |
+| `RateLimiter.swift` | `RateLimiter` (hotkey rate limiting) and `ProfileSwitchAnnouncer` (notification cooldown + duplicate suppression). Both take `now` as an argument so interval edges are testable without sleeping. The announcer records a state **only when a banner actually shows** — recording a suppressed one would swallow the next genuine switch back to it. |
+| `PendingCommandQueue.swift` | Holds `smartdock://` / Apple Event commands that arrive before `applicationDidFinishLaunching` builds the managers. In Core because leaving it in `AppDelegate` put the fix for a launch-time crash in the one target with no tests. |
 | `DiagnosticReport.swift` | Value type + Markdown formatting for the About tab's **Copy Diagnostic Info**. Holds versions, permission flags, display counts and dock profiles — never anything identifying, since the output is pasted into public issues. |
 | `Log.swift` | Centralized `Logger` API. Subsystem `com.smartdock.app`. Categories: `general`, `display`. |
 
@@ -136,6 +146,9 @@ Self-contained UI pieces extracted out of `SettingsWindow`. Each owns its own la
 
 - `Mocks.swift` — `MockDisplayMonitor`, `MockDockController`, `MockServiceDelegate`
 - `AppleScriptCommandTests.swift` — Apple Event code stability, decoding, `.sdef` parity
+- `DockApplyOutcomeTests.swift` — silent refusal detection, tolerance, blame scoping
+- `RateLimiterTests.swift` — interval edges, and that blocked attempts don't push the deadline out
+- `PendingCommandQueueTests.swift` — launch-time queueing, ordering, drain-once
 - Protocol-based DI: inject mocks via `DisplayMonitoring` / `DockControlling` protocols
 - All tests are `@MainActor`-compatible
 
@@ -356,6 +369,9 @@ Sources/
 │   ├── SmartDockService.swift    # Orchestrator: display state -> dock config + external sync
 │   ├── URLCommand.swift          # smartdock:// URL parsing
 │   ├── AppleScriptCommand.swift  # DockProfile ↔ Apple Event four-char codes
+│   ├── DockApplyOutcome.swift    # Did the Dock actually take it? (read-back check)
+│   ├── RateLimiter.swift         # Hotkey rate limit + notification announcer
+│   ├── PendingCommandQueue.swift # Commands arriving before launch finishes
 │   ├── DiagnosticReport.swift    # Bug-report snapshot + Markdown formatting
 │   └── Log.swift                 # Logger wrapper
 └── SmartDock/
