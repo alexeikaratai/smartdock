@@ -1,5 +1,6 @@
 import Cocoa
 import SmartDockCore
+import UniformTypeIdentifiers
 
 // MARK: - About Tab
 
@@ -13,6 +14,7 @@ final class AboutTabView: NSView {
 
     private let service: SmartDockService
     private var copyButton: NSButton!
+    private var exportButton: NSButton!
     private var copyResetWork: DispatchWorkItem?
 
     // MARK: - Init
@@ -70,6 +72,9 @@ final class AboutTabView: NSView {
         copyButton = UI.smallButton("Copy Diagnostic Info", target: self, action: #selector(copyDiagnostics))
         addSubview(copyButton)
 
+        exportButton = UI.smallButton("Export Logs\u{2026}", target: self, action: #selector(exportLogs))
+        addSubview(exportButton)
+
         let footerLabel = UI.label("Made with \u{2764} by Alex Karatai", font: .systemFont(ofSize: 10))
         footerLabel.textColor = .tertiaryLabelColor
         footerLabel.alignment = .center
@@ -100,7 +105,10 @@ final class AboutTabView: NSView {
             copyButton.topAnchor.constraint(equalTo: githubButton.bottomAnchor, constant: 10),
             copyButton.centerXAnchor.constraint(equalTo: centerXAnchor),
 
-            footerLabel.topAnchor.constraint(greaterThanOrEqualTo: copyButton.bottomAnchor, constant: 20),
+            exportButton.topAnchor.constraint(equalTo: copyButton.bottomAnchor, constant: 8),
+            exportButton.centerXAnchor.constraint(equalTo: centerXAnchor),
+
+            footerLabel.topAnchor.constraint(greaterThanOrEqualTo: exportButton.bottomAnchor, constant: 20),
             footerLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
             footerLabel.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -8),
         ])
@@ -136,7 +144,80 @@ final class AboutTabView: NSView {
         Log.info("Diagnostic info copied to clipboard")
     }
 
+    /// Writes the app's own log to a file the user can attach to an issue.
+    ///
+    /// Pairs with **Copy Diagnostic Info**: that says what the settings are, this
+    /// says what actually happened — including, since 2.2.0, whether the Dock
+    /// honoured each change.
+    @objc private func exportLogs() {
+        exportButton.isEnabled = false
+        exportButton.title = "Collecting\u{2026}"
+
+        Task { [weak self] in
+            let text = await Self.collectLog()
+
+            guard let self else { return }
+            self.exportButton.isEnabled = true
+            self.exportButton.title = "Export Logs\u{2026}"
+
+            guard let text, !text.isEmpty else {
+                Log.error("Log export produced nothing")
+                NSSound.beep()
+                return
+            }
+            self.presentSavePanel(for: text)
+        }
+    }
+
     // MARK: - Private
+
+    /// Runs `log show` off the main thread — it reads a system store and can take
+    /// a few seconds, which would freeze the window if done inline.
+    private static func collectLog() async -> String? {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: LogExport.toolPath)
+                process.arguments = LogExport.arguments(lastHours: 24)
+
+                let output = Pipe()
+                process.standardOutput = output
+                process.standardError = Pipe()
+
+                do {
+                    try process.run()
+                    let data = output.fileHandleForReading.readDataToEndOfFile()
+                    process.waitUntilExit()
+
+                    let raw = String(data: data, encoding: .utf8) ?? ""
+                    // Strip the account name out of logged bundle paths before this
+                    // ever reaches an issue tracker.
+                    continuation.resume(
+                        returning: LogExport.redacting(raw, homeDirectory: NSHomeDirectory()))
+                } catch {
+                    continuation.resume(returning: nil)
+                }
+            }
+        }
+    }
+
+    private func presentSavePanel(for text: String) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = LogExport.defaultFileName(at: Date())
+        panel.allowedContentTypes = [.plainText]
+        panel.canCreateDirectories = true
+
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            do {
+                try text.write(to: url, atomically: true, encoding: .utf8)
+                Log.info("Exported log to \(url.lastPathComponent)")
+            } catch {
+                Log.error("Failed to write exported log: \(error)")
+                NSSound.beep()
+            }
+        }
+    }
 
     private func makeReport() -> DiagnosticReport {
         let prefs = UserPreferences.shared

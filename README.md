@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.2.0-blue?style=flat-square" alt="Version 2.2.0"/>
+  <img src="https://img.shields.io/badge/version-2.3.0-blue?style=flat-square" alt="Version 2.3.0"/>
   <img src="https://img.shields.io/badge/macOS-14.0%2B-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS 14+"/>
   <img src="https://img.shields.io/badge/Swift-6.2-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 6.2"/>
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License"/>
@@ -32,6 +32,7 @@ SmartDock lives in your menu bar and automatically switches Dock configuration w
 | 🔔 | **Notifications** | macOS banner when profile switches (optional) |
 | ⌨️ | **Global hotkeys** | 5 customizable shortcuts — toggle autohide, refresh, switch profiles, open settings |
 | 🔗 | **URL scheme** | `smartdock://` commands for Raycast, Alfred, Shortcuts.app and shell scripts |
+| 🩺 | **Diagnostics** | Copy Diagnostic Info + Export Logs — both scrubbed of anything identifying |
 | 📜 | **AppleScript** | Scriptable from Script Editor, `osascript`, Automator and Shortcuts |
 | 🎨 | **Glass UI** | Tabbed settings window (Settings / Shortcuts / About) with `NSVisualEffectView` |
 | 🚀 | **Launch at Login** | Native `SMAppService` integration |
@@ -134,6 +135,7 @@ Sources/
 │   ├── SmartDockService.swift        # Orchestrator: display state → dock config
 │   ├── URLCommand.swift              # smartdock:// URL parsing
 │   ├── AppleScriptCommand.swift      # dock profile ↔ Apple Event code mapping
+│   ├── LogExport.swift               # log show invocation + redaction
 │   ├── DiagnosticReport.swift        # Bug-report snapshot formatting
 │   └── Log.swift                     # Logger API (macOS 14+)
 └── SmartDock/                        # AppKit UI layer

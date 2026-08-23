@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] — 2026-08-23
+
+### Added
+- **Export Logs…** in the About tab — writes SmartDock's own log of the last 24 hours
+  to a file. Pairs with **Copy Diagnostic Info**: that says what the settings are,
+  this says what actually happened, including whether the Dock honoured each change.
+  The user's home directory is replaced with `~` before the file is written, so an
+  exported log can be attached to a public issue without carrying the account name.
+
+### Fixed
+- Log messages are recorded at **notice** level instead of info, so they survive to
+  be read back. macOS keeps info-level messages in a memory buffer and never writes
+  them to the persistent store — `log show` and the new export returned almost
+  nothing but errors, which read as though the app had barely logged at all.
+
 ## [2.2.0] — 2026-08-17
 
 ### Added
