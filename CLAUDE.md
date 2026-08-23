@@ -111,7 +111,8 @@ Swift Package (swift-tools-version 6.2), two targets: **SmartDockCore** (testabl
 | `RateLimiter.swift` | `RateLimiter` (hotkey rate limiting) and `ProfileSwitchAnnouncer` (notification cooldown + duplicate suppression). Both take `now` as an argument so interval edges are testable without sleeping. The announcer records a state **only when a banner actually shows** — recording a suppressed one would swallow the next genuine switch back to it. |
 | `PendingCommandQueue.swift` | Holds `smartdock://` / Apple Event commands that arrive before `applicationDidFinishLaunching` builds the managers. In Core because leaving it in `AppDelegate` put the fix for a launch-time crash in the one target with no tests. |
 | `DiagnosticReport.swift` | Value type + Markdown formatting for the About tab's **Copy Diagnostic Info**. Holds versions, permission flags, display counts and dock profiles — never anything identifying, since the output is pasted into public issues. |
-| `Log.swift` | Centralized `Logger` API. Subsystem `com.smartdock.app`. Categories: `general`, `display`. |
+| `LogExport.swift` | Builds the `log show` invocation behind **Export Logs**, and redacts the home directory from what it returns. Absolute `/usr/bin/log` on purpose — `zsh` has a builtin of the same name that silently shadows it. |
+| `Log.swift` | Centralized `Logger` API. Subsystem `com.smartdock.app`. Categories: `general`, `display`. Records at **notice** or above — never `.info` or `.debug`, which macOS keeps in memory and never persists, making them unreadable by `log show` or **Export Logs** afterwards. |
 
 ### App layer (`Sources/SmartDock/`)
 
@@ -149,6 +150,7 @@ Self-contained UI pieces extracted out of `SettingsWindow`. Each owns its own la
 - `DockApplyOutcomeTests.swift` — silent refusal detection, tolerance, blame scoping
 - `RateLimiterTests.swift` — interval edges, and that blocked attempts don't push the deadline out
 - `PendingCommandQueueTests.swift` — launch-time queueing, ordering, drain-once
+- `LogExportTests.swift` — export scoping, absolute tool path, home-path redaction
 - Protocol-based DI: inject mocks via `DisplayMonitoring` / `DockControlling` protocols
 - All tests are `@MainActor`-compatible
 
@@ -372,6 +374,7 @@ Sources/
 │   ├── DockApplyOutcome.swift    # Did the Dock actually take it? (read-back check)
 │   ├── RateLimiter.swift         # Hotkey rate limit + notification announcer
 │   ├── PendingCommandQueue.swift # Commands arriving before launch finishes
+│   ├── LogExport.swift           # `log show` invocation + home-path redaction
 │   ├── DiagnosticReport.swift    # Bug-report snapshot + Markdown formatting
 │   └── Log.swift                 # Logger wrapper
 └── SmartDock/
