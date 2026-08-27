@@ -54,12 +54,24 @@ public final class DockController: DockControlling {
     /// Shortened in tests so the suite does not spend a second per apply waiting.
     private let verificationDelay: TimeInterval
 
+    /// How long to wait after a KVO callback before reading the Dock back.
+    /// System Settings can change several keys at once; batching them into one
+    /// check keeps a single user edit from arriving as four separate ones.
+    private let externalChangeDebounce: TimeInterval
+
     /// Preferences domain the Dock stores its settings in.
     ///
     /// Injectable purely so tests can point at a scratch domain — reading and
     /// writing `com.apple.dock` from a test would reconfigure the developer's
     /// own Dock while the suite runs.
     private let suiteName: String
+
+    /// Opens the preferences store. A closure rather than a stored instance because
+    /// the production path must build a **fresh** `UserDefaults` on every read: the
+    /// Dock process writes these keys, and a cached instance serves stale values
+    /// back. Tests hand over one in-memory store, which has no daemon behind it and
+    /// so leaves nothing on disk.
+    private let openDefaults: () -> UserDefaults?
 
     /// Runs one script against System Events.
     ///
@@ -70,11 +82,15 @@ public final class DockController: DockControlling {
 
     public init(
         suiteName: String = "com.apple.dock",
+        openDefaults: (() -> UserDefaults?)? = nil,
         verificationDelay: TimeInterval = 1.0,
+        externalChangeDebounce: TimeInterval = 0.5,
         runScript: ((String) -> Bool)? = nil
     ) {
         self.suiteName = suiteName
+        self.openDefaults = openDefaults ?? { UserDefaults(suiteName: suiteName) }
         self.verificationDelay = verificationDelay
+        self.externalChangeDebounce = externalChangeDebounce
         self.runScript = runScript ?? Self.executeAppleScript
     }
 
@@ -85,7 +101,7 @@ public final class DockController: DockControlling {
     /// after AppleScript changes dock preferences via System Events.
     /// Sizes are returned as 0.0–1.0 scale (converted from pixel tilesize).
     public func readSystemConfig() -> DockConfiguration {
-        guard let d = UserDefaults(suiteName: suiteName) else {
+        guard let d = openDefaults() else {
             return DockConfiguration()
         }
         let orientationRaw = d.string(forKey: "orientation") ?? "bottom"
@@ -188,7 +204,7 @@ public final class DockController: DockControlling {
 
         lastAppliedConfig = readSystemConfig()
 
-        let observer = DockPrefsObserver(suiteName: suiteName)
+        let observer = DockPrefsObserver(defaults: openDefaults())
         observer.onChange = { [weak self] in
             self?.handleExternalChange()
         }
@@ -230,7 +246,7 @@ public final class DockController: DockControlling {
             self.onExternalConfigChanged?(systemConfig)
         }
         pendingExternalCheck = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + externalChangeDebounce, execute: work)
     }
 
     // MARK: - Per-Property AppleScript
@@ -333,15 +349,15 @@ private final class DockPrefsObserver: NSObject {
     /// Thread-safe flag — accessed from deinit (nonisolated) and @MainActor methods.
     private nonisolated(unsafe) var isObserving = false
 
-    /// Matches the controller's domain — see `DockController.suiteName`.
-    private let suiteName: String
+    /// The store to watch — supplied by the controller so both read the same one.
+    private let defaults: UserDefaults?
 
-    init(suiteName: String) {
-        self.suiteName = suiteName
+    init(defaults: UserDefaults?) {
+        self.defaults = defaults
     }
 
     func start() {
-        guard let defaults = UserDefaults(suiteName: suiteName) else { return }
+        guard let defaults else { return }
         observedDefaults = defaults
         for key in watchedKeys {
             defaults.addObserver(self, forKeyPath: key, options: [.new], context: nil)

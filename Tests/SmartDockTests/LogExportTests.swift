@@ -1,84 +1,74 @@
-import XCTest
+import Foundation
+import Testing
 
 @testable import SmartDockCore
 
-final class LogExportTests: XCTestCase {
+@Suite("Log export")
+struct LogExportTests {
 
     // MARK: - Invocation
 
     /// `zsh` has a builtin named `log`. Invoking the tool by bare name runs that
     /// instead and returns nothing useful — which is exactly how a log capture in
     /// this project was once read as "the app produced no logs at all".
-    func testToolIsReachedByAbsolutePath() {
-        XCTAssertTrue(LogExport.toolPath.hasPrefix("/"), "A bare name would hit the shell builtin")
-        XCTAssertEqual(LogExport.toolPath, "/usr/bin/log")
+    @Test func toolIsReachedByAbsolutePath() {
+        #expect(LogExport.toolPath.hasPrefix("/"), "A bare name would hit the shell builtin")
+        #expect(LogExport.toolPath == "/usr/bin/log")
     }
 
     /// A safety net for anything logged below notice. `Log` records at notice or
     /// above precisely so the trail survives to be exported, but a stray `.info`
     /// call would otherwise be dropped from the file without any sign it existed.
-    func testInfoLevelIsRequested() {
-        XCTAssertTrue(LogExport.arguments(lastHours: 24).contains("--info"))
+    @Test func infoLevelIsRequested() {
+        #expect(LogExport.arguments(lastHours: 24).contains("--info"))
     }
 
     /// Scoped to this app. Exporting the whole system log would sweep in every
     /// other app running on the machine.
-    func testExportIsScopedToOurSubsystemOnly() {
+    @Test func exportIsScopedToOurSubsystemOnly() throws {
         let args = LogExport.arguments(lastHours: 24)
-        let predicate = try? XCTUnwrap(args.first { $0.contains("subsystem") })
 
-        XCTAssertEqual(predicate, "subsystem == \"com.smartdock.app\"")
+        let predicate = try #require(args.first { $0.contains("subsystem") })
+
+        #expect(predicate == "subsystem == \"com.smartdock.app\"")
     }
 
-    func testTimeWindowIsPassedThrough() {
-        XCTAssertTrue(LogExport.arguments(lastHours: 6).contains("6h"))
-        XCTAssertTrue(LogExport.arguments(lastHours: 48).contains("48h"))
+    @Test func timeWindowIsPassedThrough() {
+        #expect(LogExport.arguments(lastHours: 6).contains("6h"))
+        #expect(LogExport.arguments(lastHours: 48).contains("48h"))
     }
 
     /// A zero or negative window would make `log show` reject the argument.
-    func testWindowIsClampedToAtLeastAnHour() {
-        XCTAssertTrue(LogExport.arguments(lastHours: 0).contains("1h"))
-        XCTAssertTrue(LogExport.arguments(lastHours: -5).contains("1h"))
+    @Test(arguments: [0, -5]) func windowIsClampedToAtLeastAnHour(hours: Int) {
+        #expect(LogExport.arguments(lastHours: hours).contains("1h"))
     }
 
     /// The arguments go to Process, not through a shell, so the predicate must
     /// arrive as one element — splitting it would make `log` reject the command.
-    func testPredicateIsASingleArgument() {
+    @Test func predicateIsASingleArgument() throws {
         let args = LogExport.arguments(lastHours: 24)
-        let index = try? XCTUnwrap(args.firstIndex(of: "--predicate"))
 
-        XCTAssertNotNil(index)
-        if let index { XCTAssertTrue(args[index + 1].contains("com.smartdock.app")) }
+        let index = try #require(args.firstIndex(of: "--predicate"))
+
+        #expect(args[index + 1].contains("com.smartdock.app"))
     }
 
     // MARK: - Filename
 
-    func testFileNameIsSortableAndTimestamped() {
-        var components = DateComponents()
-        components.year = 2026
-        components.month = 8
-        components.day = 17
-        components.hour = 23
-        components.minute = 17
+    @Test func fileNameIsSortableAndTimestamped() throws {
+        let name = LogExport.defaultFileName(
+            at: try Self.date(2026, 8, 17, 23, 17),
+            calendar: Calendar(identifier: .gregorian))
 
-        let date = try? XCTUnwrap(Calendar(identifier: .gregorian).date(from: components))
-        let name = LogExport.defaultFileName(at: date ?? Date(), calendar: Calendar(identifier: .gregorian))
-
-        XCTAssertEqual(name, "SmartDock-log-2026-08-17-2317.txt")
+        #expect(name == "SmartDock-log-2026-08-17-2317.txt")
     }
 
-    func testFileNamePadsSingleDigits() {
-        var components = DateComponents()
-        components.year = 2026
-        components.month = 1
-        components.day = 5
-        components.hour = 9
-        components.minute = 3
+    @Test func fileNamePadsSingleDigits() throws {
+        let name = LogExport.defaultFileName(
+            at: try Self.date(2026, 1, 5, 9, 3),
+            calendar: Calendar(identifier: .gregorian))
 
-        let date = try? XCTUnwrap(Calendar(identifier: .gregorian).date(from: components))
-        let name = LogExport.defaultFileName(at: date ?? Date(), calendar: Calendar(identifier: .gregorian))
-
-        XCTAssertEqual(name, "SmartDock-log-2026-01-05-0903.txt")
+        #expect(name == "SmartDock-log-2026-01-05-0903.txt")
     }
 
     // MARK: - Privacy
@@ -86,16 +76,16 @@ final class LogExportTests: XCTestCase {
     /// The app logs bundle and executable paths, which contain the account name on
     /// any normal install. The diagnostic report is scrubbed of anything
     /// identifying; a log attached to the same issue must not undo that.
-    func testHomeDirectoryIsRedacted() {
+    @Test func homeDirectoryIsRedacted() {
         let line = "AppUpdateWatcher started on /Users/somebody/Applications/SmartDock.app/Contents/MacOS/SmartDock"
 
         let redacted = LogExport.redacting(line, homeDirectory: "/Users/somebody")
 
-        XCTAssertFalse(redacted.contains("somebody"))
-        XCTAssertTrue(redacted.contains("~/Applications/SmartDock.app"))
+        #expect(!redacted.contains("somebody"))
+        #expect(redacted.contains("~/Applications/SmartDock.app"))
     }
 
-    func testEveryOccurrenceIsRedactedNotJustTheFirst() {
+    @Test func everyOccurrenceIsRedactedNotJustTheFirst() {
         let text = """
             copied /Users/somebody/a to /Users/somebody/b
             watching /Users/somebody/c
@@ -103,28 +93,41 @@ final class LogExportTests: XCTestCase {
 
         let redacted = LogExport.redacting(text, homeDirectory: "/Users/somebody")
 
-        XCTAssertFalse(redacted.contains("somebody"))
-        XCTAssertEqual(redacted.components(separatedBy: "~").count - 1, 3)
+        #expect(!redacted.contains("somebody"))
+        #expect(redacted.components(separatedBy: "~").count - 1 == 3)
     }
 
-    func testTrailingSlashOnHomeIsHandled() {
+    @Test func trailingSlashOnHomeIsHandled() {
         let line = "path /Users/somebody/Library"
 
-        XCTAssertEqual(
-            LogExport.redacting(line, homeDirectory: "/Users/somebody/"),
-            LogExport.redacting(line, homeDirectory: "/Users/somebody"))
+        #expect(
+            LogExport.redacting(line, homeDirectory: "/Users/somebody/")
+                == LogExport.redacting(line, homeDirectory: "/Users/somebody"))
     }
 
     /// A degenerate home would otherwise replace every `/` in the file.
-    func testDegenerateHomeDirectoryIsIgnored() {
+    @Test(arguments: ["/", ""]) func degenerateHomeDirectoryIsIgnored(home: String) {
         let line = "path /Users/somebody/Library"
 
-        XCTAssertEqual(LogExport.redacting(line, homeDirectory: "/"), line)
-        XCTAssertEqual(LogExport.redacting(line, homeDirectory: ""), line)
+        #expect(LogExport.redacting(line, homeDirectory: home) == line)
     }
 
-    func testTextWithoutHomePathsIsUnchanged() {
+    @Test func textWithoutHomePathsIsUnchanged() {
         let line = "Dock apply verified: applied autohide"
-        XCTAssertEqual(LogExport.redacting(line, homeDirectory: "/Users/somebody"), line)
+
+        #expect(LogExport.redacting(line, homeDirectory: "/Users/somebody") == line)
+    }
+
+    // MARK: - Helpers
+
+    private static func date(_ year: Int, _ month: Int, _ day: Int, _ hour: Int, _ minute: Int) throws -> Date {
+        var components = DateComponents()
+        components.year = year
+        components.month = month
+        components.day = day
+        components.hour = hour
+        components.minute = minute
+
+        return try #require(Calendar(identifier: .gregorian).date(from: components))
     }
 }

@@ -35,12 +35,19 @@ public enum LogExport {
     }
 
     /// Suggested filename, sortable and unambiguous: `SmartDock-log-2026-08-17-2317.txt`.
+    ///
+    /// Reads each field with `component(_:from:)` rather than pulling an optional
+    /// `DateComponents` apart. The optional form needed a `?? 0` per field — five
+    /// fallbacks that cannot be reached for a real date, and would have produced
+    /// `SmartDock-log-0000-00-00-0000.txt` if they somehow were.
     public static func defaultFileName(at date: Date, calendar: Calendar = .current) -> String {
-        let parts = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: date)
-        return String(
+        String(
             format: "SmartDock-log-%04d-%02d-%02d-%02d%02d.txt",
-            parts.year ?? 0, parts.month ?? 0, parts.day ?? 0,
-            parts.hour ?? 0, parts.minute ?? 0)
+            calendar.component(.year, from: date),
+            calendar.component(.month, from: date),
+            calendar.component(.day, from: date),
+            calendar.component(.hour, from: date),
+            calendar.component(.minute, from: date))
     }
 
     /// Replaces the user's home directory with `~`.

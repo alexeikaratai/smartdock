@@ -1,11 +1,12 @@
-import XCTest
+import Testing
 
 @testable import SmartDockCore
 
 /// Covers the decision half of `DockController.apply` — which properties actually
 /// need pushing to the Dock. The AppleScript that carries it out talks to System
 /// Events and cannot be exercised here; this is the part with the edge cases.
-final class DockDiffTests: XCTestCase {
+@Suite("Config diffing")
+struct DockDiffTests {
 
     // MARK: - Helpers
 
@@ -33,65 +34,68 @@ final class DockDiffTests: XCTestCase {
 
     /// The whole point of diffing: re-applying an unchanged config must run no
     /// AppleScript at all, or every wake and refresh would flash the Dock.
-    func testIdenticalConfigsNeedNoWork() {
-        XCTAssertTrue(config().differences(from: config()).isEmpty)
+    @Test func identicalConfigsNeedNoWork() {
+        #expect(config().differences(from: config()).isEmpty)
     }
 
     // MARK: - Single Property
 
-    func testPositionChangeIsDetected() {
-        XCTAssertEqual(config(position: .left).differences(from: config(position: .bottom)), [.position])
+    @Test func positionChangeIsDetected() {
+        #expect(config(position: .left).differences(from: config(position: .bottom)) == [.position])
     }
 
-    func testAutohideChangeIsDetected() {
-        XCTAssertEqual(config(autohide: true).differences(from: config(autohide: false)), [.autohide])
+    @Test func autohideChangeIsDetected() {
+        #expect(config(autohide: true).differences(from: config(autohide: false)) == [.autohide])
     }
 
-    func testIconSizeChangeIsDetected() {
-        XCTAssertEqual(config(iconSize: Self.px50).differences(from: config(iconSize: Self.px48)), [.iconSize])
+    @Test func iconSizeChangeIsDetected() {
+        #expect(config(iconSize: Self.px50).differences(from: config(iconSize: Self.px48)) == [.iconSize])
     }
 
-    func testMagnificationToggleIsDetected() {
-        XCTAssertEqual(
-            config(magnification: true).differences(from: config(magnification: false)), [.magnification])
+    @Test func magnificationToggleIsDetected() {
+        #expect(
+            config(magnification: true).differences(from: config(magnification: false)) == [.magnification])
     }
 
-    func testMagnificationSizeChangeIsDetectedWhenMagnificationIsOn() {
+    @Test func magnificationSizeChangeIsDetectedWhenMagnificationIsOn() {
         let target = config(magnification: true, magnificationSize: 0.80)
         let current = config(magnification: true, magnificationSize: 0.40)
-        XCTAssertEqual(target.differences(from: current), [.magnificationSize])
+
+        #expect(target.differences(from: current) == [.magnificationSize])
     }
 
     // MARK: - Tolerance
 
     /// Sizes round-trip through the Dock as integer pixels, so an exact comparison
     /// would report a change on every single apply.
-    func testOnePixelOfRoundingNoiseIsAbsorbed() {
-        XCTAssertTrue(config(iconSize: Self.px49).differences(from: config(iconSize: Self.px48)).isEmpty)
+    @Test func onePixelOfRoundingNoiseIsAbsorbed() {
+        #expect(config(iconSize: Self.px49).differences(from: config(iconSize: Self.px48)).isEmpty)
     }
 
-    func testTwoPixelsIsARealChange() {
-        XCTAssertEqual(config(iconSize: Self.px50).differences(from: config(iconSize: Self.px48)), [.iconSize])
+    @Test func twoPixelsIsARealChange() {
+        #expect(config(iconSize: Self.px50).differences(from: config(iconSize: Self.px48)) == [.iconSize])
     }
 
     // MARK: - Magnification Guard
 
     /// Magnified size is invisible while magnification is off. Pushing it would
     /// flash the Dock for a value nobody can see.
-    func testMagnificationSizeIsIgnoredWhileMagnificationIsOff() {
+    @Test func magnificationSizeIsIgnoredWhileMagnificationIsOff() {
         let target = config(magnification: false, magnificationSize: 0.80)
         let current = config(magnification: false, magnificationSize: 0.40)
-        XCTAssertTrue(
+
+        #expect(
             target.differences(from: current).isEmpty,
             "magnificationSize must not be applied while magnification is off")
     }
 
     /// Turning magnification on must carry the size along in the same pass —
     /// otherwise the Dock magnifies to whatever size it last held.
-    func testEnablingMagnificationAlsoAppliesItsSize() {
+    @Test func enablingMagnificationAlsoAppliesItsSize() {
         let target = config(magnification: true, magnificationSize: 0.80)
         let current = config(magnification: false, magnificationSize: 0.40)
-        XCTAssertEqual(target.differences(from: current), [.magnification, .magnificationSize])
+
+        #expect(target.differences(from: current) == [.magnification, .magnificationSize])
     }
 
     // MARK: - The Invariant
@@ -105,7 +109,7 @@ final class DockDiffTests: XCTestCase {
     /// off and a non-default magnified size was therefore read back as an *external*
     /// edit after every apply, and the stored value was silently overwritten with
     /// the system's. This pins the two together.
-    func testEmptyDiffAlwaysAgreesWithApproximateEquality() {
+    @Test func emptyDiffAlwaysAgreesWithApproximateEquality() {
         let matrix = [
             config(),
             config(autohide: true),
@@ -121,9 +125,8 @@ final class DockDiffTests: XCTestCase {
 
         for target in matrix {
             for current in matrix {
-                XCTAssertEqual(
-                    target.differences(from: current).isEmpty,
-                    target.approximatelyEquals(current),
+                #expect(
+                    target.differences(from: current).isEmpty == target.approximatelyEquals(current),
                     """
                     Disagreement between "nothing to apply" and "nothing changed".
                     target=\(target)
@@ -137,7 +140,7 @@ final class DockDiffTests: XCTestCase {
     // MARK: - Ordering & Completeness
 
     /// Position first, then autohide, then sizes — the order `apply` pushes them.
-    func testEveryPropertyIsReportedInApplyOrder() {
+    @Test func everyPropertyIsReportedInApplyOrder() {
         let target = config(
             autohide: true, position: .right, iconSize: Self.px50,
             magnification: true, magnificationSize: 0.80)
@@ -145,15 +148,16 @@ final class DockDiffTests: XCTestCase {
             autohide: false, position: .bottom, iconSize: Self.px48,
             magnification: false, magnificationSize: 0.40)
 
-        XCTAssertEqual(
-            target.differences(from: current),
-            [.position, .autohide, .iconSize, .magnification, .magnificationSize])
+        #expect(
+            target.differences(from: current)
+                == [.position, .autohide, .iconSize, .magnification, .magnificationSize])
     }
 
     /// A property that can be diffed but never described would log as a blank.
-    func testEveryPropertyHasADistinctDescription() {
+    @Test func everyPropertyHasADistinctDescription() {
         let descriptions = DockProperty.allCases.map { config().describe($0) }
-        XCTAssertEqual(Set(descriptions).count, DockProperty.allCases.count)
-        XCTAssertFalse(descriptions.contains { $0.isEmpty })
+
+        #expect(Set(descriptions).count == DockProperty.allCases.count)
+        #expect(!descriptions.contains { $0.isEmpty })
     }
 }

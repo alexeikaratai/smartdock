@@ -1,16 +1,15 @@
-import XCTest
+import Foundation
+import Testing
 
 @testable import SmartDockCore
 
-final class URLCommandTests: XCTestCase {
+@Suite("URL parsing")
+struct URLCommandTests {
 
     // MARK: - Helpers
 
-    private func parse(_ string: String) -> URLCommand? {
-        guard let url = URL(string: string) else {
-            XCTFail("Not a valid URL: \(string)")
-            return nil
-        }
+    private func parse(_ string: String) throws -> URLCommand? {
+        let url = try #require(URL(string: string), "Not a valid URL: \(string)")
         return URLCommand(url: url)
     }
 
@@ -18,76 +17,75 @@ final class URLCommandTests: XCTestCase {
 
     /// Every command must parse back from the URL it advertises — this is the
     /// contract the README and any external integration relies on.
-    func testEveryCommandParsesFromItsOwnURL() {
-        for command in URLCommand.allCases {
-            XCTAssertEqual(
-                parse(command.url), command,
-                "\(command.rawValue) failed to round-trip through \(command.url)")
-        }
+    @Test(arguments: URLCommand.allCases)
+    func everyCommandParsesFromItsOwnURL(command: URLCommand) throws {
+        #expect(
+            try parse(command.url) == command,
+            "\(command.rawValue) failed to round-trip through \(command.url)")
     }
 
-    func testCanonicalURLs() {
-        XCTAssertEqual(parse("smartdock://refresh"), .refresh)
-        XCTAssertEqual(parse("smartdock://switch/external"), .switchToExternal)
-        XCTAssertEqual(parse("smartdock://switch/builtin"), .switchToBuiltin)
-        XCTAssertEqual(parse("smartdock://toggle-autohide"), .toggleAutohide)
-        XCTAssertEqual(parse("smartdock://settings"), .openSettings)
+    @Test func canonicalURLs() throws {
+        #expect(try parse("smartdock://refresh") == .refresh)
+        #expect(try parse("smartdock://switch/external") == .switchToExternal)
+        #expect(try parse("smartdock://switch/builtin") == .switchToBuiltin)
+        #expect(try parse("smartdock://toggle-autohide") == .toggleAutohide)
+        #expect(try parse("smartdock://settings") == .openSettings)
     }
 
     // MARK: - Accepted Variations
 
-    func testSchemeIsCaseInsensitive() {
-        XCTAssertEqual(parse("SmartDock://refresh"), .refresh)
-        XCTAssertEqual(parse("SMARTDOCK://refresh"), .refresh)
+    @Test(arguments: ["SmartDock://refresh", "SMARTDOCK://refresh"])
+    func schemeIsCaseInsensitive(url: String) throws {
+        #expect(try parse(url) == .refresh)
     }
 
-    func testCommandIsCaseInsensitive() {
-        XCTAssertEqual(parse("smartdock://REFRESH"), .refresh)
-        XCTAssertEqual(parse("smartdock://Switch/External"), .switchToExternal)
+    @Test func commandIsCaseInsensitive() throws {
+        #expect(try parse("smartdock://REFRESH") == .refresh)
+        #expect(try parse("smartdock://Switch/External") == .switchToExternal)
     }
 
-    func testHyphenatedBuiltInIsAccepted() {
-        XCTAssertEqual(
-            parse("smartdock://switch/built-in"), .switchToBuiltin,
+    @Test func hyphenatedBuiltInIsAccepted() throws {
+        #expect(
+            try parse("smartdock://switch/built-in") == .switchToBuiltin,
             "The UI labels the mode \"Built-in\", so accept that spelling")
     }
 
-    func testSlashSeparatedToggleAutohideIsAccepted() {
-        XCTAssertEqual(parse("smartdock://toggle/autohide"), .toggleAutohide)
+    @Test func slashSeparatedToggleAutohideIsAccepted() throws {
+        #expect(try parse("smartdock://toggle/autohide") == .toggleAutohide)
     }
 
-    func testPreferencesIsAnAliasForSettings() {
-        XCTAssertEqual(parse("smartdock://preferences"), .openSettings)
+    @Test func preferencesIsAnAliasForSettings() throws {
+        #expect(try parse("smartdock://preferences") == .openSettings)
     }
 
-    func testTrailingSlashIsIgnored() {
-        XCTAssertEqual(parse("smartdock://refresh/"), .refresh)
-        XCTAssertEqual(parse("smartdock://switch/external/"), .switchToExternal)
+    @Test func trailingSlashIsIgnored() throws {
+        #expect(try parse("smartdock://refresh/") == .refresh)
+        #expect(try parse("smartdock://switch/external/") == .switchToExternal)
     }
 
     // MARK: - Rejected Input
 
-    func testForeignSchemeIsRejected() {
-        XCTAssertNil(parse("https://example.com/refresh"))
-        XCTAssertNil(parse("otherapp://refresh"))
+    @Test(arguments: ["https://example.com/refresh", "otherapp://refresh"])
+    func foreignSchemeIsRejected(url: String) throws {
+        #expect(try parse(url) == nil)
     }
 
-    func testUnknownCommandIsRejected() {
-        XCTAssertNil(parse("smartdock://explode"))
-        XCTAssertNil(parse("smartdock://switch/sideways"))
+    @Test(arguments: ["smartdock://explode", "smartdock://switch/sideways"])
+    func unknownCommandIsRejected(url: String) throws {
+        #expect(try parse(url) == nil)
     }
 
-    func testIncompleteSwitchIsRejected() {
-        XCTAssertNil(
-            parse("smartdock://switch"),
+    @Test func incompleteSwitchIsRejected() throws {
+        #expect(
+            try parse("smartdock://switch") == nil,
             "\"switch\" without a target is ambiguous and must not silently pick one")
     }
 
-    func testEmptyCommandIsRejected() {
-        XCTAssertNil(parse("smartdock://"))
+    @Test func emptyCommandIsRejected() throws {
+        #expect(try parse("smartdock://") == nil)
     }
 
-    func testExtraPathSegmentsAreRejected() {
-        XCTAssertNil(parse("smartdock://switch/external/now"))
+    @Test func extraPathSegmentsAreRejected() throws {
+        #expect(try parse("smartdock://switch/external/now") == nil)
     }
 }

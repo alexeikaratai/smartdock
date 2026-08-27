@@ -1,8 +1,10 @@
-import XCTest
+import Foundation
+import Testing
 
 @testable import SmartDockCore
 
-final class DiagnosticReportTests: XCTestCase {
+@Suite("Diagnostic report")
+struct DiagnosticReportTests {
 
     // MARK: - Helpers
 
@@ -37,76 +39,74 @@ final class DiagnosticReportTests: XCTestCase {
 
     /// Before the first apply there is nothing to say, and an empty line would just
     /// read as a missing value to whoever is triaging the report.
-    func testUnverifiedApplyIsOmittedEntirely() {
-        XCTAssertFalse(makeReport(lastApplyOutcome: nil).formatted.contains("Last apply"))
+    @Test func unverifiedApplyIsOmittedEntirely() {
+        #expect(!makeReport(lastApplyOutcome: nil).formatted.contains("Last apply"))
     }
 
-    func testSuccessfulApplyIsReported() {
-        let outcome = DockApplyOutcome(requested: [.position], rejected: [])
-        let output = makeReport(lastApplyOutcome: outcome).formatted
+    @Test func successfulApplyIsReported() {
+        let output = makeReport(
+            lastApplyOutcome: DockApplyOutcome(requested: [.position], rejected: [])
+        ).formatted
 
-        XCTAssertTrue(output.contains("Last apply"))
-        XCTAssertTrue(output.contains("position"))
-        XCTAssertFalse(output.contains("⚠️"), "A clean apply should not be flagged")
+        #expect(output.contains("Last apply"))
+        #expect(output.contains("position"))
+        #expect(!output.contains("⚠️"), "A clean apply should not be flagged")
     }
 
     /// The whole reason this field is in the report: a setting the Dock refused
     /// looks exactly like a working app from the user's side, so it has to stand
     /// out in a pasted issue the way a missing permission does.
-    func testRefusedApplyIsFlagged() {
-        let outcome = DockApplyOutcome(requested: [.autohide], rejected: [.autohide])
-        let output = makeReport(lastApplyOutcome: outcome).formatted
+    @Test func refusedApplyIsFlagged() {
+        let output = makeReport(
+            lastApplyOutcome: DockApplyOutcome(requested: [.autohide], rejected: [.autohide])
+        ).formatted
 
-        XCTAssertTrue(output.contains("ignored"), output)
-        XCTAssertTrue(output.contains("autohide"))
-        XCTAssertTrue(output.contains("⚠️"), "A refused setting must be visually obvious")
+        #expect(output.contains("ignored"), "\(output)")
+        #expect(output.contains("autohide"))
+        #expect(output.contains("⚠️"), "A refused setting must be visually obvious")
     }
 
     // MARK: - Identity
 
-    func testReportIncludesVersionAndBuild() {
+    @Test func reportIncludesVersionAndBuild() {
         let output = makeReport().formatted
-        XCTAssertTrue(output.contains("SmartDock 2.0.1"))
-        XCTAssertTrue(output.contains("build 6"))
+
+        #expect(output.contains("SmartDock 2.0.1"))
+        #expect(output.contains("build 6"))
     }
 
-    func testReportIncludesSystemVersion() {
-        XCTAssertTrue(makeReport().formatted.contains("14.5"))
+    @Test func reportIncludesSystemVersion() {
+        #expect(makeReport().formatted.contains("14.5"))
     }
 
     // MARK: - Permission State
 
-    func testGrantedAccessibilityIsReported() {
-        XCTAssertTrue(makeReport(isAccessibilityGranted: true).formatted.contains("Accessibility: granted"))
+    @Test func grantedAccessibilityIsReported() {
+        #expect(makeReport(isAccessibilityGranted: true).formatted.contains("Accessibility: granted"))
     }
 
     /// The single most common cause of "hotkeys don't work" — it must stand out.
-    func testMissingAccessibilityIsCalledOut() {
-        let output = makeReport(isAccessibilityGranted: false).formatted
-        XCTAssertTrue(
-            output.contains("NOT granted"),
+    @Test func missingAccessibilityIsCalledOut() {
+        #expect(
+            makeReport(isAccessibilityGranted: false).formatted.contains("NOT granted"),
             "A missing grant should be visually obvious in a pasted report")
     }
 
     // MARK: - Display State
 
-    func testActiveProfileReflectsExternalDisplay() {
-        XCTAssertTrue(
-            makeReport(hasExternalDisplay: true).formatted
-                .contains("Active profile: External Monitor"))
-        XCTAssertTrue(
-            makeReport(hasExternalDisplay: false).formatted
-                .contains("Active profile: Built-in Only"))
+    @Test(arguments: [(true, "External Monitor"), (false, "Built-in Only")])
+    func activeProfileReflectsExternalDisplay(hasExternal: Bool, label: String) {
+        #expect(makeReport(hasExternalDisplay: hasExternal).formatted.contains("Active profile: \(label)"))
     }
 
-    func testDisplayCountIsReported() {
-        XCTAssertTrue(makeReport(externalDisplayCount: 2).formatted.contains("External displays: 2"))
-        XCTAssertTrue(makeReport(externalDisplayCount: 0).formatted.contains("External displays: 0"))
+    @Test(arguments: [0, 1, 2])
+    func displayCountIsReported(count: Int) {
+        #expect(makeReport(externalDisplayCount: count).formatted.contains("External displays: \(count)"))
     }
 
     // MARK: - Profiles
 
-    func testProfileDescribesEveryDockSetting() {
+    @Test func profileDescribesEveryDockSetting() {
         let config = DockConfiguration(
             autohide: true,
             position: .right,
@@ -114,68 +114,67 @@ final class DiagnosticReportTests: XCTestCase {
             magnification: true,
             magnificationSize: DockConfiguration.pixelsToScale(96)
         )
+
         let output = makeReport(externalConfig: config).formatted
 
-        XCTAssertTrue(output.contains("right"))
-        XCTAssertTrue(output.contains("auto-hide"))
-        XCTAssertTrue(output.contains("48px"))
-        XCTAssertTrue(output.contains("magnify 96px"))
+        #expect(output.contains("right"))
+        #expect(output.contains("auto-hide"))
+        #expect(output.contains("48px"))
+        #expect(output.contains("magnify 96px"))
     }
 
-    func testMagnificationOffIsStated() {
+    @Test func magnificationOffIsStated() {
         let config = DockConfiguration(autohide: false, position: .bottom, magnification: false)
-        XCTAssertTrue(makeReport(externalConfig: config).formatted.contains("no magnification"))
+
+        #expect(makeReport(externalConfig: config).formatted.contains("no magnification"))
     }
 
-    func testAlwaysVisibleIsStatedWhenAutohideOff() {
+    @Test func alwaysVisibleIsStatedWhenAutohideOff() {
         let config = DockConfiguration(autohide: false, position: .bottom)
-        XCTAssertTrue(makeReport(externalConfig: config).formatted.contains("always visible"))
+
+        #expect(makeReport(externalConfig: config).formatted.contains("always visible"))
     }
 
     // MARK: - Shortcuts
 
-    func testUnboundShortcutIsShownAsNotSet() {
+    @Test func unboundShortcutIsShownAsNotSet() {
         let hotkeys = [DiagnosticReport.Hotkey(action: "Refresh Now", shortcut: nil)]
-        XCTAssertTrue(makeReport(hotkeys: hotkeys).formatted.contains("Refresh Now: not set"))
+
+        #expect(makeReport(hotkeys: hotkeys).formatted.contains("Refresh Now: not set"))
     }
 
-    func testBoundShortcutIsShown() {
+    @Test func boundShortcutIsShown() {
         let hotkeys = [DiagnosticReport.Hotkey(action: "Refresh Now", shortcut: "⌃⌥R")]
-        XCTAssertTrue(makeReport(hotkeys: hotkeys).formatted.contains("Refresh Now: ⌃⌥R"))
+
+        #expect(makeReport(hotkeys: hotkeys).formatted.contains("Refresh Now: ⌃⌥R"))
     }
 
-    func testEmptyShortcutListSaysSo() {
-        XCTAssertTrue(makeReport(hotkeys: []).formatted.contains("none configured"))
+    @Test func emptyShortcutListSaysSo() {
+        #expect(makeReport(hotkeys: []).formatted.contains("none configured"))
     }
 
     // MARK: - Privacy
 
     /// The report is pasted into public issue trackers, so it must stay free of
     /// anything identifying. This guards against a field being added carelessly.
-    func testReportContainsNoIdentifyingInformation() {
+    @Test(arguments: ["/users/", "@", "serial", "uuid", "hostname"])
+    func reportContainsNoIdentifyingInformation(leak: String) {
         let output = makeReport(
             hotkeys: [DiagnosticReport.Hotkey(action: "Refresh Now", shortcut: "⌃⌥R")]
         ).formatted.lowercased()
 
-        for leak in ["/users/", "@", "serial", "uuid", "hostname"] {
-            XCTAssertFalse(
-                output.contains(leak),
-                "Diagnostic report must not contain \"\(leak)\"")
-        }
+        #expect(!output.contains(leak), "Diagnostic report must not contain \"\(leak)\"")
     }
 
-    /// Separate from the fixed markers above because the check only means
-    /// anything when the account name is distinctive — a two-letter username
-    /// would collide with ordinary words in the report and fail for no reason.
-    func testReportDoesNotLeakTheAccountName() throws {
-        let username = NSUserName().lowercased()
-        try XCTSkipUnless(
-            username.count >= 5,
-            "Account name \"\(username)\" is too short to test against report prose")
-
+    /// Separate from the fixed markers above because the check only means anything
+    /// when the account name is distinctive — a two-letter username would collide
+    /// with ordinary words in the report and fail for no reason.
+    @Test(.enabled(if: NSUserName().count >= 5, "Account name is too short to test against report prose"))
+    func reportDoesNotLeakTheAccountName() {
         let output = makeReport().formatted.lowercased()
-        XCTAssertFalse(
-            output.contains(username),
+
+        #expect(
+            !output.contains(NSUserName().lowercased()),
             "A home-directory path or user field must never reach the report")
     }
 }

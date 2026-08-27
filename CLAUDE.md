@@ -6,7 +6,7 @@ Project instructions for Claude Code. Follow these exactly.
 
 ```bash
 make build          # swift build -c release
-make test           # swift test (sequential — parallel is flaky due to shared UserPreferences singleton)
+make test           # swift test (Swift Testing; suites run in parallel)
 make app            # build + icon + .app bundle (ad-hoc signed)
 make run            # build + bundle + open
 make clean          # remove build artifacts
@@ -21,7 +21,7 @@ make coverage       # run tests and print a per-file llvm-cov table
 
 Single test:
 ```bash
-swift test --filter SmartDockTests.SmartDockServiceTests/testStartBeginsMonitoring
+swift test --filter startBeginsMonitoring
 ```
 
 ## Version & Release
@@ -92,6 +92,19 @@ Two GitHub Actions workflows in `.github/workflows/`:
 Both workflows set the Xcode version via `env.XCODE_PATH` at workflow level — one place per file, never inline in a step. The runner (`runs-on:`) and `XCODE_PATH` must agree: check the [runner image readme](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md) for which Xcode versions are actually installed before bumping either.
 
 Action versions are pinned by major (`@v7`). Run `make actions-check` to see how they compare to latest — don't hardcode them into this file, it goes stale.
+
+## Known Build Gotcha
+
+Changing an initialiser in `SmartDockCore` that is used as a **default argument**
+elsewhere — `SmartDockService.init(dockController: any DockControlling = DockController())`
+is the one that bites — leaves the app target's object file referencing the old symbol.
+SPM does not notice, and the build fails at link time with `Undefined symbols` plus an
+unrelated-looking `SwiftUICore.tbd` warning. It is a stale incremental build, not a code
+error:
+
+```bash
+rm -rf .build && swift build
+```
 
 ## Architecture
 
@@ -343,8 +356,16 @@ dictionary at `Resources/SmartDock.sdef`, commands in `ScriptingSupport.swift`.
 - Always use protocol-based dependency injection — never instantiate `DisplayMonitor` or `DockController` directly in tests.
 - Mock classes live in `Tests/SmartDockTests/Mocks.swift`.
 - `MockDisplayMonitor.simulateDisplayChange(externalCount:)` triggers the callback chain.
-- Tests use `swift test` (sequential) — `UserPreferences.shared` singleton causes flaky failures with `--parallel`.
-- `setUp` resets all `com.smartdock.*` UserDefaults keys and sets explicit defaults (`externalConfig`, `builtinConfig`, `syncFromSystemEnabled`).
+- Tests use **Swift Testing** (`@Suite` / `@Test` / `#expect`), not XCTest. Suites run
+  in parallel — there is no shared state left to serialize around.
+- Anything touching stored settings takes a `ScratchPreferences` (see `TestSupport.swift`):
+  a `UserPreferences` on its own throwaway defaults domain, torn down with the test.
+  Never reach for `UserPreferences.shared` in a test — that was what forced the whole
+  suite to run sequentially, and what `UserPreferences.init(defaults:)` exists to avoid.
+- `#expect` evaluates its argument inside a closure, so a `mutating` call cannot be
+  written inline. Name the result first: `let allowed = limiter.allow(at: t0)`.
+- There is no accuracy form of `#expect`. Use `expectClose(_:_:within:)` rather than
+  hand-writing `abs(a - b) <= t` — one definition, no chance of inverting the comparison.
 - Pure logic that the system would otherwise hide (CG flag filtering, `approximatelyEquals`) is extracted into free functions/methods and tested directly — prefer that over leaving it untested inside a C callback.
 - Don't assert on floating-point knife edges. `approximatelyEquals` uses a 0.01 tolerance, but `abs(0.30 - 0.31) == 0.010000000000000009` — anchor size assertions to `pixelsToScale()` values instead, which is what the tolerance actually exists for.
 
