@@ -1,37 +1,40 @@
-import XCTest
+import Testing
 
 @testable import SmartDockCore
 
+@Suite("Service orchestration")
 @MainActor
-final class SmartDockServiceTests: XCTestCase {
+struct SmartDockServiceTests {
 
-    private var monitor: MockDisplayMonitor!
-    private var dock: MockDockController!
-    private var delegate: MockServiceDelegate!
-    private var service: SmartDockService!
+    // MARK: - Fixture
 
-    override func setUp() async throws {
-        // Reset all SmartDock preferences so parallel tests don't leak state.
-        let defaults = UserDefaults.standard
-        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("com.smartdock") {
-            defaults.removeObject(forKey: key)
+    /// Everything one test needs, with its own preferences domain.
+    ///
+    /// Replaces the old `setUp`, which wiped every `com.smartdock.*` key out of
+    /// `UserDefaults.standard` — safe only because the suite was forbidden from
+    /// running in parallel. Each test now owns its store instead.
+    @MainActor
+    private struct Fixture {
+        let scratch = ScratchPreferences()
+        let monitor = MockDisplayMonitor()
+        let dock = MockDockController()
+        let delegate = MockServiceDelegate()
+        let service: SmartDockService
+
+        var prefs: UserPreferences { scratch.prefs }
+
+        init(externalCount: Int = 0) {
+            // The starting profiles every test assumes: Dock visible with a
+            // monitor attached, hidden on the laptop screen alone.
+            scratch.prefs.externalConfig = DockConfiguration(autohide: false)
+            scratch.prefs.builtinConfig = DockConfiguration(autohide: true)
+            scratch.prefs.syncFromSystemEnabled = true
+
+            monitor.mockExternalCount = externalCount
+            service = SmartDockService(
+                displayMonitor: monitor, dockController: dock, prefs: scratch.prefs)
+            service.delegate = delegate
         }
-
-        // Set explicit defaults that tests rely on.
-        let prefs = UserPreferences.shared
-        prefs.externalConfig = DockConfiguration(autohide: false)
-        prefs.builtinConfig = DockConfiguration(autohide: true)
-        prefs.syncFromSystemEnabled = true
-
-        monitor = MockDisplayMonitor()
-        dock = MockDockController()
-        delegate = MockServiceDelegate()
-        service = SmartDockService(displayMonitor: monitor, dockController: dock)
-        service.delegate = delegate
-    }
-
-    override func tearDown() async throws {
-        service.stop()
     }
 
     // MARK: - Forcing a Profile
@@ -43,406 +46,402 @@ final class SmartDockServiceTests: XCTestCase {
     /// was connected applied it and undid it in the same call. Hotkeys, `smartdock://`
     /// URLs and AppleScript were all affected, and forcing is only ever useful in
     /// exactly this situation.
-    func testForcingBuiltinSurvivesWhileAnExternalDisplayIsConnected() {
-        monitor.mockExternalCount = 1
-        service.start()
-        XCTAssertFalse(dock.lastAppliedConfig!.autohide, "external profile applies on start")
+    @Test func forcingBuiltinSurvivesWhileAnExternalDisplayIsConnected() throws {
+        let f = Fixture(externalCount: 1)
+        f.service.start()
+        #expect(!(try #require(f.dock.lastAppliedConfig).autohide), "external profile applies on start")
 
-        service.applyProfile(external: false)
+        f.service.applyProfile(external: false)
 
-        XCTAssertTrue(
-            dock.lastAppliedConfig!.autohide,
+        #expect(
+            try #require(f.dock.lastAppliedConfig).autohide,
             "Built-in profile was requested explicitly and must not be overridden by the display state")
-        XCTAssertTrue(service.currentConfig.autohide, "currentConfig must reflect what is actually applied")
+        #expect(f.service.currentConfig.autohide, "currentConfig must reflect what is actually applied")
     }
 
-    func testForcingExternalSurvivesWithNoExternalDisplay() {
-        monitor.mockExternalCount = 0
-        service.start()
-        XCTAssertTrue(dock.lastAppliedConfig!.autohide, "built-in profile applies on start")
+    @Test func forcingExternalSurvivesWithNoExternalDisplay() throws {
+        let f = Fixture(externalCount: 0)
+        f.service.start()
+        #expect(try #require(f.dock.lastAppliedConfig).autohide, "built-in profile applies on start")
 
-        service.applyProfile(external: true)
+        f.service.applyProfile(external: true)
 
-        XCTAssertFalse(dock.lastAppliedConfig!.autohide)
-        XCTAssertFalse(service.currentConfig.autohide)
+        #expect(!(try #require(f.dock.lastAppliedConfig).autohide))
+        #expect(!f.service.currentConfig.autohide)
     }
 
     /// Forcing overrides the display, it does not misreport it — the menu bar and
     /// diagnostics must still say what hardware is actually attached.
-    func testForcingAProfileLeavesReportedDisplayStateAlone() {
-        monitor.mockExternalCount = 1
-        service.start()
+    @Test func forcingAProfileLeavesReportedDisplayStateAlone() {
+        let f = Fixture(externalCount: 1)
+        f.service.start()
 
-        service.applyProfile(external: false)
+        f.service.applyProfile(external: false)
 
-        XCTAssertTrue(service.hasExternalDisplay, "A forced profile does not unplug the monitor")
+        #expect(f.service.hasExternalDisplay, "A forced profile does not unplug the monitor")
     }
 
     /// The override is deliberately not permanent: the next display event hands
     /// control back to automatic behaviour.
-    func testTheNextDisplayChangeEndsTheOverride() {
-        monitor.mockExternalCount = 1
-        service.start()
-        service.applyProfile(external: false)
-        XCTAssertTrue(dock.lastAppliedConfig!.autohide)
+    @Test func theNextDisplayChangeEndsTheOverride() throws {
+        let f = Fixture(externalCount: 1)
+        f.service.start()
+        f.service.applyProfile(external: false)
+        #expect(try #require(f.dock.lastAppliedConfig).autohide)
 
-        monitor.simulateDisplayChange(externalCount: 2)
+        f.monitor.simulateDisplayChange(externalCount: 2)
 
-        XCTAssertFalse(
-            dock.lastAppliedConfig!.autohide,
+        #expect(
+            !(try #require(f.dock.lastAppliedConfig).autohide),
             "A display change should resume automatic profile selection")
     }
 
-    func testForcingAProfileDoesNothingWhileStopped() {
-        monitor.mockExternalCount = 1
-        let callsBefore = dock.applyCallCount
+    @Test func forcingAProfileDoesNothingWhileStopped() {
+        let f = Fixture(externalCount: 1)
+        let callsBefore = f.dock.applyCallCount
 
-        service.applyProfile(external: false)
+        f.service.applyProfile(external: false)
 
-        XCTAssertEqual(dock.applyCallCount, callsBefore, "A stopped service must not touch the Dock")
+        #expect(f.dock.applyCallCount == callsBefore, "A stopped service must not touch the Dock")
+    }
+
+    /// Read live rather than cached: the diagnostic report states how many displays
+    /// are attached *now*, while `hasExternalDisplay` is the state the current
+    /// profile was chosen from. Reporting the cached one would make a bug report
+    /// disagree with the machine it came from.
+    @Test func theDisplayCountIsReportedLive() {
+        let f = Fixture(externalCount: 2)
+
+        #expect(f.service.externalDisplayCount == 2)
+
+        f.monitor.mockExternalCount = 3
+        #expect(f.service.externalDisplayCount == 3, "The count must not be a snapshot")
     }
 
     // MARK: - Start / Stop
 
-    func testStartBeginsMonitoring() {
-        service.start()
-        XCTAssertTrue(service.isEnabled)
-        XCTAssertEqual(monitor.startCallCount, 1)
+    @Test func startBeginsMonitoring() {
+        let f = Fixture()
+
+        f.service.start()
+
+        #expect(f.service.isEnabled)
+        #expect(f.monitor.startCallCount == 1)
     }
 
-    func testStopEndsMonitoring() {
-        service.start()
-        service.stop()
-        XCTAssertFalse(service.isEnabled)
-        XCTAssertEqual(monitor.stopCallCount, 1)
+    @Test func stopEndsMonitoring() {
+        let f = Fixture()
+
+        f.service.start()
+        f.service.stop()
+
+        #expect(!f.service.isEnabled)
+        #expect(f.monitor.stopCallCount == 1)
     }
 
-    func testDoubleStartIsNoop() {
-        service.start()
-        service.start()
-        XCTAssertEqual(monitor.startCallCount, 1)
+    @Test func doubleStartIsNoop() {
+        let f = Fixture()
+
+        f.service.start()
+        f.service.start()
+
+        #expect(f.monitor.startCallCount == 1)
     }
 
-    func testDoubleStopIsNoop() {
-        service.start()
-        service.stop()
-        service.stop()
-        XCTAssertEqual(monitor.stopCallCount, 1)
+    @Test func doubleStopIsNoop() {
+        let f = Fixture()
+
+        f.service.start()
+        f.service.stop()
+        f.service.stop()
+
+        #expect(f.monitor.stopCallCount == 1)
+    }
+
+    @Test func startBeginsObservingSystemChanges() {
+        let f = Fixture()
+
+        f.service.start()
+
+        #expect(f.dock.startObservingCallCount == 1)
+    }
+
+    @Test func stopEndsObservingSystemChanges() {
+        let f = Fixture()
+
+        f.service.start()
+        f.service.stop()
+
+        #expect(f.dock.stopObservingCallCount == 1)
     }
 
     // MARK: - Display Change → Dock Config Applied
 
-    func testStartAppliesConfig() {
-        monitor.mockExternalCount = 0
-        service.start()
+    @Test func startAppliesConfig() {
+        let f = Fixture(externalCount: 0)
 
-        XCTAssertEqual(dock.applyCallCount, 1, "Should apply config on start")
-        XCTAssertNotNil(dock.lastAppliedConfig)
+        f.service.start()
+
+        #expect(f.dock.applyCallCount == 1, "Should apply config on start")
+        #expect(f.dock.lastAppliedConfig != nil)
     }
 
-    func testExternalConnectedAppliesExternalConfig() {
-        monitor.mockExternalCount = 0
-        service.start()
+    @Test func externalConnectedAppliesExternalConfig() {
+        let f = Fixture(externalCount: 0)
+        f.service.start()
 
-        monitor.simulateDisplayChange(externalCount: 1)
+        f.monitor.simulateDisplayChange(externalCount: 1)
 
-        XCTAssertTrue(service.hasExternalDisplay)
-        XCTAssertEqual(dock.applyCallCount, 2, "start + display change")
+        #expect(f.service.hasExternalDisplay)
+        #expect(f.dock.applyCallCount == 2, "start + display change")
     }
 
-    func testExternalDisconnectedAppliesBuiltinConfig() {
-        monitor.mockExternalCount = 1
-        service.start()
+    @Test func externalDisconnectedAppliesBuiltinConfig() {
+        let f = Fixture(externalCount: 1)
+        f.service.start()
 
-        monitor.simulateDisplayChange(externalCount: 0)
+        f.monitor.simulateDisplayChange(externalCount: 0)
 
-        XCTAssertFalse(service.hasExternalDisplay)
-        XCTAssertEqual(dock.applyCallCount, 2)
+        #expect(!f.service.hasExternalDisplay)
+        #expect(f.dock.applyCallCount == 2)
     }
 
-    func testMultipleExternalsStillAppliesConfig() {
-        monitor.mockExternalCount = 0
-        service.start()
+    @Test func multipleExternalsStillAppliesConfig() {
+        let f = Fixture(externalCount: 0)
+        f.service.start()
 
-        monitor.simulateDisplayChange(externalCount: 3)
-        XCTAssertTrue(service.hasExternalDisplay)
+        f.monitor.simulateDisplayChange(externalCount: 3)
+
+        #expect(f.service.hasExternalDisplay)
     }
 
     // MARK: - Delegate
 
-    func testDelegateNotifiedOnStart() {
-        monitor.mockExternalCount = 1
-        service.start()
+    @Test func delegateNotifiedOnStart() {
+        let f = Fixture(externalCount: 1)
 
-        XCTAssertEqual(delegate.stateUpdates.count, 1)
-        XCTAssertTrue(delegate.stateUpdates[0].hasExternal)
+        f.service.start()
+
+        #expect(f.delegate.stateUpdates.count == 1)
+        #expect(f.delegate.stateUpdates[0].hasExternal)
     }
 
-    func testDelegateNotifiedOnChange() {
-        monitor.mockExternalCount = 0
-        service.start()
+    @Test func delegateNotifiedOnChange() {
+        let f = Fixture(externalCount: 0)
+        f.service.start()
 
-        monitor.simulateDisplayChange(externalCount: 1)
-        monitor.simulateDisplayChange(externalCount: 0)
+        f.monitor.simulateDisplayChange(externalCount: 1)
+        f.monitor.simulateDisplayChange(externalCount: 0)
 
-        XCTAssertEqual(delegate.stateUpdates.count, 3)  // start + 2 changes
-        XCTAssertFalse(delegate.stateUpdates[0].hasExternal)
-        XCTAssertTrue(delegate.stateUpdates[1].hasExternal)
-        XCTAssertFalse(delegate.stateUpdates[2].hasExternal)
+        #expect(f.delegate.stateUpdates.count == 3)  // start + 2 changes
+        #expect(!f.delegate.stateUpdates[0].hasExternal)
+        #expect(f.delegate.stateUpdates[1].hasExternal)
+        #expect(!f.delegate.stateUpdates[2].hasExternal)
     }
 
     // MARK: - Disabled State
 
-    func testChangesIgnoredWhenDisabled() {
-        monitor.mockExternalCount = 0
-        service.start()
-        let callsAfterStart = dock.applyCallCount
+    @Test func changesIgnoredWhenDisabled() {
+        let f = Fixture(externalCount: 0)
+        f.service.start()
+        let callsAfterStart = f.dock.applyCallCount
 
-        service.stop()
-        monitor.simulateDisplayChange(externalCount: 1)
+        f.service.stop()
+        f.monitor.simulateDisplayChange(externalCount: 1)
 
-        XCTAssertEqual(
-            dock.applyCallCount, callsAfterStart,
+        #expect(
+            f.dock.applyCallCount == callsAfterStart,
             "Dock should not be touched when service is disabled")
+    }
+
+    @Test func displayChangeIgnoredWhenDisabled() {
+        let f = Fixture(externalCount: 1)
+        f.service.start()
+        let callsAfterStart = f.dock.applyCallCount
+
+        f.service.stop()
+        f.monitor.onConfigurationChanged?()
+
+        #expect(
+            f.dock.applyCallCount == callsAfterStart,
+            "Display change should be ignored when service is disabled")
     }
 
     // MARK: - Refresh
 
-    func testRefreshReappliesConfig() {
-        monitor.mockExternalCount = 0
-        service.start()
-        let callsBefore = dock.applyCallCount
+    @Test func refreshReappliesConfig() {
+        let f = Fixture(externalCount: 0)
+        f.service.start()
+        let callsBefore = f.dock.applyCallCount
 
-        service.refresh()
-        XCTAssertEqual(dock.applyCallCount, callsBefore + 1)
+        f.service.refresh()
+
+        #expect(f.dock.applyCallCount == callsBefore + 1)
+    }
+
+    @Test func refreshAppliesCorrectConfig() throws {
+        let f = Fixture(externalCount: 1)
+        f.service.start()
+
+        f.service.refresh()
+
+        #expect(
+            !(try #require(f.dock.lastAppliedConfig).autohide),
+            "Refresh should apply current mode's config")
     }
 
     // MARK: - Config Correctness
 
-    func testExternalConfigHasAutohideOff() {
-        let prefs = UserPreferences.shared
-        prefs.externalConfig = DockConfiguration(autohide: false)
-        monitor.mockExternalCount = 1
-        service.start()
+    @Test func externalConfigHasAutohideOff() throws {
+        let f = Fixture(externalCount: 1)
 
-        XCTAssertNotNil(dock.lastAppliedConfig)
-        XCTAssertFalse(
-            dock.lastAppliedConfig!.autohide,
+        f.service.start()
+
+        #expect(
+            !(try #require(f.dock.lastAppliedConfig).autohide),
             "External mode should have autohide=false (dock visible)")
     }
 
-    func testBuiltinConfigHasAutohideOn() {
-        let prefs = UserPreferences.shared
-        prefs.builtinConfig = DockConfiguration(autohide: true)
-        monitor.mockExternalCount = 0
-        service.start()
+    @Test func builtinConfigHasAutohideOn() throws {
+        let f = Fixture(externalCount: 0)
 
-        XCTAssertNotNil(dock.lastAppliedConfig)
-        XCTAssertTrue(
-            dock.lastAppliedConfig!.autohide,
+        f.service.start()
+
+        #expect(
+            try #require(f.dock.lastAppliedConfig).autohide,
             "Built-in mode should have autohide=true (dock hidden)")
     }
 
-    func testDisconnectSwitchesToBuiltinConfig() {
-        let prefs = UserPreferences.shared
-        prefs.externalConfig = DockConfiguration(autohide: false)
-        prefs.builtinConfig = DockConfiguration(autohide: true)
+    @Test func disconnectSwitchesToBuiltinConfig() throws {
+        let f = Fixture(externalCount: 1)
+        f.service.start()
+        #expect(!(try #require(f.dock.lastAppliedConfig).autohide))
 
-        monitor.mockExternalCount = 1
-        service.start()
+        f.monitor.simulateDisplayChange(externalCount: 0)
 
-        XCTAssertFalse(dock.lastAppliedConfig!.autohide)
-
-        monitor.simulateDisplayChange(externalCount: 0)
-
-        XCTAssertFalse(service.hasExternalDisplay)
-        XCTAssertTrue(
-            dock.lastAppliedConfig!.autohide,
+        #expect(!f.service.hasExternalDisplay)
+        #expect(
+            try #require(f.dock.lastAppliedConfig).autohide,
             "After disconnect, should apply builtin config with autohide=true")
     }
 
-    func testConnectSwitchesToExternalConfig() {
-        let prefs = UserPreferences.shared
-        prefs.externalConfig = DockConfiguration(autohide: false)
-        prefs.builtinConfig = DockConfiguration(autohide: true)
+    @Test func connectSwitchesToExternalConfig() throws {
+        let f = Fixture(externalCount: 0)
+        f.service.start()
+        #expect(try #require(f.dock.lastAppliedConfig).autohide)
 
-        monitor.mockExternalCount = 0
-        service.start()
+        f.monitor.simulateDisplayChange(externalCount: 1)
 
-        XCTAssertTrue(dock.lastAppliedConfig!.autohide)
-
-        monitor.simulateDisplayChange(externalCount: 1)
-
-        XCTAssertTrue(service.hasExternalDisplay)
-        XCTAssertFalse(
-            dock.lastAppliedConfig!.autohide,
+        #expect(f.service.hasExternalDisplay)
+        #expect(
+            !(try #require(f.dock.lastAppliedConfig).autohide),
             "After connect, should apply external config with autohide=false")
     }
 
     // MARK: - Display Change Re-apply
 
-    func testDisplayChangeTriggersApply() {
-        monitor.mockExternalCount = 1
-        service.start()
-        let callsAfterStart = dock.applyCallCount
+    @Test func displayChangeTriggersApply() {
+        let f = Fixture(externalCount: 1)
+        f.service.start()
+        let callsAfterStart = f.dock.applyCallCount
 
-        monitor.onConfigurationChanged?()
+        f.monitor.onConfigurationChanged?()
 
-        XCTAssertEqual(
-            dock.applyCallCount, callsAfterStart + 1,
-            "Display change should trigger apply")
+        #expect(f.dock.applyCallCount == callsAfterStart + 1, "Display change should trigger apply")
     }
 
-    func testDisplayChangePreservesCorrectMode() {
-        let prefs = UserPreferences.shared
-        prefs.externalConfig = DockConfiguration(autohide: false)
-        monitor.mockExternalCount = 2
-        service.start()
+    @Test func displayChangePreservesCorrectMode() throws {
+        let f = Fixture(externalCount: 2)
+        f.service.start()
 
-        monitor.onConfigurationChanged?()
+        f.monitor.onConfigurationChanged?()
 
-        XCTAssertTrue(service.hasExternalDisplay)
-        XCTAssertFalse(
-            dock.lastAppliedConfig!.autohide,
+        #expect(f.service.hasExternalDisplay)
+        #expect(
+            !(try #require(f.dock.lastAppliedConfig).autohide),
             "Display change with external monitors should keep external config")
-    }
-
-    func testDisplayChangeIgnoredWhenDisabled() {
-        monitor.mockExternalCount = 1
-        service.start()
-        let callsAfterStart = dock.applyCallCount
-
-        service.stop()
-        monitor.onConfigurationChanged?()
-
-        XCTAssertEqual(
-            dock.applyCallCount, callsAfterStart,
-            "Display change should be ignored when service is disabled")
     }
 
     // MARK: - Rapid State Changes
 
-    func testRapidConnectDisconnect() {
-        let prefs = UserPreferences.shared
-        prefs.externalConfig = DockConfiguration(autohide: false)
-        prefs.builtinConfig = DockConfiguration(autohide: true)
+    @Test func rapidConnectDisconnect() throws {
+        let f = Fixture(externalCount: 0)
+        f.service.start()
 
-        monitor.mockExternalCount = 0
-        service.start()
+        f.monitor.simulateDisplayChange(externalCount: 1)
+        f.monitor.simulateDisplayChange(externalCount: 0)
+        f.monitor.simulateDisplayChange(externalCount: 2)
+        f.monitor.simulateDisplayChange(externalCount: 0)
 
-        monitor.simulateDisplayChange(externalCount: 1)
-        monitor.simulateDisplayChange(externalCount: 0)
-        monitor.simulateDisplayChange(externalCount: 2)
-        monitor.simulateDisplayChange(externalCount: 0)
-
-        XCTAssertFalse(service.hasExternalDisplay)
-        XCTAssertTrue(
-            dock.lastAppliedConfig!.autohide,
+        #expect(!f.service.hasExternalDisplay)
+        #expect(
+            try #require(f.dock.lastAppliedConfig).autohide,
             "After rapid changes ending with no external, should be builtin config")
     }
 
     // MARK: - External Dock Change (System Sync)
 
-    func testExternalDockChangeUpdatesActiveProfile() {
-        let prefs = UserPreferences.shared
-        prefs.builtinConfig = DockConfiguration(autohide: true, position: .bottom)
-        prefs.syncFromSystemEnabled = true
-        monitor.mockExternalCount = 0
-        service.start()
+    @Test func externalDockChangeUpdatesActiveProfile() {
+        let f = Fixture(externalCount: 0)
+        f.prefs.builtinConfig = DockConfiguration(autohide: true, position: .bottom)
+        f.service.start()
 
-        let newConfig = DockConfiguration(autohide: false, position: .left)
-        dock.simulateExternalDockChange(newConfig)
+        f.dock.simulateExternalDockChange(DockConfiguration(autohide: false, position: .left))
 
-        XCTAssertEqual(
-            prefs.builtinConfig.position, .left,
+        #expect(
+            f.prefs.builtinConfig.position == .left,
             "External change should update active (built-in) profile")
-        XCTAssertFalse(prefs.builtinConfig.autohide)
+        #expect(!f.prefs.builtinConfig.autohide)
     }
 
-    func testExternalDockChangeUpdatesExternalProfile() {
-        let prefs = UserPreferences.shared
-        prefs.externalConfig = DockConfiguration(autohide: false, position: .bottom)
-        prefs.syncFromSystemEnabled = true
-        monitor.mockExternalCount = 1
-        service.start()
+    @Test func externalDockChangeUpdatesExternalProfile() {
+        let f = Fixture(externalCount: 1)
+        f.prefs.externalConfig = DockConfiguration(autohide: false, position: .bottom)
+        f.service.start()
 
-        let newConfig = DockConfiguration(autohide: true, position: .right)
-        dock.simulateExternalDockChange(newConfig)
+        f.dock.simulateExternalDockChange(DockConfiguration(autohide: true, position: .right))
 
-        XCTAssertEqual(
-            prefs.externalConfig.position, .right,
+        #expect(
+            f.prefs.externalConfig.position == .right,
             "External change should update active (external) profile")
-        XCTAssertTrue(prefs.externalConfig.autohide)
+        #expect(f.prefs.externalConfig.autohide)
     }
 
-    func testExternalDockChangeIgnoredWhenDisabled() {
-        let prefs = UserPreferences.shared
-        prefs.builtinConfig = DockConfiguration(autohide: true, position: .bottom)
-        monitor.mockExternalCount = 0
-        service.start()
-        service.stop()
+    @Test func externalDockChangeIgnoredWhenDisabled() {
+        let f = Fixture(externalCount: 0)
+        f.prefs.builtinConfig = DockConfiguration(autohide: true, position: .bottom)
+        f.service.start()
+        f.service.stop()
 
-        let newConfig = DockConfiguration(autohide: false, position: .left)
-        dock.simulateExternalDockChange(newConfig)
+        f.dock.simulateExternalDockChange(DockConfiguration(autohide: false, position: .left))
 
-        XCTAssertEqual(
-            prefs.builtinConfig.position, .bottom,
+        #expect(
+            f.prefs.builtinConfig.position == .bottom,
             "External change should be ignored when service is disabled")
     }
 
-    func testExternalDockChangeIgnoredWhenSyncDisabled() {
-        let prefs = UserPreferences.shared
-        prefs.builtinConfig = DockConfiguration(autohide: true, position: .bottom)
-        prefs.syncFromSystemEnabled = false
-        monitor.mockExternalCount = 0
-        service.start()
+    @Test func externalDockChangeIgnoredWhenSyncDisabled() {
+        let f = Fixture(externalCount: 0)
+        f.prefs.builtinConfig = DockConfiguration(autohide: true, position: .bottom)
+        f.prefs.syncFromSystemEnabled = false
+        f.service.start()
 
-        let newConfig = DockConfiguration(autohide: false, position: .left)
-        dock.simulateExternalDockChange(newConfig)
+        f.dock.simulateExternalDockChange(DockConfiguration(autohide: false, position: .left))
 
-        XCTAssertEqual(
-            prefs.builtinConfig.position, .bottom,
+        #expect(
+            f.prefs.builtinConfig.position == .bottom,
             "External change should be ignored when sync is disabled")
     }
 
-    func testExternalDockChangeNotifiesDelegate() {
-        let prefs = UserPreferences.shared
-        prefs.syncFromSystemEnabled = true
-        monitor.mockExternalCount = 0
-        service.start()
-        let countBefore = delegate.stateUpdates.count
+    @Test func externalDockChangeNotifiesDelegate() {
+        let f = Fixture(externalCount: 0)
+        f.service.start()
+        let countBefore = f.delegate.stateUpdates.count
 
-        let newConfig = DockConfiguration(autohide: false, position: .left)
-        dock.simulateExternalDockChange(newConfig)
+        f.dock.simulateExternalDockChange(DockConfiguration(autohide: false, position: .left))
 
-        XCTAssertEqual(
-            delegate.stateUpdates.count, countBefore + 1,
+        #expect(
+            f.delegate.stateUpdates.count == countBefore + 1,
             "External change should notify delegate")
-    }
-
-    func testStartBeginsObservingSystemChanges() {
-        service.start()
-        XCTAssertEqual(dock.startObservingCallCount, 1)
-    }
-
-    func testStopEndsObservingSystemChanges() {
-        service.start()
-        service.stop()
-        XCTAssertEqual(dock.stopObservingCallCount, 1)
-    }
-
-    // MARK: - Refresh
-
-    func testRefreshAppliesCorrectConfig() {
-        let prefs = UserPreferences.shared
-        prefs.externalConfig = DockConfiguration(autohide: false)
-        monitor.mockExternalCount = 1
-        service.start()
-
-        service.refresh()
-
-        XCTAssertFalse(
-            dock.lastAppliedConfig!.autohide,
-            "Refresh should apply current mode's config")
     }
 }

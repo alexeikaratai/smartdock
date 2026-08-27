@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.0] — 2026-08-27
+
+### Changed
+- The test suite moved from XCTest to **Swift Testing** — 15 suites, `@Test` and
+  `#expect` throughout. Failures now name the expression that failed and the line it
+  is on, and cases that only differed by their input became parameterised tests.
+- Tests **run in parallel** again. They could not before: `UserPreferences.shared` is a
+  singleton, and suites that reset it wiped state out from under each other, so the
+  project banned `--parallel` outright. `UserPreferences` now takes its `UserDefaults`
+  as an argument, and each test owns a throwaway domain — the shared state is gone
+  rather than scheduled around.
+- 18 tests covering the settings store, which had none: first-launch seeding, the
+  guard that stops it overwriting configured profiles, and the pixel→scale migration.
+  `DockConfiguration.swift` went from 73% to 97% covered.
+- The AppleScript sent for each dock property is now asserted. Only `screen edge` was
+  ever exercised; a typo in `set magnification size to` would have run, reported
+  success and changed nothing — the same silent failure that took a full session to
+  diagnose for `autohide`. Each of the five is pinned, along with the rule that every
+  property goes in its own `tell` block so one refusal cannot take the others down.
+- The KVO path that imports changes made in System Settings is covered end to end,
+  against a scratch preferences domain rather than the developer's real Dock. That
+  includes the loop guard — the check that tells SmartDock's own writes, echoed back
+  through the observer, from a genuine edit. `DockController.swift` went from 44% to
+  96% covered, and the suite overall from 75% to 90%.
+- `DisplayMonitor` takes its display count and settle delays as arguments, so the
+  debounce and change filter around the CoreGraphics callback are covered without a
+  monitor to plug in: a burst of callbacks collapsing into one check, transient counts
+  mid-transition being ignored, and the wake re-check surviving a stream of unrelated
+  callbacks. 53% to 99% — including the CoreGraphics callback itself, which decides
+  whether an event is worth reacting to and recovers the monitor from an opaque
+  pointer. The suite overall reached 98%.
+- Tests keep their preferences in memory instead of in throwaway `UserDefaults`
+  suites. A real suite domain belongs to `cfprefsd`, a separate daemon that flushes
+  it on its own schedule — including after the test process has exited — so no
+  in-process cleanup could win the race, and a few hundred runs left thousands of
+  plists in `~/Library/Preferences`. A run now leaves nothing behind.
+- The migration from pixel sizes to the 0.0–1.0 scale lost a branch that could never
+  run. It read the stored value as `Int` when the `Double` cast failed, but
+  UserDefaults keeps numbers as `NSNumber`, which bridges to `Double` whichever way
+  the value was written — so the fallback was unreachable.
+
+Coverage across `SmartDockCore` finished at 98% of lines, with nine of twelve files
+complete. What remains is the AppleScript call into live System Events and the branch
+that runs only if CoreGraphics refuses to register a callback — neither reachable
+without driving the real system.
+- `LogExport.defaultFileName` reads date fields directly instead of unwrapping an
+  optional `DateComponents`. The five `?? 0` fallbacks it needed could not be reached
+  for a real date, and would have produced `SmartDock-log-0000-00-00-0000.txt` if they
+  ever were.
+
+### Fixed
+- A stopped `DisplayMonitor` no longer reports display changes. `handleWake` had always
+  checked `isRunning`; `handleReconfiguration` had not, so a CoreGraphics callback
+  already queued when `stop()` ran could still fire afterwards. The service's own
+  `isEnabled` check absorbed it, so nothing was visibly wrong — but the monitor did not
+  honour its own state.
+
 ## [2.3.0] — 2026-08-23
 
 ### Added

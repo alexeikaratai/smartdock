@@ -48,12 +48,32 @@ public final class DisplayMonitor: DisplayMonitoring {
     /// fullscreen enter/exit). The display count can fluctuate transiently.
     /// We wait for callbacks to stop arriving before checking the count.
     private var pendingCheck: DispatchWorkItem?
-    private let settleDelay: TimeInterval = 1.0
+    private let settleDelay: TimeInterval
 
     /// Separate work item for wake rechecks — must not be cancelled by CG callbacks.
     private var pendingWakeCheck: DispatchWorkItem?
 
-    public init() {}
+    /// Longer than `settleDelay`: CG keeps reporting stale counts for a moment
+    /// after wake, so this waits out the settle window and then some.
+    private let wakeDelay: TimeInterval
+
+    /// How the external display count is obtained.
+    ///
+    /// Injectable for the same reason `DockController`'s script runner is: the real
+    /// implementation asks CoreGraphics about the hardware attached right now, so
+    /// the debounce and change-detection logic around it could otherwise only be
+    /// exercised by physically plugging a monitor in.
+    private let countExternalDisplays: () -> Int
+
+    public init(
+        settleDelay: TimeInterval = 1.0,
+        wakeDelay: TimeInterval = 2.0,
+        countExternalDisplays: (() -> Int)? = nil
+    ) {
+        self.settleDelay = settleDelay
+        self.wakeDelay = wakeDelay
+        self.countExternalDisplays = countExternalDisplays ?? DisplayMonitor.activeExternalDisplayCount
+    }
 
     deinit {
         guard isRunning else { return }
@@ -71,6 +91,11 @@ public final class DisplayMonitor: DisplayMonitoring {
     // MARK: - Public
 
     public func externalDisplayCount() -> Int {
+        countExternalDisplays()
+    }
+
+    /// Asks CoreGraphics which external displays are actually usable right now.
+    private static func activeExternalDisplayCount() -> Int {
         let maxDisplays: UInt32 = 16
         var displayIDs = [CGDirectDisplayID](repeating: 0, count: Int(maxDisplays))
         var displayCount: UInt32 = 0
@@ -135,7 +160,14 @@ public final class DisplayMonitor: DisplayMonitoring {
     /// Debounces: cancels any pending check and reschedules, so the check
     /// always runs 1s after the *last* CG callback. This lets hardware
     /// settle before we read the display count.
-    fileprivate func handleReconfiguration() {
+    /// Internal rather than private so tests can drive the debounce directly —
+    /// the only other caller is a C function pointer.
+    func handleReconfiguration() {
+        // A callback already dispatched to the main queue can arrive after `stop()`
+        // removed the registration. `handleWake` has always guarded against this;
+        // without the same check here a stopped monitor could still fire.
+        guard isRunning else { return }
+
         pendingCheck?.cancel()
 
         let work = DispatchWorkItem { [weak self] in
@@ -179,7 +211,10 @@ public final class DisplayMonitor: DisplayMonitoring {
     /// On wake, force re-check display state after a settle delay.
     /// CG may report incorrect display count immediately after wake,
     /// so we wait for the system to stabilize.
-    @objc private func handleWake(_ notification: Notification) {
+    /// Internal so tests can drive it directly. Posting a real
+    /// `NSWorkspace.didWakeNotification` would wake every other monitor alive in
+    /// the process — including those belonging to suites running in parallel.
+    @objc func handleWake(_ notification: Notification) {
         guard isRunning else { return }
         Log.info("System wake detected (\(notification.name.rawValue)) — scheduling display re-check")
         forceRecheck()
@@ -190,7 +225,8 @@ public final class DisplayMonitor: DisplayMonitoring {
     /// in the correct state and any AppleScript poke would disrupt fullscreen.
     ///
     /// Uses a separate `pendingWakeCheck` so CG callbacks can't cancel it.
-    private func forceRecheck() {
+    /// Internal for the same reason as `handleReconfiguration`.
+    func forceRecheck() {
         pendingWakeCheck?.cancel()
 
         let work = DispatchWorkItem { [weak self] in
@@ -203,7 +239,7 @@ public final class DisplayMonitor: DisplayMonitoring {
             }
         }
         pendingWakeCheck = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + wakeDelay, execute: work)
     }
 }
 
@@ -234,7 +270,11 @@ func shouldReactToDisplayChange(_ flags: CGDisplayChangeSummaryFlags) -> Bool {
 
 // MARK: - C Callback
 
-private func displayReconfigurationCallback(
+/// Internal rather than private so a test can invoke it the way CoreGraphics
+/// would. Everything it does — filtering the flags, recovering the monitor from an
+/// opaque pointer, hopping to the main queue — is logic that only ever runs when a
+/// display is physically plugged in otherwise.
+func displayReconfigurationCallback(
     _ display: CGDirectDisplayID,
     _ flags: CGDisplayChangeSummaryFlags,
     _ userInfo: UnsafeMutableRawPointer?

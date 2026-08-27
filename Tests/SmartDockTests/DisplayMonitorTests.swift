@@ -1,136 +1,128 @@
 import CoreGraphics
-import XCTest
+import Testing
 
 @testable import SmartDockCore
 
+@Suite("Display monitoring")
 @MainActor
-final class DisplayMonitorTests: XCTestCase {
+struct DisplayMonitorTests {
 
     // MARK: - Reconfiguration Flag Filtering
 
     /// Guards the raw values the filter relies on. `CGDisplayChangeSummaryFlags`
     /// has no documented stable ABI contract, so pin the four we depend on.
-    func testTopologyFlagRawValues() {
-        XCTAssertEqual(CGDisplayChangeSummaryFlags.beginConfigurationFlag.rawValue, 0x1)
-        XCTAssertEqual(CGDisplayChangeSummaryFlags.addFlag.rawValue, 0x10)
-        XCTAssertEqual(CGDisplayChangeSummaryFlags.removeFlag.rawValue, 0x20)
-        XCTAssertEqual(CGDisplayChangeSummaryFlags.enabledFlag.rawValue, 0x100)
-        XCTAssertEqual(CGDisplayChangeSummaryFlags.disabledFlag.rawValue, 0x200)
+    @Test func topologyFlagRawValues() {
+        #expect(CGDisplayChangeSummaryFlags.beginConfigurationFlag.rawValue == 0x1)
+        #expect(CGDisplayChangeSummaryFlags.addFlag.rawValue == 0x10)
+        #expect(CGDisplayChangeSummaryFlags.removeFlag.rawValue == 0x20)
+        #expect(CGDisplayChangeSummaryFlags.enabledFlag.rawValue == 0x100)
+        #expect(CGDisplayChangeSummaryFlags.disabledFlag.rawValue == 0x200)
     }
 
-    func testReactsToDisplayAdded() {
-        XCTAssertTrue(shouldReactToDisplayChange(.addFlag))
+    /// A display arriving or leaving is the only thing worth re-applying for.
+    @Test(
+        "Reacts to a display arriving or leaving",
+        arguments: [
+            CGDisplayChangeSummaryFlags.addFlag, .removeFlag, .enabledFlag, .disabledFlag,
+        ])
+    func reactsToTopologyChanges(flag: CGDisplayChangeSummaryFlags) {
+        #expect(shouldReactToDisplayChange(flag))
     }
 
-    func testReactsToDisplayRemoved() {
-        XCTAssertTrue(shouldReactToDisplayChange(.removeFlag))
-    }
-
-    func testReactsToDisplayEnabled() {
-        XCTAssertTrue(shouldReactToDisplayChange(.enabledFlag))
-    }
-
-    func testReactsToDisplayDisabled() {
-        XCTAssertTrue(shouldReactToDisplayChange(.disabledFlag))
-    }
-
-    /// Mission Control and fullscreen transitions — must not re-apply dock config.
-    func testIgnoresDesktopShapeChange() {
-        XCTAssertFalse(shouldReactToDisplayChange(.desktopShapeChangedFlag))
-    }
-
-    /// Resolution change on an already-attached display.
-    func testIgnoresModeChange() {
-        XCTAssertFalse(shouldReactToDisplayChange(.setModeFlag))
-    }
-
-    /// Rearranging displays in System Settings.
-    func testIgnoresMovedAndSetMain() {
-        XCTAssertFalse(shouldReactToDisplayChange(.movedFlag))
-        XCTAssertFalse(shouldReactToDisplayChange(.setMainFlag))
-    }
-
-    func testIgnoresMirroringChanges() {
-        XCTAssertFalse(shouldReactToDisplayChange(.mirrorFlag))
-        XCTAssertFalse(shouldReactToDisplayChange(.unMirrorFlag))
-    }
-
-    func testIgnoresEmptyFlags() {
-        XCTAssertFalse(shouldReactToDisplayChange([]))
+    /// Everything that fires during Mission Control, fullscreen transitions,
+    /// resolution changes and window rearranging — none of it changes how many
+    /// displays are attached, so none of it should touch the Dock.
+    @Test(
+        "Ignores layout noise",
+        arguments: [
+            CGDisplayChangeSummaryFlags.desktopShapeChangedFlag, .setModeFlag,
+            .movedFlag, .setMainFlag, .mirrorFlag, .unMirrorFlag, [],
+        ])
+    func ignoresNonTopologyChanges(flag: CGDisplayChangeSummaryFlags) {
+        #expect(!shouldReactToDisplayChange(flag))
     }
 
     /// The begin-configuration pass is skipped even when it carries topology flags —
     /// we act on the completion callback that follows.
-    func testIgnoresBeginConfigurationEvenWithTopologyFlags() {
-        XCTAssertFalse(shouldReactToDisplayChange([.beginConfigurationFlag, .addFlag]))
-        XCTAssertFalse(shouldReactToDisplayChange([.beginConfigurationFlag, .removeFlag]))
+    @Test(arguments: [
+        [CGDisplayChangeSummaryFlags.beginConfigurationFlag, .addFlag],
+        [.beginConfigurationFlag, .removeFlag],
+    ])
+    func ignoresBeginConfigurationEvenWithTopologyFlags(flags: CGDisplayChangeSummaryFlags) {
+        #expect(!shouldReactToDisplayChange(flags))
     }
 
     /// A real connect usually arrives bundled with layout noise — still a connect.
-    func testReactsWhenTopologyFlagMixedWithNoise() {
-        XCTAssertTrue(shouldReactToDisplayChange([.addFlag, .setModeFlag, .desktopShapeChangedFlag]))
-        XCTAssertTrue(shouldReactToDisplayChange([.removeFlag, .movedFlag]))
+    @Test(arguments: [
+        [CGDisplayChangeSummaryFlags.addFlag, .setModeFlag, .desktopShapeChangedFlag],
+        [.removeFlag, .movedFlag],
+    ])
+    func reactsWhenTopologyFlagMixedWithNoise(flags: CGDisplayChangeSummaryFlags) {
+        #expect(shouldReactToDisplayChange(flags))
     }
 
     // MARK: - Mock Behavior Validation
 
-    func testMockDefaultsToNoExternal() {
+    @Test func mockDefaultsToNoExternal() {
         let monitor = MockDisplayMonitor()
-        XCTAssertEqual(monitor.externalDisplayCount(), 0)
-        XCTAssertFalse(monitor.hasExternalDisplay())
+
+        #expect(monitor.externalDisplayCount() == 0)
+        #expect(!monitor.hasExternalDisplay())
     }
 
-    func testMockReportsExternalCorrectly() {
+    @Test func mockReportsExternalCorrectly() {
         let monitor = MockDisplayMonitor()
         monitor.mockExternalCount = 2
-        XCTAssertEqual(monitor.externalDisplayCount(), 2)
-        XCTAssertTrue(monitor.hasExternalDisplay())
+
+        #expect(monitor.externalDisplayCount() == 2)
+        #expect(monitor.hasExternalDisplay())
     }
 
-    func testMockCallbackFiresOnSimulation() {
+    @Test func mockCallbackFiresOnSimulation() {
         let monitor = MockDisplayMonitor()
         var callbackFired = false
-
-        monitor.onConfigurationChanged = {
-            callbackFired = true
-        }
+        monitor.onConfigurationChanged = { callbackFired = true }
 
         monitor.simulateDisplayChange(externalCount: 1)
-        XCTAssertTrue(callbackFired)
-        XCTAssertEqual(monitor.externalDisplayCount(), 1)
+
+        #expect(callbackFired)
+        #expect(monitor.externalDisplayCount() == 1)
     }
 
-    func testMockTracksStartStopCalls() {
+    @Test func mockTracksStartStopCalls() {
         let monitor = MockDisplayMonitor()
-        XCTAssertEqual(monitor.startCallCount, 0)
-        XCTAssertEqual(monitor.stopCallCount, 0)
 
         monitor.start()
         monitor.start()
-        XCTAssertEqual(monitor.startCallCount, 2)
-
         monitor.stop()
-        XCTAssertEqual(monitor.stopCallCount, 1)
+
+        #expect(monitor.startCallCount == 2)
+        #expect(monitor.stopCallCount == 1)
     }
 
     // MARK: - Real DisplayMonitor (unit-safe checks)
 
-    func testRealMonitorCanBeInstantiated() {
-        let monitor = DisplayMonitor()
-        XCTAssertNotNil(monitor)
+    /// The real monitor talks to the window server, so only what is safe to call
+    /// without a display attached is exercised here.
+    @Test func realMonitorReturnsNonNegativeCount() {
+        // In CI there may be no displays at all, but never a negative count.
+        #expect(DisplayMonitor().externalDisplayCount() >= 0)
     }
 
-    func testRealMonitorReturnsNonNegativeCount() {
+    /// The two must never disagree — every profile decision in the app is made on
+    /// `hasExternalDisplay`, while diagnostics report the count. One saying "no
+    /// monitor" while the other counts two would be invisible until a bug report.
+    @Test func hasExternalDisplayAgreesWithTheCount() {
         let monitor = DisplayMonitor()
-        // In CI/test environment can be 0 or more, but not negative
-        XCTAssertGreaterThanOrEqual(monitor.externalDisplayCount(), 0)
+
+        #expect(monitor.hasExternalDisplay() == (monitor.externalDisplayCount() > 0))
     }
 
-    func testRealMonitorStartStopDoesNotCrash() {
+    @Test func realMonitorStartStopDoesNotCrash() {
         let monitor = DisplayMonitor()
+
         monitor.start()
         monitor.stop()
-        // Double stop should also not crash
-        monitor.stop()
+        monitor.stop()  // Double stop must also be safe.
     }
 }

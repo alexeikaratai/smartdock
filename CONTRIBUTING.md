@@ -30,7 +30,7 @@ targets assume the toolchain is complete.
 
 ```bash
 make build      # swift build -c release
-make test       # swift test (sequential — see "Testing" below)
+make test       # swift test (Swift Testing, in parallel)
 make format     # rewrite sources with swift-format
 make lint       # check formatting without writing — this is what CI gates on
 make coverage   # run tests and print a per-file coverage table
@@ -92,9 +92,10 @@ make test
 swift test --filter SmartDockTests.SmartDockServiceTests/testStartBeginsMonitoring
 ```
 
-Tests run **sequentially, not in parallel**. `UserPreferences.shared` is a singleton and
-concurrent tests trample each other's state, producing flaky failures. Do not add
-`--parallel`.
+Tests are written with **Swift Testing** — `@Suite`, `@Test`, `#expect` — and run in
+parallel. They did not always: `UserPreferences.shared` is a singleton, and suites that
+reset it trampled each other. That was fixed by removing the shared state rather than
+scheduling around it, so there is nothing left to serialize.
 
 Conventions:
 

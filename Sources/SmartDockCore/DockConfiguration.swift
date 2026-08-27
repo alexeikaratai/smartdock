@@ -204,10 +204,19 @@ public final class UserPreferences {
 
     public static let shared = UserPreferences()
 
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
     private let prefix = "com.smartdock"
 
-    private init() {}
+    /// The store this reads and writes.
+    ///
+    /// Injectable — and deliberately `internal`, so the app can only ever reach
+    /// `shared` while tests can hand each case its own scratch domain. Sharing
+    /// `UserDefaults.standard` is what made tests trample each other and forced
+    /// the whole suite to run sequentially; with a domain per test there is no
+    /// shared state left to serialize around.
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
 
     // MARK: - First Launch
 
@@ -335,18 +344,18 @@ public final class UserPreferences {
         let sizeKey = "\(prefix).\(key).iconSize"
         let magSizeKey = "\(prefix).\(key).magnificationSize"
 
-        // Old format stored integers > 1. New format stores 0.0–1.0.
-        // If value > 1.0, it's old pixel format — convert to scale.
-        if let sizeVal = defaults.object(forKey: sizeKey) as? Double, sizeVal > 1.0 {
-            defaults.set(DockConfiguration.pixelsToScale(Int(sizeVal)), forKey: sizeKey)
-        } else if let sizeVal = defaults.object(forKey: sizeKey) as? Int, sizeVal > 1 {
-            defaults.set(DockConfiguration.pixelsToScale(sizeVal), forKey: sizeKey)
-        }
-
-        if let magVal = defaults.object(forKey: magSizeKey) as? Double, magVal > 1.0 {
-            defaults.set(DockConfiguration.pixelsToScale(Int(magVal)), forKey: magSizeKey)
-        } else if let magVal = defaults.object(forKey: magSizeKey) as? Int, magVal > 1 {
-            defaults.set(DockConfiguration.pixelsToScale(magVal), forKey: magSizeKey)
+        // Old format stored pixels (16–128). New format stores a 0.0–1.0 scale, so
+        // anything above 1 is still in the old units and needs converting.
+        //
+        // Reading as `Double` covers both spellings: UserDefaults keeps numbers as
+        // `NSNumber`, which bridges to `Double` whether the value was written as an
+        // integer or not. A separate `as? Int` branch used to sit here and could
+        // never run.
+        for key in [sizeKey, magSizeKey] {
+            guard let pixels = defaults.object(forKey: key) as? Double, pixels > 1.0 else {
+                continue
+            }
+            defaults.set(DockConfiguration.pixelsToScale(Int(pixels)), forKey: key)
         }
     }
 

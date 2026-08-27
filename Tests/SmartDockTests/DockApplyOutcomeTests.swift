@@ -1,4 +1,4 @@
-import XCTest
+import Testing
 
 @testable import SmartDockCore
 
@@ -6,7 +6,8 @@ import XCTest
 ///
 /// AppleScript returns success as soon as the script runs, so without this the app
 /// cannot tell an applied setting from one System Events quietly dropped.
-final class DockApplyOutcomeTests: XCTestCase {
+@Suite("Apply outcome")
+struct DockApplyOutcomeTests {
 
     // MARK: - Helpers
 
@@ -27,26 +28,26 @@ final class DockApplyOutcomeTests: XCTestCase {
 
     // MARK: - Everything Landed
 
-    func testOutcomeIsCompleteWhenTheDockMatchesWhatWasAsked() {
+    @Test func outcomeIsCompleteWhenTheDockMatchesWhatWasAsked() {
         let target = config(autohide: true, position: .left)
 
         let outcome = DockApplyOutcome.verifying(
             target, against: target, requested: [.position, .autohide])
 
-        XCTAssertTrue(outcome.isComplete)
-        XCTAssertTrue(outcome.rejected.isEmpty)
+        #expect(outcome.isComplete)
+        #expect(outcome.rejected.isEmpty)
     }
 
-    func testNoWorkNeededIsComplete() {
-        XCTAssertTrue(DockApplyOutcome.noWorkNeeded.isComplete)
-        XCTAssertEqual(DockApplyOutcome.noWorkNeeded.summary, "nothing to apply")
+    @Test func noWorkNeededIsComplete() {
+        #expect(DockApplyOutcome.noWorkNeeded.isComplete)
+        #expect(DockApplyOutcome.noWorkNeeded.summary == "nothing to apply")
     }
 
     // MARK: - Silent Refusal
 
     /// The failure this whole check exists for: the script ran, reported success,
     /// and the setting is simply not there afterwards.
-    func testAPropertyTheDockIgnoredIsReported() {
+    @Test func aPropertyTheDockIgnoredIsReported() {
         let target = config(autohide: true, position: .left)
         // Position landed, autohide did not.
         let actual = config(autohide: false, position: .left)
@@ -54,18 +55,18 @@ final class DockApplyOutcomeTests: XCTestCase {
         let outcome = DockApplyOutcome.verifying(
             target, against: actual, requested: [.position, .autohide])
 
-        XCTAssertFalse(outcome.isComplete)
-        XCTAssertEqual(outcome.rejected, [.autohide])
+        #expect(!outcome.isComplete)
+        #expect(outcome.rejected == [.autohide])
     }
 
-    func testSeveralIgnoredPropertiesAreAllReported() {
+    @Test func severalIgnoredPropertiesAreAllReported() {
         let target = config(autohide: true, position: .left, iconSize: Self.px64)
         let actual = config(autohide: false, position: .bottom, iconSize: Self.px48)
 
         let outcome = DockApplyOutcome.verifying(
             target, against: actual, requested: [.position, .autohide, .iconSize])
 
-        XCTAssertEqual(outcome.rejected, [.position, .autohide, .iconSize])
+        #expect(outcome.rejected == [.position, .autohide, .iconSize])
     }
 
     // MARK: - Not Our Fault
@@ -73,7 +74,7 @@ final class DockApplyOutcomeTests: XCTestCase {
     /// Someone can change the Dock in System Settings between the push and the
     /// read. That difference is real, but it is not something this apply failed at,
     /// and reporting it would send a bug hunt in the wrong direction.
-    func testAPropertyWeNeverAskedForIsNotBlamedOnUs() {
+    @Test func aPropertyWeNeverAskedForIsNotBlamedOnUs() {
         let target = config(autohide: true, position: .left)
         // Autohide landed; position was changed by someone else afterwards.
         let actual = config(autohide: true, position: .right)
@@ -81,57 +82,55 @@ final class DockApplyOutcomeTests: XCTestCase {
         let outcome = DockApplyOutcome.verifying(
             target, against: actual, requested: [.autohide])
 
-        XCTAssertTrue(outcome.isComplete, "Only requested properties may be reported as rejected")
-        XCTAssertTrue(outcome.rejected.isEmpty)
+        #expect(outcome.isComplete, "Only requested properties may be reported as rejected")
+        #expect(outcome.rejected.isEmpty)
     }
 
     /// Rejections are a subset of what was requested — always, by construction.
-    func testRejectedIsAlwaysASubsetOfRequested() {
+    @Test(arguments: [[DockProperty.autohide], [.position], [.position, .iconSize], []])
+    func rejectedIsAlwaysASubsetOfRequested(requested: [DockProperty]) {
         let target = config(autohide: true, position: .left, iconSize: Self.px64)
         let actual = config(autohide: false, position: .bottom, iconSize: Self.px48)
 
-        for requested in [[DockProperty.autohide], [.position], [.position, .iconSize], []] {
-            let outcome = DockApplyOutcome.verifying(target, against: actual, requested: requested)
-            XCTAssertTrue(
-                Set(outcome.rejected).isSubset(of: Set(requested)),
-                "rejected \(outcome.rejected) escaped requested \(requested)")
-        }
+        let outcome = DockApplyOutcome.verifying(target, against: actual, requested: requested)
+
+        #expect(
+            Set(outcome.rejected).isSubset(of: Set(requested)),
+            "rejected \(outcome.rejected) escaped requested \(requested)")
     }
 
     // MARK: - Tolerance
 
     /// Sizes round-trip through integer pixels, so a verified size never comes back
     /// bit-identical. Without the shared tolerance every apply would look refused.
-    func testSubPixelDriftDoesNotCountAsRefusal() {
+    @Test func subPixelDriftDoesNotCountAsRefusal() {
         let target = config(iconSize: DockConfiguration.pixelsToScale(48))
         let actual = config(iconSize: DockConfiguration.pixelsToScale(49))
 
         let outcome = DockApplyOutcome.verifying(target, against: actual, requested: [.iconSize])
 
-        XCTAssertTrue(outcome.isComplete, "1px of rounding is not a refusal")
+        #expect(outcome.isComplete, "1px of rounding is not a refusal")
     }
 
     // MARK: - Summary
 
-    func testSummaryNamesWhatWasIgnored() {
-        let target = config(autohide: true)
-        let actual = config(autohide: false)
-
+    @Test func summaryNamesWhatWasIgnored() {
         let summary = DockApplyOutcome.verifying(
-            target, against: actual, requested: [.autohide]
+            config(autohide: true), against: config(autohide: false), requested: [.autohide]
         ).summary
 
-        XCTAssertTrue(summary.contains("ignored"), summary)
-        XCTAssertTrue(summary.contains("autohide"), summary)
+        #expect(summary.contains("ignored"), "\(summary)")
+        #expect(summary.contains("autohide"), "\(summary)")
     }
 
-    func testSummaryOfASuccessfulApplyNamesWhatChanged() {
+    @Test func summaryOfASuccessfulApplyNamesWhatChanged() {
         let target = config(position: .left)
+
         let summary = DockApplyOutcome.verifying(
             target, against: target, requested: [.position]
         ).summary
 
-        XCTAssertTrue(summary.contains("applied"), summary)
-        XCTAssertTrue(summary.contains("position"), summary)
+        #expect(summary.contains("applied"), "\(summary)")
+        #expect(summary.contains("position"), "\(summary)")
     }
 }

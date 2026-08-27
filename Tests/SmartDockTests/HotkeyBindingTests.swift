@@ -1,10 +1,11 @@
 import AppKit
-import XCTest
+import Testing
 
 @testable import SmartDockCore
 
+@Suite("Hotkey bindings")
 @MainActor
-final class HotkeyBindingTests: XCTestCase {
+struct HotkeyBindingTests {
 
     // MARK: - Helpers
 
@@ -22,135 +23,138 @@ final class HotkeyBindingTests: XCTestCase {
 
     // MARK: - Normalisation
 
-    func testNormalizeKeepsRelevantModifiers() {
+    @Test func normalizeKeepsRelevantModifiers() {
         let flags: NSEvent.ModifierFlags = [.command, .option, .control, .shift]
-        XCTAssertEqual(HotkeyBinding.normalize(flags), flags.rawValue)
+
+        #expect(HotkeyBinding.normalize(flags) == flags.rawValue)
     }
 
-    func testNormalizeStripsCapsLock() {
-        let normalized = HotkeyBinding.normalize([.command, .capsLock])
-        XCTAssertEqual(
-            normalized, NSEvent.ModifierFlags.command.rawValue,
+    @Test func normalizeStripsCapsLock() {
+        #expect(
+            HotkeyBinding.normalize([.command, .capsLock]) == NSEvent.ModifierFlags.command.rawValue,
             "CapsLock must not survive normalisation")
     }
 
-    func testNormalizeStripsFunctionAndNumericPad() {
-        let normalized = HotkeyBinding.normalize([.command, .function, .numericPad])
-        XCTAssertEqual(
-            normalized, NSEvent.ModifierFlags.command.rawValue,
+    @Test func normalizeStripsFunctionAndNumericPad() {
+        #expect(
+            HotkeyBinding.normalize([.command, .function, .numericPad])
+                == NSEvent.ModifierFlags.command.rawValue,
             "Fn and numeric-pad ride along on ordinary events and must be dropped")
     }
 
-    func testNormalizeOfNoModifiersIsEmpty() {
-        XCTAssertEqual(HotkeyBinding.normalize([]), 0)
+    @Test func normalizeOfNoModifiersIsEmpty() {
+        #expect(HotkeyBinding.normalize([]) == 0)
     }
 
     // MARK: - Matching
 
-    func testMatchesExactCombination() {
+    @Test func matchesExactCombination() {
         let hotkey = binding(modifiers: [.command, .shift])
-        XCTAssertTrue(hotkey.matches(keyCode: 4, modifiers: [.command, .shift]))
+
+        #expect(hotkey.matches(keyCode: 4, modifiers: [.command, .shift]))
     }
 
-    func testDoesNotMatchDifferentKeyCode() {
+    @Test func doesNotMatchDifferentKeyCode() {
         let hotkey = binding(modifiers: [.command])
-        XCTAssertFalse(hotkey.matches(keyCode: 5, modifiers: [.command]))
+
+        #expect(!hotkey.matches(keyCode: 5, modifiers: [.command]))
     }
 
-    func testDoesNotMatchDifferentModifiers() {
+    @Test func doesNotMatchDifferentModifiers() {
         let hotkey = binding(modifiers: [.command])
-        XCTAssertFalse(hotkey.matches(keyCode: 4, modifiers: [.control]))
+
+        #expect(!hotkey.matches(keyCode: 4, modifiers: [.control]))
     }
 
-    func testDoesNotMatchWhenExtraRelevantModifierPressed() {
+    @Test func doesNotMatchWhenExtraRelevantModifierPressed() {
         let hotkey = binding(modifiers: [.command])
-        XCTAssertFalse(
-            hotkey.matches(keyCode: 4, modifiers: [.command, .shift]),
-            "⌘H must not fire on ⇧⌘H")
+
+        #expect(!hotkey.matches(keyCode: 4, modifiers: [.command, .shift]), "⌘H must not fire on ⇧⌘H")
     }
 
     /// Regression guard: a hotkey recorded without CapsLock previously stopped
     /// matching once CapsLock was engaged, because the raw flags were compared.
-    func testMatchesWhileCapsLockIsOn() {
+    @Test func matchesWhileCapsLockIsOn() {
         let hotkey = binding(modifiers: [.command, .option])
-        XCTAssertTrue(hotkey.matches(keyCode: 4, modifiers: [.command, .option, .capsLock]))
+
+        #expect(hotkey.matches(keyCode: 4, modifiers: [.command, .option, .capsLock]))
     }
 
-    func testMatchesWhileFunctionKeyFlagIsSet() {
+    @Test func matchesWhileFunctionKeyFlagIsSet() {
         let hotkey = binding(modifiers: [.control])
-        XCTAssertTrue(hotkey.matches(keyCode: 4, modifiers: [.control, .function]))
+
+        #expect(hotkey.matches(keyCode: 4, modifiers: [.control, .function]))
     }
 
     /// The contract that keeps `HotkeyRecorder` and `HotkeyManager` in step:
     /// whatever flags recording stores must match the very event that produced them.
-    func testRecordedBindingMatchesTheEventItWasRecordedFrom() {
+    @Test func recordedBindingMatchesTheEventItWasRecordedFrom() {
         let rawFlags: NSEvent.ModifierFlags = [.command, .shift, .capsLock, .function]
         let recorded = binding(modifiers: rawFlags)
-        XCTAssertTrue(recorded.matches(keyCode: 4, modifiers: rawFlags))
+
+        #expect(recorded.matches(keyCode: 4, modifiers: rawFlags))
     }
 
     // MARK: - Required Modifier
 
-    func testShiftAloneIsNotEnoughToBind() {
-        XCTAssertFalse(
-            HotkeyBinding.hasRequiredModifier([.shift]),
+    @Test func shiftAloneIsNotEnoughToBind() {
+        #expect(
+            !HotkeyBinding.hasRequiredModifier([.shift]),
             "⇧+letter would swallow ordinary typing")
     }
 
-    func testNoModifierIsNotEnoughToBind() {
-        XCTAssertFalse(HotkeyBinding.hasRequiredModifier([]))
+    @Test(arguments: [NSEvent.ModifierFlags([]), [.capsLock]])
+    func weakModifiersAreNotEnoughToBind(flags: NSEvent.ModifierFlags) {
+        #expect(!HotkeyBinding.hasRequiredModifier(flags))
     }
 
-    func testCapsLockAloneIsNotEnoughToBind() {
-        XCTAssertFalse(HotkeyBinding.hasRequiredModifier([.capsLock]))
-    }
-
-    func testCommandOptionOrControlIsEnoughToBind() {
-        XCTAssertTrue(HotkeyBinding.hasRequiredModifier([.command]))
-        XCTAssertTrue(HotkeyBinding.hasRequiredModifier([.option]))
-        XCTAssertTrue(HotkeyBinding.hasRequiredModifier([.control]))
-        XCTAssertTrue(HotkeyBinding.hasRequiredModifier([.shift, .command]))
+    @Test(arguments: [
+        NSEvent.ModifierFlags.command, .option, .control, [.shift, .command],
+    ])
+    func commandOptionOrControlIsEnoughToBind(flags: NSEvent.ModifierFlags) {
+        #expect(HotkeyBinding.hasRequiredModifier(flags))
     }
 
     // MARK: - Display
 
-    func testDisplayStringUsesStandardModifierOrder() {
+    @Test func displayStringUsesStandardModifierOrder() {
         let hotkey = binding(modifiers: [.command, .shift, .option, .control])
-        XCTAssertEqual(hotkey.displayString, "⌃⌥⇧⌘H")
+
+        #expect(hotkey.displayString == "⌃⌥⇧⌘H")
     }
 
-    func testDisplayStringWithSingleModifier() {
-        XCTAssertEqual(binding(modifiers: [.command]).displayString, "⌘H")
-        XCTAssertEqual(binding(modifiers: [.control]).displayString, "⌃H")
+    @Test func displayStringWithSingleModifier() {
+        #expect(binding(modifiers: [.command]).displayString == "⌘H")
+        #expect(binding(modifiers: [.control]).displayString == "⌃H")
     }
 
-    func testDisplayStringOmitsStrippedModifiers() {
+    @Test func displayStringOmitsStrippedModifiers() {
         let hotkey = binding(modifiers: [.command, .capsLock, .function])
-        XCTAssertEqual(hotkey.displayString, "⌘H")
+
+        #expect(hotkey.displayString == "⌘H")
     }
 
-    func testDisplayStringUsesRecordedKeyName() {
-        let hotkey = binding(modifiers: [.command], displayName: "R")
-        XCTAssertEqual(hotkey.displayString, "⌘R")
+    @Test func displayStringUsesRecordedKeyName() {
+        #expect(binding(modifiers: [.command], displayName: "R").displayString == "⌘R")
     }
 
     // MARK: - Persistence Round-Trip
 
-    func testHotkeySurvivesSaveAndLoad() {
-        let prefs = UserPreferences.shared
+    @Test func hotkeySurvivesSaveAndLoad() {
+        let scratch = ScratchPreferences()
         let original = binding(modifiers: [.command, .option], displayName: "K")
 
-        prefs.setHotkey(original, for: "testAction")
-        defer { prefs.setHotkey(nil, for: "testAction") }
+        scratch.prefs.setHotkey(original, for: "testAction")
 
-        XCTAssertEqual(prefs.hotkey(for: "testAction"), original)
+        #expect(scratch.prefs.hotkey(for: "testAction") == original)
     }
 
-    func testClearingHotkeyRemovesIt() {
-        let prefs = UserPreferences.shared
-        prefs.setHotkey(binding(modifiers: [.command]), for: "testAction")
-        prefs.setHotkey(nil, for: "testAction")
+    @Test func clearingHotkeyRemovesIt() {
+        let scratch = ScratchPreferences()
+        scratch.prefs.setHotkey(binding(modifiers: [.command]), for: "testAction")
 
-        XCTAssertNil(prefs.hotkey(for: "testAction"))
+        scratch.prefs.setHotkey(nil, for: "testAction")
+
+        #expect(scratch.prefs.hotkey(for: "testAction") == nil)
     }
 }
