@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.1] — 2026-08-28
+
+### Fixed
+- The menu bar no longer claims a state the Dock does not have. `currentConfig` — which
+  drives the menu bar icon and its tooltip — was recorded optimistically when a profile
+  was applied. That is deliberate for the moment right after a change, when the Dock
+  passes through transient states, but a **refused** setting is not transient: the icon
+  went on showing a hidden Dock while the Dock sat in plain view. The verification pass
+  already establishes what actually landed, so it now reconciles the reported state too.
+  The stored profile is left alone — the user still wants auto-hide, macOS simply would
+  not do it at that moment.
+
+### Added
+- README documents that macOS refuses to change auto-hide while an app is fullscreen,
+  now that this is measured rather than suspected: with nothing fullscreen the setting
+  is verified as applied; with a fullscreen app it is verified as refused, on the same
+  machine seconds apart.
+
 ## [2.4.0] — 2026-08-27
 
 ### Changed
@@ -47,15 +65,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   run. It read the stored value as `Int` when the `Double` cast failed, but
   UserDefaults keeps numbers as `NSNumber`, which bridges to `Double` whichever way
   the value was written — so the fallback was unreachable.
+- `LogExport.defaultFileName` reads date fields directly instead of unwrapping an
+  optional `DateComponents`. The five `?? 0` fallbacks it needed could not be reached
+  for a real date, and would have produced `SmartDock-log-0000-00-00-0000.txt` if they
+  ever were.
 
 Coverage across `SmartDockCore` finished at 98% of lines, with nine of twelve files
 complete. What remains is the AppleScript call into live System Events and the branch
 that runs only if CoreGraphics refuses to register a callback — neither reachable
 without driving the real system.
-- `LogExport.defaultFileName` reads date fields directly instead of unwrapping an
-  optional `DateComponents`. The five `?? 0` fallbacks it needed could not be reached
-  for a real date, and would have produced `SmartDock-log-0000-00-00-0000.txt` if they
-  ever were.
 
 ### Fixed
 - A stopped `DisplayMonitor` no longer reports display changes. `handleWake` had always

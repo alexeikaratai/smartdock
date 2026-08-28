@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.4.0-blue?style=flat-square" alt="Version 2.4.0"/>
+  <img src="https://img.shields.io/badge/version-2.4.1-blue?style=flat-square" alt="Version 2.4.1"/>
   <img src="https://img.shields.io/badge/macOS-14.0%2B-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS 14+"/>
   <img src="https://img.shields.io/badge/Swift-6.2-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 6.2"/>
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License"/>
@@ -26,7 +26,7 @@ SmartDock lives in your menu bar and automatically switches Dock configuration w
 | 🖥️ | **Two-mode Dock profiles** | Separate settings for external monitor vs. built-in display |
 | 📍 | **Position control** | Bottom, Left, or Right — per mode |
 | 📐 | **Icon size & magnification** | Independent size sliders for each mode |
-| 👁️ | **Autohide toggle** | Show/hide Dock per mode |
+| 👁️ | **Autohide toggle** | Show/hide Dock per mode — [except while an app is fullscreen](#-known-limitations) |
 | ⚡ | **Instant detection** | Event-driven via `CGDisplayRegisterReconfigurationCallback` — no polling |
 | 🔄 | **System sync** | Auto-imports Dock changes from System Settings via KVO |
 | 🔔 | **Notifications** | macOS banner when profile switches (optional) |
@@ -174,6 +174,29 @@ Sources/
 | **One command path** | Hotkeys, `smartdock://` URLs and AppleScript all reach `HotkeyManager.perform` — three front doors, one implementation |
 | **Hotkey caching** | Bindings cached in memory — no UserDefaults reads on every keystroke |
 | **Wake recovery** | Re-applies config after sleep/wake to fix macOS resetting dock state |
+
+## ⚠️ Known Limitations
+
+**Auto-hide does not change while an app is in fullscreen.** macOS declines the
+request — the script runs, reports success, and the Dock stays as it was. Everything
+else (position, icon size, magnification) applies normally, and auto-hide applies as
+soon as nothing is fullscreen.
+
+SmartDock detects this rather than assuming: it reads the Dock back after every change
+and records what actually landed. If a setting was refused you will see it in
+**Settings → About → Copy Diagnostic Info**:
+
+```
+- Last apply: Dock ignored autohide (requested autohide) ⚠️
+```
+
+and in the log:
+
+```
+Dock ignored autohide — AppleScript reported success but the setting did not land
+```
+
+The menu bar reports what the Dock is really doing, not what was asked for.
 
 ## 🔐 Permissions
 
