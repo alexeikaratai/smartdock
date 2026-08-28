@@ -26,6 +26,7 @@ final class StatusBarController: NSObject {
     // Menu items that are updated dynamically
     private var statusMenuItem: NSMenuItem!
     private var toggleMenuItem: NSMenuItem!
+    private var dockVisibilityMenuItem: NSMenuItem!
 
     // MARK: - Init
 
@@ -93,6 +94,17 @@ final class StatusBarController: NSObject {
         refreshItem.target = self
         refreshItem.image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: nil)
         menu.addItem(refreshItem)
+
+        // Hide/show the Dock. Title and icon follow the Dock's actual state, which
+        // is why they are refreshed in `menuNeedsUpdate` rather than set once.
+        dockVisibilityMenuItem = NSMenuItem(
+            title: dockVisibilityTitle(),
+            action: #selector(toggleDockVisibility),
+            keyEquivalent: "d"
+        )
+        dockVisibilityMenuItem.target = self
+        applyDockVisibilityAppearance()
+        menu.addItem(dockVisibilityMenuItem)
 
         menu.addItem(.separator())
 
@@ -182,6 +194,8 @@ final class StatusBarController: NSObject {
     private func updateUI() {
         statusMenuItem.title = statusText()
         toggleMenuItem.title = service.isEnabled ? "Disable" : "Enable"
+        dockVisibilityMenuItem.title = dockVisibilityTitle()
+        applyDockVisibilityAppearance()
 
         if let button = statusItem.button {
             // Use our saved config, not readSystemConfig() — the system config can
@@ -199,6 +213,25 @@ final class StatusBarController: NSObject {
         let config = service.currentConfig
         let autohide = config.autohide ? "hidden" : "visible"
         return "SmartDock — \(profile)\nDock: \(config.position.displayName), \(autohide)"
+    }
+
+    /// Runs through `HotkeyManager` rather than toggling here, so the menu joins
+    /// the hotkey, `smartdock://` and AppleScript on one execution path instead of
+    /// becoming a fourth implementation of the same action.
+    @objc private func toggleDockVisibility() {
+        hotkeyManager.perform(.toggleAutohide)
+    }
+
+    /// Names what the click will *do*, not what the state is — "Hide Dock" while
+    /// the Dock is visible. A title naming the state reads as a status line and
+    /// leaves people unsure which way the item will move things.
+    private func dockVisibilityTitle() -> String {
+        service.currentConfig.autohide ? "Show Dock" : "Hide Dock"
+    }
+
+    private func applyDockVisibilityAppearance() {
+        let symbol = service.currentConfig.autohide ? "eye" : "eye.slash"
+        dockVisibilityMenuItem.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
     }
 
     private func statusText() -> String {
@@ -270,6 +303,8 @@ extension StatusBarController: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         statusMenuItem.title = statusText()
         toggleMenuItem.title = service.isEnabled ? "Disable" : "Enable"
+        dockVisibilityMenuItem.title = dockVisibilityTitle()
+        applyDockVisibilityAppearance()
     }
 }
 
