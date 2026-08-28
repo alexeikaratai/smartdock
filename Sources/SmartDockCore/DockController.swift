@@ -20,6 +20,10 @@ public protocol DockControlling: AnyObject {
     /// back a moment later. `nil` until the first apply has been verified.
     var lastApplyOutcome: DockApplyOutcome? { get }
 
+    /// Called once an apply has been verified, with the outcome and what the Dock
+    /// actually holds now. Lets callers correct any state they recorded optimistically.
+    var onApplyVerified: ((DockApplyOutcome, DockConfiguration) -> Void)? { get set }
+
     /// Start observing system dock preference changes via KVO.
     func startObservingSystemChanges()
 
@@ -44,6 +48,8 @@ public final class DockController: DockControlling {
     private var lastAppliedConfig: DockConfiguration?
 
     public private(set) var lastApplyOutcome: DockApplyOutcome?
+
+    public var onApplyVerified: ((DockApplyOutcome, DockConfiguration) -> Void)?
 
     private var prefsObserver: DockPrefsObserver?
     private var pendingExternalCheck: DispatchWorkItem?
@@ -170,9 +176,11 @@ public final class DockController: DockControlling {
             guard let self else { return }
             self.pendingVerification = nil
 
+            let actual = self.readSystemConfig()
             let outcome = DockApplyOutcome.verifying(
-                config, against: self.readSystemConfig(), requested: requested)
+                config, against: actual, requested: requested)
             self.lastApplyOutcome = outcome
+            self.onApplyVerified?(outcome, actual)
 
             if outcome.isComplete {
                 Log.info("Dock apply verified: \(outcome.summary)")

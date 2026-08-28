@@ -445,3 +445,89 @@ struct SmartDockServiceTests {
             "External change should notify delegate")
     }
 }
+
+// MARK: - Reporting a Refused Apply
+
+/// What the app *says* the Dock is doing, after macOS declined to do it.
+///
+/// `currentConfig` drives the menu bar icon and its tooltip. It is recorded
+/// optimistically on purpose — the Dock passes through transient states, and
+/// reading it back immediately would report noise. But a refusal is permanent, and
+/// without reconciling, the menu bar claims a hidden Dock while the Dock is plainly
+/// on screen. macOS refuses `autohide` outright while a fullscreen space is active,
+/// so this is not hypothetical.
+@Suite("Refused apply reporting")
+@MainActor
+struct RefusedApplyTests {
+
+    @MainActor
+    private struct Fixture {
+        let scratch = ScratchPreferences()
+        let monitor = MockDisplayMonitor()
+        let dock = MockDockController()
+        let delegate = MockServiceDelegate()
+        let service: SmartDockService
+
+        init() {
+            scratch.prefs.externalConfig = DockConfiguration(autohide: true)
+            scratch.prefs.builtinConfig = DockConfiguration(autohide: true)
+            monitor.mockExternalCount = 1
+            service = SmartDockService(
+                displayMonitor: monitor, dockController: dock, prefs: scratch.prefs)
+            service.delegate = delegate
+            service.start()
+        }
+    }
+
+    @Test func refusedSettingIsReportedAsWhatTheDockActuallyHolds() {
+        let f = Fixture()
+        #expect(f.service.currentConfig.autohide, "the profile asked for auto-hide")
+
+        // macOS declined it; the Dock is still visible.
+        f.dock.simulateApplyVerified(
+            DockApplyOutcome(requested: [.autohide], rejected: [.autohide]),
+            actual: DockConfiguration(autohide: false))
+
+        #expect(
+            !f.service.currentConfig.autohide,
+            "Reporting auto-hide would leave the menu bar describing a Dock that is on screen")
+    }
+
+    /// The preference is the user's choice, not a record of what macOS allowed.
+    /// Rewriting it would silently discard their setting because a fullscreen app
+    /// happened to be open.
+    @Test func aRefusalDoesNotRewriteTheStoredProfile() {
+        let f = Fixture()
+
+        f.dock.simulateApplyVerified(
+            DockApplyOutcome(requested: [.autohide], rejected: [.autohide]),
+            actual: DockConfiguration(autohide: false))
+
+        #expect(f.scratch.prefs.externalConfig.autohide, "The user still wants auto-hide")
+    }
+
+    /// The menu bar redraws on this notification; without it the corrected state
+    /// would sit in memory while the icon kept showing the old one.
+    @Test func aRefusalNotifiesObservers() {
+        let f = Fixture()
+        let before = f.delegate.stateUpdates.count
+
+        f.dock.simulateApplyVerified(
+            DockApplyOutcome(requested: [.autohide], rejected: [.autohide]),
+            actual: DockConfiguration(autohide: false))
+
+        #expect(f.delegate.stateUpdates.count == before + 1)
+    }
+
+    @Test func anAcceptedApplyChangesNothing() {
+        let f = Fixture()
+        let before = f.delegate.stateUpdates.count
+
+        f.dock.simulateApplyVerified(
+            DockApplyOutcome(requested: [.autohide], rejected: []),
+            actual: DockConfiguration(autohide: true))
+
+        #expect(f.service.currentConfig.autohide)
+        #expect(f.delegate.stateUpdates.count == before, "Nothing to report when it worked")
+    }
+}

@@ -49,6 +49,15 @@ final class MockDockController: DockControlling {
 
     private(set) var lastApplyOutcome: DockApplyOutcome?
 
+    var onApplyVerified: ((DockApplyOutcome, DockConfiguration) -> Void)?
+
+    /// Reports a verification result, the way the real controller does a second
+    /// after applying.
+    func simulateApplyVerified(_ outcome: DockApplyOutcome, actual: DockConfiguration) {
+        lastApplyOutcome = outcome
+        onApplyVerified?(outcome, actual)
+    }
+
     /// Properties the mock should pretend the Dock silently refused, so tests can
     /// reproduce the case where AppleScript succeeds but nothing changes.
     var mockRejectedProperties: [DockProperty] = []

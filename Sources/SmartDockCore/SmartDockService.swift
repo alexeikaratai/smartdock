@@ -66,6 +66,10 @@ public final class SmartDockService {
         self.dockController.onExternalConfigChanged = { [weak self] config in
             self?.handleExternalDockChange(config)
         }
+
+        self.dockController.onApplyVerified = { [weak self] outcome, actual in
+            self?.handleApplyVerified(outcome, actual: actual)
+        }
     }
 
     // MARK: - Public
@@ -123,6 +127,27 @@ public final class SmartDockService {
     }
 
     // MARK: - Private
+
+    /// Brings the reported state back in line when the Dock did not honour an apply.
+    ///
+    /// `currentConfig` is recorded optimistically — deliberately so, because the Dock
+    /// passes through transient states and reading it back immediately would report
+    /// noise. A *refused* setting is not transient, though: left alone, the menu bar
+    /// goes on showing a hidden Dock while the Dock sits there in plain view.
+    /// Verification runs once that transient window has passed, which makes it the
+    /// right moment to reconcile.
+    ///
+    /// The stored profile is deliberately **not** touched. The user still wants
+    /// auto-hide; macOS just would not do it right now. Rewriting the preference
+    /// would throw their choice away over a temporary refusal — and it would come
+    /// back the next time the profile is applied under conditions that allow it.
+    private func handleApplyVerified(_ outcome: DockApplyOutcome, actual: DockConfiguration) {
+        guard !outcome.isComplete else { return }
+
+        Log.info("Reporting what the Dock actually holds — \(outcome.summary)")
+        currentConfig = actual
+        notifyStateChanged()
+    }
 
     private var isApplying = false
 
