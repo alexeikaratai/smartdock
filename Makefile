@@ -1,11 +1,11 @@
-.PHONY: help build test clean icon app run sign notarize fix install release bump version-check deps outdated doctor actions-check logs format lint coverage
+.PHONY: help build test clean icon app run sign notarize fix install release bump version-check deps outdated doctor actions-check logs format lint coverage appintents appintents-check
 
 .DEFAULT_GOAL := help
 
 # === Config ===
 APP_NAME     := SmartDock
 BUNDLE_ID    := com.smartdock.app
-VERSION      := 2.4.2
+VERSION      := 2.5.0
 BUILD_DIR    := .build/release
 APP_DIR      := build/$(APP_NAME).app
 CONTENTS     := $(APP_DIR)/Contents
@@ -59,13 +59,130 @@ coverage:
 		-instr-profile="$$(dirname $$prof)/default.profdata" \
 		-ignore-filename-regex='.build|Tests/'
 
+# === App Intents Metadata ===
+# Xcode generates Metadata.appintents in an ExtractAppIntentsMetadata build phase.
+# SPM has no equivalent, and without that bundle the intents compile, link, and do
+# nothing at all — Shortcuts.app and Spotlight read it, and only it, to discover
+# what the app can do. So the phase is rebuilt here from the two tools that ship
+# inside Xcode:
+#
+#   1. swiftc -typecheck -emit-const-values  ->  one .swiftconstvalues per source
+#   2. appintentsmetadataprocessor           ->  Metadata.appintents
+#
+# The bundle is generated on every build but reaches the .app only in `sign` —
+# macOS refuses the intent connection to a bundle it cannot validate, so shipping
+# the metadata in an ad-hoc build advertises actions that can never run. Building
+# it here regardless keeps the pipeline and `appintents-check` exercised in CI, so
+# it cannot rot while waiting for a signing certificate.
+#
+# Extraction is typecheck-only: it writes no object files and nothing outside
+# .build, so it neither disturbs `swift build` nor can be replaced by it.
+# `-emit-const-values` and `-const-gather-protocols-file` are both undocumented,
+# which is exactly why `appintents-check` runs afterwards — a toolchain that drops
+# them fails the build instead of shipping an app whose Shortcuts actions silently
+# disappeared.
+#
+# The two -enable-upcoming-feature flags must match `upcomingFeatures` in
+# Package.swift; adding one there and not here fails this step loudly.
+#
+# Two details that are easy to get wrong and silently produce an empty bundle:
+#   - The toolchain ships the protocol list as {version, constValueProtocols} but
+#     the compiler wants the bare array, hence `plutil -extract`. Reading the
+#     toolchain copy rather than pinning our own means a future Xcode that adds a
+#     protocol is picked up for free.
+#   - Const values are emitted per source file, so the driver needs an output file
+#     map naming each one. Its keys must be absolute paths that match exactly what
+#     swiftc is handed, or the map is ignored without a word of warning.
+
+APPINTENTS_DIR  := .build/appintents
+APPINTENTS_CV   := $(APPINTENTS_DIR)/const-values
+APPINTENTS_META := $(APPINTENTS_DIR)/Metadata.appintents
+APPINTENTS_SRC  := Sources/$(APP_NAME)/AppIntentsSupport.swift
+DEPLOY_TARGET   := 14.0
+
+appintents: build
+	@echo "🧩 Extracting App Intents metadata..."
+	@rm -rf $(APPINTENTS_DIR)
+	@mkdir -p $(APPINTENTS_CV)
+	@toolchain=$$(xcrun --find swiftc | sed 's|/usr/bin/swiftc$$||'); \
+	sdk=$$(xcrun --show-sdk-path --sdk macosx); \
+	triple=$$(uname -m)-apple-macos$(DEPLOY_TARGET); \
+	cv=$(CURDIR)/$(APPINTENTS_CV); \
+	plutil -extract constValueProtocols json -o $(APPINTENTS_DIR)/protocols.json \
+		"$$toolchain/usr/share/swift/SwiftConstantValues/AppIntents.json"; \
+	find $(CURDIR)/Sources/$(APP_NAME) -name '*.swift' | sort > $(APPINTENTS_DIR)/sources.txt; \
+	awk -v dir="$$cv" \
+		'{ n=$$0; sub(/.*\//,"",n); sub(/\.swift$$/,"",n); \
+		   printf "%s\"%s\":{\"const-values\":\"%s/%s.swiftconstvalues\"}", (NR>1?",":"{"), $$0, dir, n } \
+		 END { print "}" }' \
+		$(APPINTENTS_DIR)/sources.txt > $(APPINTENTS_DIR)/output-file-map.json; \
+	awk -v dir="$$cv" \
+		'{ n=$$0; sub(/.*\//,"",n); sub(/\.swift$$/,"",n); print dir "/" n ".swiftconstvalues" }' \
+		$(APPINTENTS_DIR)/sources.txt > $(APPINTENTS_DIR)/const-values.txt; \
+	swiftc -typecheck -emit-const-values $$(cat $(APPINTENTS_DIR)/sources.txt) \
+		-module-name $(APP_NAME) -swift-version 6 \
+		-enable-upcoming-feature ExistentialAny \
+		-enable-upcoming-feature MemberImportVisibility \
+		-target "$$triple" -sdk "$$sdk" -I $(BUILD_DIR)/Modules \
+		-output-file-map $(APPINTENTS_DIR)/output-file-map.json \
+		-Xfrontend -const-gather-protocols-file \
+		-Xfrontend $(CURDIR)/$(APPINTENTS_DIR)/protocols.json; \
+	"$$toolchain/usr/bin/appintentsmetadataprocessor" \
+		--output $(APPINTENTS_DIR) \
+		--toolchain-dir "$$toolchain" \
+		--module-name $(APP_NAME) \
+		--sdk-root "$$sdk" \
+		--xcode-version "$$(xcodebuild -version | tail -1 | awk '{print $$NF}')" \
+		--platform-family macOS \
+		--deployment-target $(DEPLOY_TARGET) \
+		--target-triple "$$triple" \
+		--source-file-list $(APPINTENTS_DIR)/sources.txt \
+		--swift-const-vals-list $(APPINTENTS_DIR)/const-values.txt \
+		--force --quiet-warnings
+	@$(MAKE) --no-print-directory appintents-check
+
+# Verify the generated metadata against the source of truth: every intent declared
+# in AppIntentsSupport.swift must appear in the bundle. Catches both a processor
+# that silently produced nothing and an intent the extraction failed to see.
+appintents-check:
+	@echo "🔎 App Intents metadata:"
+	@data=$(APPINTENTS_META)/extract.actionsdata; \
+	if [ ! -f "$$data" ]; then \
+		echo "  ❌ Metadata.appintents was not generated"; exit 1; \
+	fi; \
+	intents=$$(grep -oE '^struct [A-Za-z]+Intent: AppIntent' $(APPINTENTS_SRC) \
+		| awk '{print $$2}' | tr -d ':'); \
+	if [ -z "$$intents" ]; then \
+		echo "  ❌ No intents found in $(APPINTENTS_SRC)"; exit 1; \
+	fi; \
+	fail=0; \
+	for intent in $$intents; do \
+		if grep -q "\"$$intent\"" "$$data"; then \
+			printf "  ✅ %s\n" "$$intent"; \
+		else \
+			printf "  ❌ %s missing from metadata\n" "$$intent"; \
+			fail=1; \
+		fi; \
+	done; \
+	shortcuts=$$(grep -c 'AppShortcut(' $(APPINTENTS_SRC)); \
+	if grep -q '"autoShortcuts":\[\]' "$$data" || ! grep -q 'phraseTemplates' "$$data"; then \
+		printf "  ❌ %s App Shortcuts declared but none reached Spotlight\n" "$$shortcuts"; \
+		fail=1; \
+	else \
+		printf "  ✅ %s App Shortcut(s) with Spotlight phrases\n" "$$shortcuts"; \
+	fi; \
+	if [ $$fail -eq 1 ]; then \
+		echo "❌ App Intents metadata is incomplete"; \
+		exit 1; \
+	fi
+
 # === App Bundle ===
 
 icon:
 	@echo "🎨 Generating app icon..."
 	cd $(CURDIR) && swift scripts/generate-icon.swift
 
-app: build icon
+app: build icon appintents
 	@echo "📦 Creating $(APP_NAME).app bundle..."
 	@rm -rf $(APP_DIR)
 	@mkdir -p $(MACOS_DIR)
@@ -79,6 +196,13 @@ app: build icon
 	@# Scripting dictionary — the path in Info.plist's OSAScriptingDefinition is
 	@# resolved relative to Contents/Resources, so the name must not change.
 	cp Resources/$(APP_NAME).sdef $(RESOURCES)/$(APP_NAME).sdef
+	@# App Intents metadata is deliberately NOT copied here — see `sign`.
+	@# An ad-hoc signed bundle is rejected by Gatekeeper and has no Team ID, and
+	@# `linkd` refuses the intent connection from such a process outright:
+	@#   Rejecting invalid client due to requiresValidatedBundle
+	@# The actions would still be listed in Spotlight and Shortcuts, and every one
+	@# of them would fail with "couldn't communicate with the app" — worse for a
+	@# user than not offering them at all. So they ship only with a real signature.
 	@if [ -f Resources/AppIcon.icns ]; then \
 		cp Resources/AppIcon.icns $(RESOURCES)/AppIcon.icns; \
 	fi
@@ -92,6 +216,7 @@ app: build icon
 
 	@echo "✅ $(APP_DIR) created (ad-hoc signed)"
 	@echo "   Run: open $(APP_DIR)"
+	@echo "   ℹ️  Shortcuts/Spotlight actions omitted — they need a Developer ID (make sign)"
 
 # === Run ===
 
@@ -103,6 +228,11 @@ run: app
 
 sign: app
 	@echo "🔐 Signing with: $(SIGN_ID)"
+	@# The App Intents metadata joins the bundle here and nowhere else. Shortcuts
+	@# and Spotlight discover the actions from it, but macOS only opens the intent
+	@# connection to a bundle it can validate — so the metadata is meaningful only
+	@# in a Developer ID build, and must be in place before codesign seals it.
+	cp -R $(APPINTENTS_META) $(RESOURCES)/Metadata.appintents
 	codesign --force --deep --timestamp \
 		--options runtime \
 		--entitlements Resources/SmartDock.entitlements \
@@ -110,6 +240,14 @@ sign: app
 		$(APP_DIR)
 	@echo "✅ Signed. Verify:"
 	codesign --verify --verbose $(APP_DIR)
+	@# A signed build that Gatekeeper still rejects would list the actions and fail
+	@# every one of them, so say so plainly rather than let it ship quietly.
+	@if spctl -a -vv $(APP_DIR) >/dev/null 2>&1; then \
+		echo "✅ Gatekeeper accepts the bundle — Shortcuts actions will work"; \
+	else \
+		echo "⚠️  Gatekeeper rejects the bundle — Shortcuts actions will NOT work"; \
+		echo "    (notarize it: make notarize)"; \
+	fi
 
 # === Notarization (for distribution outside App Store) ===
 
@@ -235,6 +373,7 @@ clean:
 	@echo "🧹 Cleaning..."
 	swift package clean
 	rm -rf build/
+	rm -rf $(APPINTENTS_DIR)
 	rm -f Resources/AppIcon.icns
 
 # === Help ===
@@ -254,6 +393,10 @@ help:
 	@echo "    make format        Reformat Swift sources in place (swift-format)"
 	@echo "    make lint          Check formatting without writing — CI gates on this"
 	@echo "    make coverage      Run tests and print a per-file coverage table"
+	@echo ""
+	@echo "  Shortcuts & Spotlight:"
+	@echo "    make appintents       Generate App Intents metadata (part of make app)"
+	@echo "    make appintents-check Verify every declared intent reached the bundle"
 	@echo ""
 	@echo "  Install:"
 	@echo "    make install       Copy .app to /Applications"

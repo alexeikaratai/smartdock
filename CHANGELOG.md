@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] — 2026-08-29
+
+## [2.5.1] — 2026-08-29
+
+## [2.5.00] — 2026-08-29
+
+## [2.4.3] — 2026-08-29
+
+### Added
+- **App Intents for Shortcuts and Spotlight — built, and deliberately not shipped yet.**
+  Four native actions — Refresh Dock, Switch Dock Profile, Toggle Dock Auto-Hide and Open
+  SmartDock Settings — with the profile as a real parameter, plus five App Shortcuts with
+  Spotlight phrases. They are **left out of the released bundle on purpose**: macOS opens
+  the intent connection only to a bundle it can validate, and SmartDock is ad-hoc signed,
+  so `linkd` rejects the process at launch (`Rejecting invalid client due to
+  requiresValidatedBundle`) and every action fails with "couldn't communicate with the
+  app". Shipping them would advertise commands that can never run. `make app` generates
+  and verifies the metadata; `make sign` is what puts it in the bundle. The feature turns
+  on by itself the day a Developer ID certificate exists — nothing else to write.
+- Intents route through `AppDelegate.performCommand`, the same path as hotkeys, URLs and
+  AppleScript, so Shortcuts is a fourth front door rather than a fourth implementation.
+  `ShortcutCoverage` makes that structural: adding a case to `URLCommand` fails the build
+  until an intent carries it.
+- `make appintents` rebuilds the App Intents metadata that Xcode would normally generate in
+  a build phase SPM does not have, and `make appintents-check` verifies every declared
+  intent reached the bundle. Both run as part of `make app`, which CI already exercises —
+  without them the intents compile, link and are invisible to Shortcuts.
+
 ## [2.4.2] — 2026-08-28
 
 ## [2.4.1] — 2026-08-28
