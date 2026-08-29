@@ -81,8 +81,14 @@ jobs:
         run: swift build -c release
 
       # Exercises the parts `swift build` never touches: icon generation,
-      # entitlements and ad-hoc codesigning. Without this they are only ever
-      # run at release time, so a break surfaces mid-release instead of on the PR.
+      # App Intents metadata, entitlements and ad-hoc codesigning. Without this
+      # they are only ever run at release time, so a break surfaces mid-release
+      # instead of on the PR.
+      #
+      # The App Intents step matters most here. Its metadata is built from two
+      # undocumented Xcode flags, and if a toolchain drops them the intents still
+      # compile and link — they just vanish from Shortcuts. `make app` runs
+      # `appintents-check`, which turns that into a failed build.
       - name: 📦 Build .app bundle
         run: make app
 

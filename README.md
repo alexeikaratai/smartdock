@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.4.2-blue?style=flat-square" alt="Version 2.4.2"/>
+  <img src="https://img.shields.io/badge/version-2.5.0-blue?style=flat-square" alt="Version 2.5.0"/>
   <img src="https://img.shields.io/badge/macOS-14.0%2B-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS 14+"/>
   <img src="https://img.shields.io/badge/Swift-6.2-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 6.2"/>
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License"/>
@@ -88,6 +88,33 @@ open smartdock://toggle-autohide    # flip auto-hide on the active profile
 open smartdock://settings           # open the Settings window
 ```
 
+### Shortcuts & Spotlight — built, not yet shipped
+
+SmartDock has native App Intents for four actions, one of them parameterised:
+
+| Action | Parameter |
+|---|---|
+| **Refresh Dock** | — |
+| **Switch Dock Profile** | External Monitor / Built-in Display |
+| **Toggle Dock Auto-Hide** | — |
+| **Open SmartDock Settings** | — |
+
+**They are deliberately left out of the released build.** macOS only opens the App
+Intents connection to a bundle it can validate, and SmartDock is ad-hoc signed —
+`linkd` rejects the process outright:
+
+```
+Rejecting invalid client due to requiresValidatedBundle
+```
+
+The actions would still be listed in Spotlight and Shortcuts, and every one of them
+would fail with *"couldn't communicate with the app"* — worse than not offering them.
+So `make app` builds and verifies the metadata but does not put it in the bundle;
+`make sign` does, because that is the Developer ID path.
+
+Until then, use the `smartdock://` URLs above — Shortcuts.app drives them through its
+*Open URL* action, and AppleScript works from a *Run AppleScript* action.
+
 ### AppleScript
 
 SmartDock ships a scripting dictionary — open it in Script Editor with
@@ -109,8 +136,8 @@ From the shell:
 osascript -e 'tell application "SmartDock" to switch to external'
 ```
 
-Hotkeys, URLs and AppleScript all run through one code path, so the three can never
-disagree about what a command does.
+Hotkeys, URLs, AppleScript and Shortcuts all run through one code path, so the four
+can never disagree about what a command does.
 
 ## 🧪 Run Tests
 
@@ -141,6 +168,7 @@ Sources/
 └── SmartDock/                        # AppKit UI layer
     ├── App.swift                     # @main entry, manual NSApplication run loop
     ├── ScriptingSupport.swift        # NSScriptCommand subclasses for the sdef
+    ├── AppIntentsSupport.swift       # App Intents for Shortcuts.app and Spotlight
     ├── StatusBarController.swift     # Menu bar icon & dropdown with SF Symbol icons
     ├── SettingsWindow.swift          # Tabbed glass window (Settings / Shortcuts / About)
     ├── OnboardingWindow.swift        # First-launch welcome screen
@@ -171,7 +199,7 @@ Sources/
 | **Event-driven detection** | `CGDisplayRegisterReconfigurationCallback` — no timers, no polling |
 | **Diff-based apply** | Only runs AppleScript for properties that actually changed — no dock flash |
 | **KVO system sync** | Observes `com.apple.dock` UserDefaults — auto-imports changes from System Settings |
-| **One command path** | Hotkeys, `smartdock://` URLs and AppleScript all reach `HotkeyManager.perform` — three front doors, one implementation |
+| **One command path** | Hotkeys, `smartdock://` URLs, AppleScript and App Intents all reach `HotkeyManager.perform` — four front doors, one implementation |
 | **Hotkey caching** | Bindings cached in memory — no UserDefaults reads on every keystroke |
 | **Wake recovery** | Re-applies config after sleep/wake to fix macOS resetting dock state |
 
