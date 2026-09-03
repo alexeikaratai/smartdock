@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.3] — 2026-09-03
+
 ### Added
 - **Minimize effect and launch animation are part of a profile.** Genie or Scale, and
   whether opening applications animate, now switch with the display like every other
