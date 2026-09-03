@@ -45,6 +45,36 @@ struct DockScriptTests {
         func record(_ script: String) { scripts.append(script) }
     }
 
+    // MARK: - Reading Absent Keys
+
+    /// `launchanim` is missing on a fresh account, and `bool(forKey:)` answers false
+    /// for a missing key — the opposite of what the Dock actually does.
+    @Test func anAbsentLaunchAnimationKeyReadsAsOn() {
+        let (_, controller) = makeRecorder()
+
+        #expect(controller.readSystemConfig().animatesLaunch)
+    }
+
+    @Test func anAbsentMinimizeEffectKeyReadsAsGenie() {
+        let (_, controller) = makeRecorder()
+
+        #expect(controller.readSystemConfig().minimizeEffect == .genie)
+    }
+
+    @Test(arguments: [true, false])
+    func aStoredLaunchAnimationIsReadBack(stored: Bool) {
+        let (_, controller) = makeRecorder(seed: ["launchanim": stored])
+
+        #expect(controller.readSystemConfig().animatesLaunch == stored)
+    }
+
+    @Test(arguments: MinimizeEffect.allCases)
+    func aStoredMinimizeEffectIsReadBack(stored: MinimizeEffect) {
+        let (_, controller) = makeRecorder(seed: ["mineffect": stored.rawValue])
+
+        #expect(controller.readSystemConfig().minimizeEffect == stored)
+    }
+
     // MARK: - One Property, One Script
 
     @Test func positionScriptSetsScreenEdge() {
@@ -63,6 +93,37 @@ struct DockScriptTests {
 
         #expect(scripts().count == 1)
         #expect(scripts()[0].contains("set autohide to true"))
+    }
+
+    @Test func minimizeEffectScriptSetsTheEffect() {
+        let (scripts, controller) = makeRecorder()
+
+        controller.apply(DockConfiguration(minimizeEffect: .scale))
+
+        #expect(scripts().count == 1)
+        // Unquoted on purpose — an AppleScript enumerator, not a string.
+        #expect(scripts()[0].contains("set minimize effect to scale"), "\(scripts())")
+    }
+
+    @Test func launchAnimationScriptSetsAnimate() {
+        let (scripts, controller) = makeRecorder()
+
+        controller.apply(DockConfiguration(animatesLaunch: false))
+
+        #expect(scripts().count == 1)
+        #expect(scripts()[0].contains("set animate to false"), "\(scripts())")
+    }
+
+    /// The defaults in `DockConfiguration` have to match what macOS holds when the
+    /// keys are absent, which is the normal state — neither `mineffect` nor
+    /// `launchanim` is written until the setting is changed. Get either wrong and
+    /// every single apply pushes a redundant script and flashes the Dock.
+    @Test func aDefaultConfigAsksTheDockForNothing() {
+        let (scripts, controller) = makeRecorder()
+
+        controller.apply(DockConfiguration())
+
+        #expect(scripts().isEmpty, "\(scripts())")
     }
 
     @Test func iconSizeScriptSetsDockSize() {

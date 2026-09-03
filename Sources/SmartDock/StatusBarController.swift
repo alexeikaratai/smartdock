@@ -27,6 +27,8 @@ final class StatusBarController: NSObject {
     private var statusMenuItem: NSMenuItem!
     private var toggleMenuItem: NSMenuItem!
     private var dockVisibilityMenuItem: NSMenuItem!
+    private var refusalMenuItem: NSMenuItem!
+    private var refreshMenuItem: NSMenuItem!
 
     // MARK: - Init
 
@@ -57,6 +59,11 @@ final class StatusBarController: NSObject {
     private func buildMenu() {
         let menu = NSMenu()
         menu.delegate = self
+        // AppKit otherwise recomputes each item's enabled state from its target and
+        // discards what this class sets, which would silently make
+        // `updateActionAvailability` do nothing. The informational rows below are
+        // disabled explicitly, so nothing relies on the automatic behaviour.
+        menu.autoenablesItems = false
 
         // Title + version
         let version = Bundle.main.shortVersion
@@ -73,6 +80,15 @@ final class StatusBarController: NSObject {
         statusMenuItem.isEnabled = false
         menu.addItem(statusMenuItem)
 
+        // Sits under the status line and stays hidden unless the Dock refused
+        // something. An informational line like the one above it — the detail is in
+        // the diagnostic report, and there is no action to offer for a refusal that
+        // clears itself the moment nothing is fullscreen.
+        refusalMenuItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        refusalMenuItem.isEnabled = false
+        refusalMenuItem.isHidden = true
+        menu.addItem(refusalMenuItem)
+
         menu.addItem(.separator())
 
         // Enable/disable
@@ -86,14 +102,15 @@ final class StatusBarController: NSObject {
         menu.addItem(toggleMenuItem)
 
         // Forced refresh
-        let refreshItem = NSMenuItem(
+        refreshMenuItem = NSMenuItem(
             title: "Refresh Now",
             action: #selector(refresh),
             keyEquivalent: "r"
         )
-        refreshItem.target = self
-        refreshItem.image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: nil)
-        menu.addItem(refreshItem)
+        refreshMenuItem.target = self
+        refreshMenuItem.image = NSImage(
+            systemSymbolName: "arrow.clockwise", accessibilityDescription: nil)
+        menu.addItem(refreshMenuItem)
 
         // Hide/show the Dock. Title and icon follow the Dock's actual state, which
         // is why they are refreshed in `menuNeedsUpdate` rather than set once.
@@ -196,6 +213,8 @@ final class StatusBarController: NSObject {
         toggleMenuItem.title = service.isEnabled ? "Disable" : "Enable"
         dockVisibilityMenuItem.title = dockVisibilityTitle()
         applyDockVisibilityAppearance()
+        updateRefusalNotice()
+        updateActionAvailability()
 
         if let button = statusItem.button {
             // Use our saved config, not readSystemConfig() — the system config can
@@ -232,6 +251,29 @@ final class StatusBarController: NSObject {
     private func applyDockVisibilityAppearance() {
         let symbol = service.currentConfig.autohide ? "eye" : "eye.slash"
         dockVisibilityMenuItem.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+    }
+
+    /// Surfaces a setting the Dock refused. Read on every menu open because the
+    /// outcome only becomes known a second after the apply, well after the state
+    /// change that redrew everything else.
+    /// Greys out the two items that act on the Dock while the service is off.
+    ///
+    /// The service stopped honouring them when disabled, which is right — but left
+    /// clickable they looked broken, and worse, the auto-hide toggle still rewrote
+    /// the stored profile, so the Dock would hide by itself on the next enable.
+    /// Depends on `autoenablesItems` being off, set in `buildMenu`.
+    private func updateActionAvailability() {
+        refreshMenuItem.isEnabled = service.isEnabled
+        dockVisibilityMenuItem.isEnabled = service.isEnabled
+    }
+
+    private func updateRefusalNotice() {
+        guard let notice = service.dockController.lastApplyOutcome?.refusalNotice else {
+            refusalMenuItem.isHidden = true
+            return
+        }
+        refusalMenuItem.title = "⚠️ \(notice)"
+        refusalMenuItem.isHidden = false
     }
 
     private func statusText() -> String {
@@ -305,6 +347,8 @@ extension StatusBarController: NSMenuDelegate {
         toggleMenuItem.title = service.isEnabled ? "Disable" : "Enable"
         dockVisibilityMenuItem.title = dockVisibilityTitle()
         applyDockVisibilityAppearance()
+        updateRefusalNotice()
+        updateActionAvailability()
     }
 }
 

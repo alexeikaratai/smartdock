@@ -47,6 +47,8 @@ final class SettingsWindow: NSObject {
     private var autohideCheckbox: NSButton!
     private var iconSizeSlider: NSSlider!
     private var magnificationCheckbox: NSButton!
+    private var minimizeEffectPopup: NSPopUpButton!
+    private var animateCheckbox: NSButton!
     private var magSizeSlider: NSSlider!
     private var applyButton: NSButton!
     private var launchAtLoginCheckbox: NSButton!
@@ -294,6 +296,22 @@ final class SettingsWindow: NSObject {
         let magSizeLabel = makeScaleHintLabel()
         card.addSubview(magSizeLabel)
 
+        let minimizeTitle = UI.label("Minimize Effect", font: .systemFont(ofSize: 13, weight: .medium))
+        card.addSubview(minimizeTitle)
+
+        // Only the two effects System Events exposes — the enum is the source of
+        // the list, so a third case would appear here without touching this file.
+        minimizeEffectPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+        minimizeEffectPopup.translatesAutoresizingMaskIntoConstraints = false
+        minimizeEffectPopup.addItems(withTitles: MinimizeEffect.allCases.map(\.displayName))
+        minimizeEffectPopup.target = self
+        minimizeEffectPopup.action = #selector(settingChanged)
+        card.addSubview(minimizeEffectPopup)
+
+        animateCheckbox = UI.checkbox(
+            "Animate opening applications", target: self, action: #selector(settingChanged))
+        card.addSubview(animateCheckbox)
+
         applyButton = NSButton(title: "Apply", target: self, action: #selector(applySettings))
         applyButton.translatesAutoresizingMaskIntoConstraints = false
         applyButton.bezelStyle = .rounded
@@ -384,7 +402,18 @@ final class SettingsWindow: NSObject {
             magSizeSlider.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
             magSizeSlider.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14),
 
-            applyButton.topAnchor.constraint(equalTo: magSizeSlider.bottomAnchor, constant: 16),
+            minimizeTitle.topAnchor.constraint(equalTo: magSizeSlider.bottomAnchor, constant: 16),
+            minimizeTitle.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
+
+            minimizeEffectPopup.centerYAnchor.constraint(equalTo: minimizeTitle.centerYAnchor),
+            minimizeEffectPopup.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14),
+            minimizeEffectPopup.leadingAnchor.constraint(
+                greaterThanOrEqualTo: minimizeTitle.trailingAnchor, constant: 12),
+
+            animateCheckbox.topAnchor.constraint(equalTo: minimizeTitle.bottomAnchor, constant: 14),
+            animateCheckbox.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
+
+            applyButton.topAnchor.constraint(equalTo: animateCheckbox.bottomAnchor, constant: 16),
             applyButton.centerXAnchor.constraint(equalTo: card.centerXAnchor),
             applyButton.widthAnchor.constraint(equalToConstant: 120),
             applyButton.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -14),
@@ -572,6 +601,15 @@ final class SettingsWindow: NSObject {
 
     private func markDirty() { applyButton.isEnabled = true }
 
+    /// Resolves the popup back to a case by index rather than by title — the popup
+    /// is populated from `allCases` in the same order, and matching on the displayed
+    /// string would break the moment a name is reworded.
+    private var selectedMinimizeEffect: MinimizeEffect {
+        let index = minimizeEffectPopup.indexOfSelectedItem
+        guard MinimizeEffect.allCases.indices.contains(index) else { return .genie }
+        return MinimizeEffect.allCases[index]
+    }
+
     // MARK: - Load / Save
 
     private func loadCurrentMode() {
@@ -583,6 +621,8 @@ final class SettingsWindow: NSObject {
         magnificationCheckbox.state = config.magnification ? .on : .off
         magSizeSlider.doubleValue = config.magnificationSize
         magSizeSlider.isEnabled = config.magnification
+        minimizeEffectPopup.selectItem(withTitle: config.minimizeEffect.displayName)
+        animateCheckbox.state = config.animatesLaunch ? .on : .off
 
         headerIconView.image = PositionIcon.image(for: config.position, selected: true)
         updateStatus()
@@ -594,7 +634,9 @@ final class SettingsWindow: NSObject {
             position: positionPicker.selectedPosition,
             iconSize: iconSizeSlider.doubleValue,
             magnification: magnificationCheckbox.state == .on,
-            magnificationSize: magSizeSlider.doubleValue
+            magnificationSize: magSizeSlider.doubleValue,
+            minimizeEffect: selectedMinimizeEffect,
+            animatesLaunch: animateCheckbox.state == .on
         )
 
         if selectedMode == .external {

@@ -114,12 +114,22 @@ public final class DockController: DockControlling {
         let tilesize = d.integer(forKey: "tilesize")
         let largesize = d.integer(forKey: "largesize")
 
+        // macOS writes neither key until the setting is changed away from its
+        // default, so both are normally absent on a fresh account. `bool(forKey:)`
+        // returns false for a missing key, which for `launchanim` is the wrong
+        // answer — the Dock animates by default — and would make every apply think
+        // it had to turn the animation back on.
+        let effectRaw = d.string(forKey: "mineffect") ?? MinimizeEffect.genie.rawValue
+        let animates = d.object(forKey: "launchanim") != nil ? d.bool(forKey: "launchanim") : true
+
         return DockConfiguration(
             autohide: d.bool(forKey: "autohide"),
             position: DockPosition(rawValue: orientationRaw) ?? .bottom,
             iconSize: tilesize > 0 ? DockConfiguration.pixelsToScale(tilesize) : 0.2857,
             magnification: d.bool(forKey: "magnification"),
-            magnificationSize: largesize > 0 ? DockConfiguration.pixelsToScale(largesize) : 0.4286
+            magnificationSize: largesize > 0 ? DockConfiguration.pixelsToScale(largesize) : 0.4286,
+            minimizeEffect: MinimizeEffect(rawValue: effectRaw) ?? .genie,
+            animatesLaunch: animates
         )
     }
 
@@ -202,6 +212,8 @@ public final class DockController: DockControlling {
         case .iconSize: return applyIconSize(config.iconSize)
         case .magnification: return applyMagnification(config.magnification)
         case .magnificationSize: return applyMagnificationSize(config.magnificationSize)
+        case .minimizeEffect: return applyMinimizeEffect(config.minimizeEffect)
+        case .animatesLaunch: return applyLaunchAnimation(config.animatesLaunch)
         }
     }
 
@@ -265,6 +277,30 @@ public final class DockController: DockControlling {
             tell application "System Events"
                 tell dock preferences
                     set screen edge to \(position.appleScriptValue)
+                end tell
+            end tell
+            """)
+    }
+
+    /// `genie` / `scale` go in unquoted — they are AppleScript enumerators, and
+    /// quoting them turns the value into a string System Events will not accept.
+    private func applyMinimizeEffect(_ effect: MinimizeEffect) -> Bool {
+        runAppleScript(
+            """
+            tell application "System Events"
+                tell dock preferences
+                    set minimize effect to \(effect.rawValue)
+                end tell
+            end tell
+            """)
+    }
+
+    private func applyLaunchAnimation(_ animates: Bool) -> Bool {
+        runAppleScript(
+            """
+            tell application "System Events"
+                tell dock preferences
+                    set animate to \(animates)
                 end tell
             end tell
             """)
@@ -352,6 +388,7 @@ private final class DockPrefsObserver: NSObject {
     private let watchedKeys = [
         "autohide", "orientation", "tilesize",
         "magnification", "largesize",
+        "mineffect", "launchanim",
     ]
 
     /// Thread-safe flag — accessed from deinit (nonisolated) and @MainActor methods.

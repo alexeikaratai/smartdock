@@ -112,6 +112,61 @@ struct DockApplyOutcomeTests {
         #expect(outcome.isComplete, "1px of rounding is not a refusal")
     }
 
+    // MARK: - Refusal Notice
+
+    @Test func aSuccessfulApplyHasNothingToWarnAbout() {
+        let target = config(position: .left)
+
+        let outcome = DockApplyOutcome.verifying(target, against: target, requested: [.position])
+
+        #expect(outcome.refusalNotice == nil)
+    }
+
+    @Test func nothingToDoIsNotAWarning() {
+        #expect(DockApplyOutcome.noWorkNeeded.refusalNotice == nil)
+    }
+
+    @Test func aRefusalIsNamedTheWayAPersonWouldSayIt() {
+        let notice = DockApplyOutcome.verifying(
+            config(autohide: true), against: config(autohide: false), requested: [.autohide]
+        ).refusalNotice
+
+        #expect(notice == "macOS declined auto-hide")
+    }
+
+    /// The notice names only what was refused — `summary` also lists what was
+    /// requested, which reads as noise in a menu.
+    @Test func theNoticeNamesOnlyTheRefusedProperties() {
+        let target = config(autohide: true, position: .left)
+        let actual = config(autohide: false, position: .left)
+
+        let notice = DockApplyOutcome.verifying(
+            target, against: actual, requested: [.position, .autohide]
+        ).refusalNotice
+
+        #expect(notice == "macOS declined auto-hide")
+    }
+
+    /// Driven by `allCases` rather than by `zip` against a literal list: `zip` stops
+    /// at the shorter sequence, so a new property would silently never be checked —
+    /// which is exactly what happened when `minimizeEffect` and `animatesLaunch` were
+    /// added. A case missing from the table now fails instead of disappearing.
+    private static let readableNames: [DockProperty: String] = [
+        .position: "position",
+        .autohide: "auto-hide",
+        .iconSize: "icon size",
+        .magnification: "magnification",
+        .magnificationSize: "magnification size",
+        .minimizeEffect: "minimize effect",
+        .animatesLaunch: "launch animation",
+
+    ]
+
+    @Test(arguments: DockProperty.allCases)
+    func everyPropertyHasAReadableName(property: DockProperty) {
+        #expect(property.displayName == Self.readableNames[property])
+    }
+
     // MARK: - Summary
 
     @Test func summaryNamesWhatWasIgnored() {

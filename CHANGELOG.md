@@ -7,13 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Minimize effect and launch animation are part of a profile.** Genie or Scale, and
+  whether opening applications animate, now switch with the display like every other
+  Dock setting. Both go through the same per-property AppleScript and the same
+  diff-based apply, so nothing is pushed that already matches.
+- The menu bar names a setting macOS refused: **⚠️ macOS declined auto-hide** appears
+  under the status line when the last apply did not fully land, and hides itself again
+  when it does. The app has verified applies since 2.2.0, but the answer only ever
+  reached the diagnostic report and the log — so the common case, macOS declining
+  auto-hide while an app is fullscreen, looked exactly like the app doing nothing.
+
+### Fixed
+- A **disabled** SmartDock no longer changes the Dock. `refresh()` reached
+  `applyCurrentState()` without checking `isEnabled`, so "Refresh Now" and the menu's
+  auto-hide toggle both went through while the service was switched off — the three
+  other paths into the same method had always checked. The power icon now means what
+  it says.
+- Upgrading keeps launch animation on. The two new settings are absent from profiles
+  saved by earlier versions, and reading the flag the way the others are read would
+  have answered `false` — quietly turning the animation off on the next refresh for
+  anyone with a saved profile.
+
 ## [2.5.0] — 2026-08-29
-
-## [2.5.1] — 2026-08-29
-
-## [2.5.00] — 2026-08-29
-
-## [2.4.3] — 2026-08-29
 
 ### Added
 - **App Intents for Shortcuts and Spotlight — built, and deliberately not shipped yet.**

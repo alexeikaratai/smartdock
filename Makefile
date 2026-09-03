@@ -334,12 +334,42 @@ version-check:
 		echo "❌ Version mismatch — run: make bump V=$(VERSION)"; \
 		exit 1; \
 	fi
+	@# The checks above compare the *topmost* CHANGELOG section, which says nothing
+	@# about the ones beneath it. `bump` opens a dated section and stays silent if it
+	@# is never filled, so bumping several times in a day leaves a trail of empty
+	@# sections — and 2.5.0 shipped with its notes filed under a version that never
+	@# existed. These two catch that: a version can only appear once, and the section
+	@# for the version being built has to say something.
+	@dupes=$$(grep -oE '^## \[[0-9][0-9.]*\]' CHANGELOG.md | sort | uniq -d | tr -d '#[] ' | tr '\n' ' '); \
+	if [ -n "$$dupes" ]; then \
+		printf "  ❌ %-14s duplicated: %s\n" "CHANGELOG" "$$dupes"; \
+		echo "❌ A version may only have one section"; \
+		exit 1; \
+	fi; \
+	body=$$(awk -v v='## [$(VERSION)]' 'index($$0, v) == 1 { f = 1; next } /^## \[/ { f = 0 } f' \
+		CHANGELOG.md | tr -d '[:space:]'); \
+	if [ -z "$$body" ]; then \
+		printf "  ⚠️  %-14s section [$(VERSION)] is empty\n" "CHANGELOG"; \
+		echo "   Fill it before releasing — \`make release\` refuses an empty section."; \
+	else \
+		printf "  ✅ %-14s section [$(VERSION)] has notes\n" "CHANGELOG"; \
+	fi
 
 # === Release ===
 
 release: version-check app
 	@echo "🚀 Releasing v$(VERSION)..."
 	@# Ensure working tree is clean — commit changes before releasing
+	@# `version-check` only warns about an empty section, because `bump` legitimately
+	@# opens one before the notes are written. Here it is fatal: a published release
+	@# with no notes cannot be taken back, and that is exactly how 2.5.0 went out.
+	@# Checked before the clean-tree gate below on purpose — otherwise you commit
+	@# first and only then learn the notes are missing, which needs a second commit.
+	@if [ -z "$$(awk -v v='## [$(VERSION)]' 'index($$0, v) == 1 { f = 1; next } /^## \[/ { f = 0 } f' \
+		CHANGELOG.md | tr -d '[:space:]')" ]; then \
+		echo "❌ CHANGELOG section [$(VERSION)] is empty — write the release notes first"; \
+		exit 1; \
+	fi
 	@if [ -n "$$(git status --porcelain)" ]; then \
 		echo "❌ Uncommitted changes. Run: /commit then make release"; \
 		exit 1; \

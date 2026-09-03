@@ -26,6 +26,7 @@ SmartDock lives in your menu bar and automatically switches Dock configuration w
 | 🖥️ | **Two-mode Dock profiles** | Separate settings for external monitor vs. built-in display |
 | 📍 | **Position control** | Bottom, Left, or Right — per mode |
 | 📐 | **Icon size & magnification** | Independent size sliders for each mode |
+| ✨ | **Minimize effect & animation** | Genie or Scale, and app-launch animation — per mode |
 | 👁️ | **Autohide toggle** | Show/hide Dock per mode — [except while an app is fullscreen](#-known-limitations) |
 | ⚡ | **Instant detection** | Event-driven via `CGDisplayRegisterReconfigurationCallback` — no polling |
 | 🔄 | **System sync** | Auto-imports Dock changes from System Settings via KVO |

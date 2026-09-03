@@ -78,7 +78,11 @@ public final class SmartDockService {
         guard !isEnabled else { return }
         isEnabled = true
 
-        prefs.initializeDefaultsIfNeeded(from: dockController.readSystemConfig())
+        let systemConfig = dockController.readSystemConfig()
+        prefs.initializeDefaultsIfNeeded(from: systemConfig)
+        // Runs after seeding so a fresh install is a no-op here, and before the
+        // first apply so an upgrading one never pushes a default it invented.
+        prefs.backfillMissingSettings(from: systemConfig)
 
         displayMonitor.start()
         dockController.startObservingSystemChanges()
@@ -174,8 +178,14 @@ public final class SmartDockService {
         notifyStateChanged()
     }
 
+    /// `isEnabled` is checked here rather than only in the callers, because this is
+    /// what `refresh()` reaches — and `refresh()` is what "Refresh Now" and the
+    /// auto-hide toggle in the menu bar call. Without it a service the user had
+    /// switched **off** still moved the Dock on demand, which is not what the power
+    /// icon promises. `start()` sets `isEnabled` before its own call, so the first
+    /// apply is unaffected.
     private func applyCurrentState() {
-        guard !isApplying else { return }
+        guard isEnabled, !isApplying else { return }
         isApplying = true
         defer { isApplying = false }
 
