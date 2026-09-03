@@ -55,6 +55,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.4.2] — 2026-08-28
 
+### Added
+- **Hide Dock / Show Dock** in the menu bar (⌘D). The title names what the click will
+  do rather than what the state is, and the eye icon follows the Dock's actual state,
+  so both are refreshed each time the menu opens instead of being set once. The item
+  runs through `HotkeyManager.perform`, joining the hotkey, `smartdock://` URLs and
+  AppleScript on one execution path rather than becoming a fourth implementation.
+
 ## [2.4.1] — 2026-08-28
 
 ### Fixed
