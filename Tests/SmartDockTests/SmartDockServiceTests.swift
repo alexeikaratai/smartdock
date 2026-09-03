@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import SmartDockCore
@@ -173,6 +174,53 @@ struct SmartDockServiceTests {
         f.service.stop()
 
         #expect(f.dock.stopObservingCallCount == 1)
+    }
+
+    /// The one path that reached `applyCurrentState` without checking `isEnabled`.
+    /// It matters because `refresh()` is what "Refresh Now" and the menu bar's
+    /// auto-hide toggle call — a service the user switched off still moved the Dock.
+    @Test func refreshDoesNothingWhileTheServiceIsStopped() {
+        let f = Fixture(externalCount: 1)
+
+        f.service.start()
+        let appliesWhileRunning = f.dock.applyCallCount
+        f.service.stop()
+
+        f.service.refresh()
+
+        #expect(f.dock.applyCallCount == appliesWhileRunning)
+    }
+
+    /// Guards the other half: the guard must not swallow the apply `start()` itself
+    /// performs, which happens on the same call that flips `isEnabled`.
+    @Test func refreshWorksAgainAfterRestarting() {
+        let f = Fixture(externalCount: 1)
+
+        f.service.start()
+        f.service.stop()
+        f.service.start()
+        let afterRestart = f.dock.applyCallCount
+        f.service.refresh()
+
+        #expect(f.dock.applyCallCount > afterRestart)
+    }
+
+    /// End to end for the upgrade path: a profile saved before `minimizeEffect` and
+    /// `animatesLaunch` existed must not make the first apply restyle the Dock.
+    @Test func upgradingDoesNotPushSettingsTheProfileNeverRecorded() {
+        let f = Fixture(externalCount: 0)
+
+        // Turn the fixture's profile into one an older build would have written:
+        // the original keys, with the two newer ones never recorded.
+        f.scratch.defaults.removeObject(forKey: "com.smartdock.builtin.minimizeEffect")
+        f.scratch.defaults.removeObject(forKey: "com.smartdock.builtin.animatesLaunch")
+        // …on a Mac whose owner chose Scale with launch animation off.
+        f.dock.mockSystemConfig = DockConfiguration(minimizeEffect: .scale, animatesLaunch: false)
+
+        f.service.start()
+
+        #expect(f.service.currentConfig.minimizeEffect == .scale, "their choice, not our default")
+        #expect(!f.service.currentConfig.animatesLaunch, "their choice, not our default")
     }
 
     // MARK: - Display Change → Dock Config Applied

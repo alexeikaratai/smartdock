@@ -48,6 +48,19 @@ public struct DockApplyOutcome: Sendable, Equatable {
             rejected: requested.filter { stillDifferent.contains($0) })
     }
 
+    /// What to tell the user when macOS refused part of the last apply, or `nil`
+    /// when there is nothing to report.
+    ///
+    /// Separate from `summary`, which names the requested properties too — useful
+    /// in a log, noise in a menu. Here only the refusal matters: the person asked
+    /// for auto-hide and did not get it, and until this existed the only trace was
+    /// the diagnostic report, so the usual case — macOS declining auto-hide while an
+    /// app is fullscreen — looked exactly like the app doing nothing at all.
+    public var refusalNotice: String? {
+        guard !isComplete else { return nil }
+        return "macOS declined \(rejected.map(\.displayName).joined(separator: ", "))"
+    }
+
     /// One-line summary for logs and the diagnostic report.
     public var summary: String {
         guard !requested.isEmpty else { return "nothing to apply" }

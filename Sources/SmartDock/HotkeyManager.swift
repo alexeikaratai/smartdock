@@ -206,13 +206,10 @@ final class HotkeyManager: NSObject {
     private func toggleAutohide() {
         let current = service.currentConfig
 
-        let toggled = DockConfiguration(
-            autohide: !current.autohide,
-            position: current.position,
-            iconSize: current.iconSize,
-            magnification: current.magnification,
-            magnificationSize: current.magnificationSize
-        )
+        // `with` rather than rebuilding field by field: this call site used to list
+        // every property, so each new setting silently reverted to its default the
+        // moment somebody toggled auto-hide.
+        let toggled = current.with(autohide: !current.autohide)
 
         if service.hasExternalDisplay {
             prefs.externalConfig = toggled

@@ -8,3 +8,4 @@ Package.resolved
 
 # Written by the CI coverage step (`make coverage | tee coverage.txt`)
 coverage.txt
+.claude/settings.json

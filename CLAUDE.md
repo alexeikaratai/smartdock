@@ -58,6 +58,20 @@ bump silently stop recording releases. Entries accumulate under `[Unreleased]` a
 lands, and `bump` converts them into the dated section. The section was forgotten by hand
 on three consecutive releases, which is why `version-check` now gates on it too.
 
+`version-check` also guards the CHANGELOG itself, not just the version written in it:
+
+| Check | Where it bites |
+|---|---|
+| A version may appear only once | `version-check` fails |
+| The section for `VERSION` is empty | `version-check` **warns**, `make release` **fails** |
+
+The split is deliberate. `bump` opens a dated section before the notes exist, so a hard
+failure there would make every bump fail; but a published release with empty notes cannot
+be taken back. 2.5.0 shipped exactly that way — four sections were opened in one day, three
+left empty, and the real notes ended up under `2.4.3`, a version that was never released.
+Nothing caught it because the reference check only ever compares the **topmost** section,
+and that one happened to be correct.
+
 Examples in docs use `V=1.2.3` on purpose: a placeholder that never collides with a real version, so grepping the current version only finds actual definitions.
 
 Diagnostics:
@@ -120,7 +134,7 @@ Swift Package (swift-tools-version 6.2), two targets: **SmartDockCore** (testabl
 
 | File | Responsibility |
 |---|---|
-| `DockConfiguration.swift` | `DockConfiguration` value type (position, autohide, icon size as 0.0–1.0 scale, magnification). `HotkeyBinding` value type (keyCode + modifiers + displayName). `UserPreferences` persists per-mode configs via UserDefaults with migration from old pixel format. Also stores: `notificationsEnabled`, `syncFromSystemEnabled`, `hasSeenOnboarding`, `hasPromptedAccessibility`, `pendingAccessibilityGrant`, hotkey bindings. `DockPosition` enum. First-launch: `initializeDefaultsIfNeeded(from:)` reads system config, sets external=autohide off, builtin=autohide on. |
+| `DockConfiguration.swift` | `DockConfiguration` value type (position, autohide, icon size as 0.0–1.0 scale, magnification, `MinimizeEffect` genie/scale, `animatesLaunch`). The last two are normally **absent** from `com.apple.dock` — macOS writes `mineffect`/`launchanim` only once they are changed — so both the system read and the profile load spell out the missing case; `bool(forKey:)` would answer `false` for `launchanim` and turn launch animation off behind the user's back. `HotkeyBinding` value type (keyCode + modifiers + displayName). `UserPreferences` persists per-mode configs via UserDefaults with migration from old pixel format. Also stores: `notificationsEnabled`, `syncFromSystemEnabled`, `hasSeenOnboarding`, `hasPromptedAccessibility`, `pendingAccessibilityGrant`, hotkey bindings. `DockPosition` enum. First-launch: `initializeDefaultsIfNeeded(from:)` reads system config, sets external=autohide off, builtin=autohide on. |
 | `DisplayMonitor.swift` | Detects external monitor connect/disconnect via `CGDisplayRegisterReconfigurationCallback`. Debounces (1s settle delay). Filters by add/remove/enable/disable CG flags only, via the testable free function `shouldReactToDisplayChange(_:)`. Also observes `didWakeNotification`, `screensDidWakeNotification` (2s delay re-check). No space change observer — AppleScript triggers space notifications causing feedback loops. Conforms to `DisplayMonitoring`. |
 | `DockController.swift` | Applies `DockConfiguration` via `NSAppleScript` → System Events. Diff-based: reads current system config via fresh `UserDefaults(suiteName: "com.apple.dock")` and only applies properties that actually differ. Observes external dock preference changes via KVO on `UserDefaults(suiteName: "com.apple.dock")` using private `DockPrefsObserver` helper (NSObject for KVO). Debounces 0.5s, compares with `lastAppliedConfig` to filter own changes. Conforms to `DockControlling`. |
 | `SmartDockService.swift` | Orchestrator: reads `UserPreferences`, applies appropriate config based on display state. Handles external dock changes (System Settings sync): updates active profile when system config diverges from `lastAppliedConfig`. Has `SmartDockServiceDelegate`. Posts `Notification.Name.smartDockStateDidChange` only when state actually changes. |

@@ -17,6 +17,26 @@ public enum DockPosition: String, CaseIterable, Sendable {
     }
 }
 
+// MARK: - Minimize Effect
+
+/// How a window animates as it minimises into the Dock.
+///
+/// Only the two effects System Events actually exposes. macOS also carries a
+/// hidden `suck` effect reachable through `defaults write`, but it is absent from
+/// the scripting dictionary — setting it would mean writing the Dock's preferences
+/// behind its back and restarting it, which is the one thing this app never does.
+public enum MinimizeEffect: String, CaseIterable, Sendable {
+    case genie
+    case scale
+
+    public var displayName: String {
+        switch self {
+        case .genie: return "Genie"
+        case .scale: return "Scale"
+        }
+    }
+}
+
 // MARK: - Dock Configuration
 
 /// Full set of Dock preferences for a given mode (external / built-in).
@@ -28,19 +48,56 @@ public struct DockConfiguration: Equatable, Sendable {
     public let iconSize: Double  // 0.0...1.0, default ~0.29 (48px)
     public let magnification: Bool
     public let magnificationSize: Double  // 0.0...1.0, default ~0.43 (64px)
+    public let minimizeEffect: MinimizeEffect
+    /// "Animate opening applications" — `animate` in System Events, `launchanim`
+    /// in `com.apple.dock`. Named as an assertion rather than copying either, since
+    /// a bare `animate` says nothing about what is animated.
+    public let animatesLaunch: Bool
 
     public init(
         autohide: Bool = false,
         position: DockPosition = .bottom,
         iconSize: Double = 0.2857,
         magnification: Bool = false,
-        magnificationSize: Double = 0.4286
+        magnificationSize: Double = 0.4286,
+        minimizeEffect: MinimizeEffect = .genie,
+        animatesLaunch: Bool = true
     ) {
         self.autohide = autohide
         self.position = position
         self.iconSize = iconSize.clamped(to: 0.0...1.0)
         self.magnification = magnification
         self.magnificationSize = magnificationSize.clamped(to: 0.0...1.0)
+        self.minimizeEffect = minimizeEffect
+        self.animatesLaunch = animatesLaunch
+    }
+
+    /// A copy with some properties replaced and the rest carried over.
+    ///
+    /// Exists because rebuilding the struct field by field at a call site silently
+    /// drops whatever that site has not heard of yet: the auto-hide toggle did
+    /// exactly that to `minimizeEffect` and `animatesLaunch` the day they were
+    /// added, resetting both every time someone hid the Dock. Anything omitted here
+    /// keeps its current value, so a property added later is preserved by default
+    /// instead of being lost by default.
+    public func with(
+        autohide: Bool? = nil,
+        position: DockPosition? = nil,
+        iconSize: Double? = nil,
+        magnification: Bool? = nil,
+        magnificationSize: Double? = nil,
+        minimizeEffect: MinimizeEffect? = nil,
+        animatesLaunch: Bool? = nil
+    ) -> DockConfiguration {
+        DockConfiguration(
+            autohide: autohide ?? self.autohide,
+            position: position ?? self.position,
+            iconSize: iconSize ?? self.iconSize,
+            magnification: magnification ?? self.magnification,
+            magnificationSize: magnificationSize ?? self.magnificationSize,
+            minimizeEffect: minimizeEffect ?? self.minimizeEffect,
+            animatesLaunch: animatesLaunch ?? self.animatesLaunch
+        )
     }
 
     /// Convert pixel value (16–128) to scale (0.0–1.0).
@@ -70,6 +127,8 @@ public struct DockConfiguration: Equatable, Sendable {
         guard autohide == other.autohide,
             position == other.position,
             magnification == other.magnification,
+            minimizeEffect == other.minimizeEffect,
+            animatesLaunch == other.animatesLaunch,
             abs(iconSize - other.iconSize) <= Self.sizeTolerance
         else { return false }
 
@@ -95,6 +154,22 @@ public enum DockProperty: String, CaseIterable, Sendable {
     case iconSize
     case magnification
     case magnificationSize
+    case minimizeEffect
+    case animatesLaunch
+
+    /// How to name this setting to a person. The raw values are camelCase keys
+    /// meant for logs and diagnostics; `iconSize` in a menu would read as a typo.
+    public var displayName: String {
+        switch self {
+        case .position: return "position"
+        case .autohide: return "auto-hide"
+        case .iconSize: return "icon size"
+        case .magnification: return "magnification"
+        case .magnificationSize: return "magnification size"
+        case .minimizeEffect: return "minimize effect"
+        case .animatesLaunch: return "launch animation"
+        }
+    }
 }
 
 // MARK: - Diffing
@@ -125,6 +200,9 @@ public extension DockConfiguration {
             changed.append(.magnificationSize)
         }
 
+        if minimizeEffect != current.minimizeEffect { changed.append(.minimizeEffect) }
+        if animatesLaunch != current.animatesLaunch { changed.append(.animatesLaunch) }
+
         return changed
     }
 
@@ -136,6 +214,8 @@ public extension DockConfiguration {
         case .iconSize: return "size=\(String(format: "%.3f", iconSize))"
         case .magnification: return "magnification=\(magnification)"
         case .magnificationSize: return "magSize=\(String(format: "%.3f", magnificationSize))"
+        case .minimizeEffect: return "minimizeEffect=\(minimizeEffect.rawValue)"
+        case .animatesLaunch: return "animatesLaunch=\(animatesLaunch)"
         }
     }
 }
@@ -218,6 +298,37 @@ public final class UserPreferences {
         self.defaults = defaults
     }
 
+    // MARK: - Backfill
+
+    /// Fills settings a saved profile predates, taking them from the Dock as it is
+    /// right now instead of from `DockConfiguration`'s defaults.
+    ///
+    /// Without this, upgrading restyles the Dock: a profile written before
+    /// `minimizeEffect` and `animatesLaunch` existed reads back as genie with
+    /// animation on, and the first apply pushes both at a user who had deliberately
+    /// chosen Scale with animation off. Only absent keys are written — a profile
+    /// that already carries a choice keeps it, otherwise every launch would
+    /// overwrite the profile with whatever the Dock happened to hold.
+    ///
+    /// Separate from `initializeDefaultsIfNeeded`, which only ever runs before the
+    /// first profile exists and so can never reach an upgrading install.
+    public func backfillMissingSettings(from systemConfig: DockConfiguration) {
+        guard isConfigured else { return }
+
+        for key in ["external", "builtin"] {
+            guard defaults.object(forKey: "\(prefix).\(key).autohide") != nil else { continue }
+
+            if defaults.object(forKey: "\(prefix).\(key).minimizeEffect") == nil {
+                defaults.set(
+                    systemConfig.minimizeEffect.rawValue, forKey: "\(prefix).\(key).minimizeEffect")
+            }
+            if defaults.object(forKey: "\(prefix).\(key).animatesLaunch") == nil {
+                defaults.set(
+                    systemConfig.animatesLaunch, forKey: "\(prefix).\(key).animatesLaunch")
+            }
+        }
+    }
+
     // MARK: - First Launch
 
     /// On first launch (no saved preferences), read the current system dock
@@ -231,14 +342,18 @@ public final class UserPreferences {
             position: systemConfig.position,
             iconSize: systemConfig.iconSize,
             magnification: systemConfig.magnification,
-            magnificationSize: systemConfig.magnificationSize
+            magnificationSize: systemConfig.magnificationSize,
+            minimizeEffect: systemConfig.minimizeEffect,
+            animatesLaunch: systemConfig.animatesLaunch
         )
         builtinConfig = DockConfiguration(
             autohide: true,
             position: systemConfig.position,
             iconSize: systemConfig.iconSize,
             magnification: systemConfig.magnification,
-            magnificationSize: systemConfig.magnificationSize
+            magnificationSize: systemConfig.magnificationSize,
+            minimizeEffect: systemConfig.minimizeEffect,
+            animatesLaunch: systemConfig.animatesLaunch
         )
 
         Log.info(
@@ -367,6 +482,8 @@ public final class UserPreferences {
         defaults.set(config.iconSize, forKey: "\(prefix).\(key).iconSize")
         defaults.set(config.magnification, forKey: "\(prefix).\(key).magnification")
         defaults.set(config.magnificationSize, forKey: "\(prefix).\(key).magnificationSize")
+        defaults.set(config.minimizeEffect.rawValue, forKey: "\(prefix).\(key).minimizeEffect")
+        defaults.set(config.animatesLaunch, forKey: "\(prefix).\(key).animatesLaunch")
     }
 
     private func load(key: String) -> DockConfiguration? {
@@ -376,13 +493,24 @@ public final class UserPreferences {
         let positionRaw = defaults.string(forKey: "\(prefix).\(key).position") ?? "bottom"
         let iconSize = defaults.double(forKey: "\(prefix).\(key).iconSize")
         let magSize = defaults.double(forKey: "\(prefix).\(key).magnificationSize")
+        let effectRaw = defaults.string(forKey: "\(prefix).\(key).minimizeEffect") ?? ""
+
+        // Profiles saved before these two existed have neither key. `bool(forKey:)`
+        // would read a missing `animatesLaunch` as false and quietly turn launch
+        // animation off for everyone upgrading, so the absent case is spelled out.
+        let animationKey = "\(prefix).\(key).animatesLaunch"
+        let animates =
+            defaults.object(forKey: animationKey) != nil
+            ? defaults.bool(forKey: animationKey) : true
 
         return DockConfiguration(
             autohide: defaults.bool(forKey: autohideKey),
             position: DockPosition(rawValue: positionRaw) ?? .bottom,
             iconSize: iconSize > 0 ? iconSize : 0.2857,
             magnification: defaults.bool(forKey: "\(prefix).\(key).magnification"),
-            magnificationSize: magSize > 0 ? magSize : 0.4286
+            magnificationSize: magSize > 0 ? magSize : 0.4286,
+            minimizeEffect: MinimizeEffect(rawValue: effectRaw) ?? .genie,
+            animatesLaunch: animates
         )
     }
 }

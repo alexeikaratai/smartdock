@@ -112,8 +112,13 @@ public struct DiagnosticReport: Sendable {
             config.magnification
             ? "magnify \(DockConfiguration.scaleToPixels(config.magnificationSize))px"
             : "no magnification"
+        // Every property a profile carries is listed. A setting the profile applies
+        // but the report omits is the worst case for a bug report: the Dock does
+        // something the reader cannot account for from what they were sent.
+        let animation = config.animatesLaunch ? "launch animation" : "no launch animation"
         return "\(config.position.displayName.lowercased()), "
             + "\(config.autohide ? "auto-hide" : "always visible"), "
-            + "\(size)px, \(magnification)"
+            + "\(size)px, \(magnification), "
+            + "\(config.minimizeEffect.displayName.lowercased()), \(animation)"
     }
 }

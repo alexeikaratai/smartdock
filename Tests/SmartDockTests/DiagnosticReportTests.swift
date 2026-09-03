@@ -112,7 +112,9 @@ struct DiagnosticReportTests {
             position: .right,
             iconSize: DockConfiguration.pixelsToScale(48),
             magnification: true,
-            magnificationSize: DockConfiguration.pixelsToScale(96)
+            magnificationSize: DockConfiguration.pixelsToScale(96),
+            minimizeEffect: .scale,
+            animatesLaunch: false
         )
 
         let output = makeReport(externalConfig: config).formatted
@@ -121,6 +123,10 @@ struct DiagnosticReportTests {
         #expect(output.contains("auto-hide"))
         #expect(output.contains("48px"))
         #expect(output.contains("magnify 96px"))
+        // A setting the profile applies but the report omits leaves the reader of a
+        // bug report unable to account for what the Dock is doing.
+        #expect(output.contains("scale"), "\(output)")
+        #expect(output.contains("no launch animation"), "\(output)")
     }
 
     @Test func magnificationOffIsStated() {

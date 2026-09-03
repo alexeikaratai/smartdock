@@ -89,6 +89,78 @@ struct UserPreferencesTests {
         #expect(scratch.prefs.builtinConfig.approximatelyEquals(config))
     }
 
+    @Test func minimizeEffectAndLaunchAnimationSurviveSaveAndLoad() {
+        let scratch = ScratchPreferences()
+
+        scratch.prefs.externalConfig = DockConfiguration(
+            minimizeEffect: .scale, animatesLaunch: false)
+
+        #expect(scratch.prefs.externalConfig.minimizeEffect == .scale)
+        #expect(!scratch.prefs.externalConfig.animatesLaunch)
+    }
+
+    /// A profile written before these two settings existed has neither key. Reading
+    /// `animatesLaunch` the way the other flags are read would answer `false`, and
+    /// upgrading would silently switch launch animation off for everyone who had a
+    /// saved profile — a change they never asked for, applied on the next refresh.
+    @Test func aProfileSavedBeforeTheseSettingsKeepsTheDockDefaults() {
+        let scratch = ScratchPreferences()
+
+        // Exactly what an older build stored: the five original keys, nothing more.
+        scratch.defaults.set(true, forKey: "com.smartdock.builtin.autohide")
+        scratch.defaults.set("left", forKey: "com.smartdock.builtin.position")
+        scratch.defaults.set(0.3, forKey: "com.smartdock.builtin.iconSize")
+        scratch.defaults.set(false, forKey: "com.smartdock.builtin.magnification")
+        scratch.defaults.set(0.43, forKey: "com.smartdock.builtin.magnificationSize")
+
+        let loaded = scratch.prefs.builtinConfig
+
+        #expect(loaded.position == .left, "the old keys still load")
+        #expect(loaded.animatesLaunch, "launch animation must not be switched off by upgrading")
+        #expect(loaded.minimizeEffect == .genie)
+    }
+
+    /// Upgrading must not quietly restyle the Dock. A profile saved before these
+    /// settings existed loads them as struct defaults — genie, animation on — and
+    /// applying it would push both at someone who had deliberately chosen Scale with
+    /// animation off. Their own current Dock is the right source for a value the
+    /// profile never recorded.
+    @Test func backfillTakesMissingSettingsFromTheDockNotFromDefaults() {
+        let scratch = ScratchPreferences()
+        scratch.defaults.set(true, forKey: "com.smartdock.builtin.autohide")
+        scratch.defaults.set("left", forKey: "com.smartdock.builtin.position")
+
+        scratch.prefs.backfillMissingSettings(
+            from: DockConfiguration(minimizeEffect: .scale, animatesLaunch: false))
+
+        #expect(scratch.prefs.builtinConfig.minimizeEffect == .scale)
+        #expect(!scratch.prefs.builtinConfig.animatesLaunch)
+        #expect(scratch.prefs.builtinConfig.position == .left, "existing settings untouched")
+    }
+
+    /// Only the absent keys are filled. A profile that already carries a choice must
+    /// keep it, or every launch would overwrite the profile with the live Dock.
+    @Test func backfillLeavesSettingsThatWereAlreadySaved() {
+        let scratch = ScratchPreferences()
+        scratch.prefs.builtinConfig = DockConfiguration(
+            minimizeEffect: .genie, animatesLaunch: true)
+
+        scratch.prefs.backfillMissingSettings(
+            from: DockConfiguration(minimizeEffect: .scale, animatesLaunch: false))
+
+        #expect(scratch.prefs.builtinConfig.minimizeEffect == .genie)
+        #expect(scratch.prefs.builtinConfig.animatesLaunch)
+    }
+
+    @Test func backfillDoesNothingBeforeAnyProfileExists() {
+        let scratch = ScratchPreferences()
+
+        scratch.prefs.backfillMissingSettings(
+            from: DockConfiguration(minimizeEffect: .scale, animatesLaunch: false))
+
+        #expect(!scratch.prefs.isConfigured, "an unconfigured install is seeded by first launch")
+    }
+
     @Test func theTwoProfilesAreStoredIndependently() {
         let scratch = ScratchPreferences()
 
@@ -108,6 +180,38 @@ struct UserPreferencesTests {
 
         #expect(!scratch.prefs.externalConfig.autohide)
         #expect(scratch.prefs.builtinConfig.autohide)
+    }
+
+    // MARK: - Copying
+
+    /// The guard against the bug that prompted `with` to exist: a call site that
+    /// changes one property must not quietly reset the ones it does not mention.
+    @Test func changingOnePropertyCarriesEveryOtherOneOver() {
+        let original = DockConfiguration(
+            autohide: false,
+            position: .right,
+            iconSize: DockConfiguration.pixelsToScale(72),
+            magnification: true,
+            magnificationSize: DockConfiguration.pixelsToScale(100),
+            minimizeEffect: .scale,
+            animatesLaunch: false)
+
+        let toggled = original.with(autohide: true)
+
+        #expect(toggled.autohide, "the one property asked for changed")
+        #expect(toggled.position == original.position)
+        #expect(toggled.magnification == original.magnification)
+        #expect(toggled.minimizeEffect == .scale, "must not fall back to the struct default")
+        #expect(!toggled.animatesLaunch, "must not fall back to the struct default")
+        expectClose(toggled.iconSize, original.iconSize, within: 0.0001)
+        expectClose(toggled.magnificationSize, original.magnificationSize, within: 0.0001)
+    }
+
+    @Test func copyingNothingLeavesTheConfigurationUnchanged() {
+        let original = DockConfiguration(
+            autohide: true, position: .left, minimizeEffect: .scale, animatesLaunch: false)
+
+        #expect(original.with() == original)
     }
 
     // MARK: - Flags
