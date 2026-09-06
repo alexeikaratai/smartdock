@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.6] — 2026-09-06
+
+### Fixed
+- **Use Current Dock** and **Apply** are centred as a pair. Each was pinned to the
+  card's centre separately, which centres the *gap* between them rather than the group:
+  with labels of different widths — 150pt against 110 — the pair sat 20pt to the left of
+  centre. They now share a stack view that is centred as one unit, so the labels can
+  differ in width without pulling the row off centre.
+
+## [2.5.5] — 2026-09-06
+
+### Added
+- **Show recent applications** is part of a profile. Like every other Dock setting it
+  goes through its own AppleScript block and the diff-based apply, so nothing is pushed
+  that already matches. macOS ships with recents **on** and writes `show-recents` only
+  once it is turned off, so an absent key reads as `true` — reading it the way a normal
+  flag is read would have made every apply push a script to re-enable something that was
+  never off.
+
+### Fixed
+- The Settings tab scrolls instead of clipping. Its container was pinned top and sides
+  but never to the bottom, so its height came from its content and anything past the
+  window edge was simply cut off — no constraint conflicted, so Auto Layout never
+  reported it and the window's own resizing hid the problem until the card grew.
+  Settings is the only tab that can scroll: its height is fully defined from the inside,
+  while Shortcuts and About end in `lessThanOrEqualTo` and rely on the window stretching
+  them, which a scroll view would take away.
+- The Settings window opens tall enough not to scroll at all: 740pt instead of 660. The
+  number is measured, not guessed — the tab's content is 608pt and the header and tab
+  control above it take another 120, which is why 660 had stopped being enough. The
+  scroll view stays as the safety net for a shrunk window, not as a substitute for a
+  size that fits.
+
+**Auto-hide the menu bar was considered and left out.** It is offered by the same
+scripting dictionary, but it is stored in `NSGlobalDomain` as `_HIHideMenuBar`, not in
+`com.apple.dock` — measured by toggling it and watching which key moved. `DockController`
+reads and observes a single domain, so half-support would mean the setting is applied but
+changes made in System Settings are never noticed, and the next apply would silently undo
+them. Fighting the user is worse than not offering the setting; it needs two-domain
+support first.
+
 ## [2.5.4] — 2026-09-06
 
 ### Added

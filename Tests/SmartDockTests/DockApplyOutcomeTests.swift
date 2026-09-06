@@ -159,6 +159,7 @@ struct DockApplyOutcomeTests {
         .magnificationSize: "magnification size",
         .minimizeEffect: "minimize effect",
         .animatesLaunch: "launch animation",
+        .showsRecents: "recent applications",
 
     ]
 

@@ -53,6 +53,10 @@ public struct DockConfiguration: Equatable, Sendable {
     /// in `com.apple.dock`. Named as an assertion rather than copying either, since
     /// a bare `animate` says nothing about what is animated.
     public let animatesLaunch: Bool
+    /// "Show suggested and recent apps in Dock" — `show recents` in System Events,
+    /// `show-recents` in `com.apple.dock`. macOS ships with it **on**, so an absent
+    /// key means `true`.
+    public let showsRecents: Bool
 
     public init(
         autohide: Bool = false,
@@ -61,7 +65,8 @@ public struct DockConfiguration: Equatable, Sendable {
         magnification: Bool = false,
         magnificationSize: Double = 0.4286,
         minimizeEffect: MinimizeEffect = .genie,
-        animatesLaunch: Bool = true
+        animatesLaunch: Bool = true,
+        showsRecents: Bool = true
     ) {
         self.autohide = autohide
         self.position = position
@@ -70,6 +75,7 @@ public struct DockConfiguration: Equatable, Sendable {
         self.magnificationSize = magnificationSize.clamped(to: 0.0...1.0)
         self.minimizeEffect = minimizeEffect
         self.animatesLaunch = animatesLaunch
+        self.showsRecents = showsRecents
     }
 
     /// A copy with some properties replaced and the rest carried over.
@@ -87,7 +93,8 @@ public struct DockConfiguration: Equatable, Sendable {
         magnification: Bool? = nil,
         magnificationSize: Double? = nil,
         minimizeEffect: MinimizeEffect? = nil,
-        animatesLaunch: Bool? = nil
+        animatesLaunch: Bool? = nil,
+        showsRecents: Bool? = nil
     ) -> DockConfiguration {
         DockConfiguration(
             autohide: autohide ?? self.autohide,
@@ -96,7 +103,8 @@ public struct DockConfiguration: Equatable, Sendable {
             magnification: magnification ?? self.magnification,
             magnificationSize: magnificationSize ?? self.magnificationSize,
             minimizeEffect: minimizeEffect ?? self.minimizeEffect,
-            animatesLaunch: animatesLaunch ?? self.animatesLaunch
+            animatesLaunch: animatesLaunch ?? self.animatesLaunch,
+            showsRecents: showsRecents ?? self.showsRecents
         )
     }
 
@@ -129,6 +137,7 @@ public struct DockConfiguration: Equatable, Sendable {
             magnification == other.magnification,
             minimizeEffect == other.minimizeEffect,
             animatesLaunch == other.animatesLaunch,
+            showsRecents == other.showsRecents,
             abs(iconSize - other.iconSize) <= Self.sizeTolerance
         else { return false }
 
@@ -156,6 +165,7 @@ public enum DockProperty: String, CaseIterable, Sendable {
     case magnificationSize
     case minimizeEffect
     case animatesLaunch
+    case showsRecents
 
     /// How to name this setting to a person. The raw values are camelCase keys
     /// meant for logs and diagnostics; `iconSize` in a menu would read as a typo.
@@ -168,6 +178,7 @@ public enum DockProperty: String, CaseIterable, Sendable {
         case .magnificationSize: return "magnification size"
         case .minimizeEffect: return "minimize effect"
         case .animatesLaunch: return "launch animation"
+        case .showsRecents: return "recent applications"
         }
     }
 }
@@ -202,6 +213,7 @@ public extension DockConfiguration {
 
         if minimizeEffect != current.minimizeEffect { changed.append(.minimizeEffect) }
         if animatesLaunch != current.animatesLaunch { changed.append(.animatesLaunch) }
+        if showsRecents != current.showsRecents { changed.append(.showsRecents) }
 
         return changed
     }
@@ -216,6 +228,7 @@ public extension DockConfiguration {
         case .magnificationSize: return "magSize=\(String(format: "%.3f", magnificationSize))"
         case .minimizeEffect: return "minimizeEffect=\(minimizeEffect.rawValue)"
         case .animatesLaunch: return "animatesLaunch=\(animatesLaunch)"
+        case .showsRecents: return "showsRecents=\(showsRecents)"
         }
     }
 }
@@ -326,6 +339,9 @@ public final class UserPreferences {
                 defaults.set(
                     systemConfig.animatesLaunch, forKey: "\(prefix).\(key).animatesLaunch")
             }
+            if defaults.object(forKey: "\(prefix).\(key).showsRecents") == nil {
+                defaults.set(systemConfig.showsRecents, forKey: "\(prefix).\(key).showsRecents")
+            }
         }
     }
 
@@ -344,7 +360,8 @@ public final class UserPreferences {
             magnification: systemConfig.magnification,
             magnificationSize: systemConfig.magnificationSize,
             minimizeEffect: systemConfig.minimizeEffect,
-            animatesLaunch: systemConfig.animatesLaunch
+            animatesLaunch: systemConfig.animatesLaunch,
+            showsRecents: systemConfig.showsRecents
         )
         builtinConfig = DockConfiguration(
             autohide: true,
@@ -353,7 +370,8 @@ public final class UserPreferences {
             magnification: systemConfig.magnification,
             magnificationSize: systemConfig.magnificationSize,
             minimizeEffect: systemConfig.minimizeEffect,
-            animatesLaunch: systemConfig.animatesLaunch
+            animatesLaunch: systemConfig.animatesLaunch,
+            showsRecents: systemConfig.showsRecents
         )
 
         Log.info(
@@ -484,6 +502,7 @@ public final class UserPreferences {
         defaults.set(config.magnificationSize, forKey: "\(prefix).\(key).magnificationSize")
         defaults.set(config.minimizeEffect.rawValue, forKey: "\(prefix).\(key).minimizeEffect")
         defaults.set(config.animatesLaunch, forKey: "\(prefix).\(key).animatesLaunch")
+        defaults.set(config.showsRecents, forKey: "\(prefix).\(key).showsRecents")
     }
 
     private func load(key: String) -> DockConfiguration? {
@@ -502,6 +521,10 @@ public final class UserPreferences {
         let animates =
             defaults.object(forKey: animationKey) != nil
             ? defaults.bool(forKey: animationKey) : true
+        let recentsKey = "\(prefix).\(key).showsRecents"
+        let recents =
+            defaults.object(forKey: recentsKey) != nil
+            ? defaults.bool(forKey: recentsKey) : true
 
         return DockConfiguration(
             autohide: defaults.bool(forKey: autohideKey),
@@ -510,7 +533,8 @@ public final class UserPreferences {
             magnification: defaults.bool(forKey: "\(prefix).\(key).magnification"),
             magnificationSize: magSize > 0 ? magSize : 0.4286,
             minimizeEffect: MinimizeEffect(rawValue: effectRaw) ?? .genie,
-            animatesLaunch: animates
+            animatesLaunch: animates,
+            showsRecents: recents
         )
     }
 }

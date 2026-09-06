@@ -93,10 +93,11 @@ struct UserPreferencesTests {
         let scratch = ScratchPreferences()
 
         scratch.prefs.externalConfig = DockConfiguration(
-            minimizeEffect: .scale, animatesLaunch: false)
+            minimizeEffect: .scale, animatesLaunch: false, showsRecents: false)
 
         #expect(scratch.prefs.externalConfig.minimizeEffect == .scale)
         #expect(!scratch.prefs.externalConfig.animatesLaunch)
+        #expect(!scratch.prefs.externalConfig.showsRecents)
     }
 
     /// A profile written before these two settings existed has neither key. Reading
@@ -117,6 +118,7 @@ struct UserPreferencesTests {
 
         #expect(loaded.position == .left, "the old keys still load")
         #expect(loaded.animatesLaunch, "launch animation must not be switched off by upgrading")
+        #expect(loaded.showsRecents, "recents must not be switched off by upgrading")
         #expect(loaded.minimizeEffect == .genie)
     }
 
@@ -207,9 +209,20 @@ struct UserPreferencesTests {
         expectClose(toggled.magnificationSize, original.magnificationSize, within: 0.0001)
     }
 
+    /// Every field is deliberately set away from its default. Equality would other-
+    /// wise pass for a `with` that dropped a property back to that default, which is
+    /// exactly the failure this guards — and exactly what it missed when
+    /// `showsRecents` was added while the fixture still left it at `true`.
     @Test func copyingNothingLeavesTheConfigurationUnchanged() {
         let original = DockConfiguration(
-            autohide: true, position: .left, minimizeEffect: .scale, animatesLaunch: false)
+            autohide: true,
+            position: .left,
+            iconSize: DockConfiguration.pixelsToScale(72),
+            magnification: true,
+            magnificationSize: DockConfiguration.pixelsToScale(100),
+            minimizeEffect: .scale,
+            animatesLaunch: false,
+            showsRecents: false)
 
         #expect(original.with() == original)
     }

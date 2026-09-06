@@ -37,6 +37,7 @@ final class SettingsWindow: NSObject {
     private var headerIconView: NSImageView!
     private var tabControl: NSSegmentedControl!
     private var settingsContainer: NSView!
+    private var settingsScroll: NSScrollView!
     private var shortcutsContainer: NSView!
     private var aboutContainer: NSView!
     private var statusLabel: NSTextField!
@@ -49,9 +50,11 @@ final class SettingsWindow: NSObject {
     private var magnificationCheckbox: NSButton!
     private var minimizeEffectPopup: NSPopUpButton!
     private var animateCheckbox: NSButton!
+    private var recentsCheckbox: NSButton!
     private var magSizeSlider: NSSlider!
     private var applyButton: NSButton!
     private var useCurrentButton: NSButton!
+    private var buttonRow: NSStackView!
     private var launchAtLoginCheckbox: NSButton!
     private var notificationsCheckbox: NSButton!
     private var syncFromSystemCheckbox: NSButton!
@@ -137,7 +140,11 @@ final class SettingsWindow: NSObject {
 
     // MARK: - Window Construction
 
-    private static let defaultContentSize = NSSize(width: 420, height: 660)
+    /// Tall enough that the Settings tab does not scroll at the default size: its
+    /// content measures 608pt, and the header and tab control above it take another
+    /// 120. The scroll view stays as the safety net for a shrunk window and for
+    /// whatever the tab grows next — it is not a substitute for a size that fits.
+    private static let defaultContentSize = NSSize(width: 420, height: 740)
 
     private func makeWindow() -> NSWindow {
         let (w, contentView) = UI.glassWindow(
@@ -191,9 +198,25 @@ final class SettingsWindow: NSObject {
         container.addSubview(tabControl)
 
         // --- Containers ---
+        // Settings is the one tab whose content can outgrow the window, and the only
+        // one that can be scrolled: its height is fully defined from the inside
+        // (`statusLabel` is pinned to the bottom), while Shortcuts and About end in
+        // `lessThanOrEqualTo` and rely on the window stretching them — inside a
+        // scroll view their height would be undefined.
+        //
+        // Without this the container was pinned top and sides but never to the
+        // bottom, so anything past the window edge was quietly clipped. No constraint
+        // conflicted, so Auto Layout never said a word about it.
         settingsContainer = NSView()
         settingsContainer.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(settingsContainer)
+
+        settingsScroll = NSScrollView()
+        settingsScroll.translatesAutoresizingMaskIntoConstraints = false
+        settingsScroll.hasVerticalScroller = true
+        settingsScroll.autohidesScrollers = true
+        settingsScroll.drawsBackground = false
+        settingsScroll.documentView = settingsContainer
+        container.addSubview(settingsScroll)
 
         shortcutsContainer = NSView()
         shortcutsContainer.translatesAutoresizingMaskIntoConstraints = false
@@ -226,9 +249,21 @@ final class SettingsWindow: NSObject {
             tabControl.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -margin),
 
             // All containers share same frame below tab control
-            settingsContainer.topAnchor.constraint(equalTo: tabControl.bottomAnchor, constant: 14),
-            settingsContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            settingsContainer.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            settingsScroll.topAnchor.constraint(equalTo: tabControl.bottomAnchor, constant: 14),
+            settingsScroll.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            settingsScroll.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            settingsScroll.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+
+            // Width tied to the clip view so the tab never scrolls sideways; height
+            // is left to the content, which is what gives the scroller something to
+            // scroll when the card grows.
+            settingsContainer.topAnchor.constraint(equalTo: settingsScroll.contentView.topAnchor),
+            settingsContainer.leadingAnchor.constraint(
+                equalTo: settingsScroll.contentView.leadingAnchor),
+            settingsContainer.trailingAnchor.constraint(
+                equalTo: settingsScroll.contentView.trailingAnchor),
+            settingsContainer.widthAnchor.constraint(
+                equalTo: settingsScroll.contentView.widthAnchor),
 
             shortcutsContainer.topAnchor.constraint(equalTo: tabControl.bottomAnchor, constant: 14),
             shortcutsContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
@@ -313,13 +348,16 @@ final class SettingsWindow: NSObject {
             "Animate opening applications", target: self, action: #selector(settingChanged))
         card.addSubview(animateCheckbox)
 
+        recentsCheckbox = UI.checkbox(
+            "Show recent applications", target: self, action: #selector(settingChanged))
+        card.addSubview(recentsCheckbox)
+
         applyButton = NSButton(title: "Apply", target: self, action: #selector(applySettings))
         applyButton.translatesAutoresizingMaskIntoConstraints = false
         applyButton.bezelStyle = .rounded
         applyButton.controlSize = .large
         applyButton.keyEquivalent = "\r"
         applyButton.isEnabled = false
-        card.addSubview(applyButton)
 
         // Fills the form from the Dock as it is right now. Deliberately does not
         // apply anything: it seeds the fields and lights up Apply, so the change is
@@ -331,7 +369,14 @@ final class SettingsWindow: NSObject {
         useCurrentButton.translatesAutoresizingMaskIntoConstraints = false
         useCurrentButton.bezelStyle = .rounded
         useCurrentButton.controlSize = .large
-        card.addSubview(useCurrentButton)
+
+        // A stack so the two are laid out as one unit; their labels differ in width
+        // and always will, so centring them individually cannot come out symmetrical.
+        buttonRow = NSStackView(views: [useCurrentButton, applyButton])
+        buttonRow.translatesAutoresizingMaskIntoConstraints = false
+        buttonRow.orientation = .horizontal
+        buttonRow.spacing = 10
+        card.addSubview(buttonRow)
 
         // General + buttons outside card
         let generalHeader = UI.label("GENERAL", font: .systemFont(ofSize: 11, weight: .medium))
@@ -426,16 +471,18 @@ final class SettingsWindow: NSObject {
             animateCheckbox.topAnchor.constraint(equalTo: minimizeTitle.bottomAnchor, constant: 14),
             animateCheckbox.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
 
-            // The pair is centred as a unit, with Apply on the right where the
-            // confirming button belongs.
-            useCurrentButton.topAnchor.constraint(equalTo: animateCheckbox.bottomAnchor, constant: 16),
-            useCurrentButton.trailingAnchor.constraint(equalTo: card.centerXAnchor, constant: -5),
-            useCurrentButton.widthAnchor.constraint(equalToConstant: 150),
-            useCurrentButton.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -14),
+            recentsCheckbox.topAnchor.constraint(equalTo: animateCheckbox.bottomAnchor, constant: 8),
+            recentsCheckbox.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
 
-            applyButton.topAnchor.constraint(equalTo: useCurrentButton.topAnchor),
-            applyButton.leadingAnchor.constraint(equalTo: card.centerXAnchor, constant: 5),
-            applyButton.widthAnchor.constraint(equalToConstant: 110),
+            // Centred as a group, with Apply on the right where the confirming button
+            // belongs. Pinning each button to `card.centerXAnchor` separately centres
+            // the *gap* instead, which leaves a pair of unequal buttons visibly off to
+            // one side — 20pt to the left, with these two labels.
+            buttonRow.topAnchor.constraint(equalTo: recentsCheckbox.bottomAnchor, constant: 16),
+            buttonRow.centerXAnchor.constraint(equalTo: card.centerXAnchor),
+            buttonRow.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -14),
+
+            applyButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 90),
 
             // General — below card
             generalHeader.topAnchor.constraint(equalTo: card.bottomAnchor, constant: 14),
@@ -545,7 +592,7 @@ final class SettingsWindow: NSObject {
         currentTab = tab
         tabControl.selectedSegment = tab.rawValue
 
-        settingsContainer.isHidden = tab != .settings
+        settingsScroll.isHidden = tab != .settings
         shortcutsContainer.isHidden = tab != .shortcuts
         aboutContainer.isHidden = tab != .about
     }
@@ -661,6 +708,7 @@ final class SettingsWindow: NSObject {
         magSizeSlider.isEnabled = config.magnification
         minimizeEffectPopup.selectItem(withTitle: config.minimizeEffect.displayName)
         animateCheckbox.state = config.animatesLaunch ? .on : .off
+        recentsCheckbox.state = config.showsRecents ? .on : .off
 
         headerIconView.image = PositionIcon.image(for: config.position, selected: true)
     }
@@ -673,7 +721,8 @@ final class SettingsWindow: NSObject {
             magnification: magnificationCheckbox.state == .on,
             magnificationSize: magSizeSlider.doubleValue,
             minimizeEffect: selectedMinimizeEffect,
-            animatesLaunch: animateCheckbox.state == .on
+            animatesLaunch: animateCheckbox.state == .on,
+            showsRecents: recentsCheckbox.state == .on
         )
 
         if selectedMode == .external {
