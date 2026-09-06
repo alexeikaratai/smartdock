@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.4] — 2026-09-06
+
+### Added
+- **Use Current Dock** in Settings — fills the form from the Dock as it is right now,
+  so a profile can start from what is already on screen instead of being rebuilt from
+  scratch through a position picker, two sliders, three toggles and a popup. It applies
+  nothing: the fields are seeded and Apply lights up, leaving the change to confirm.
+  Reads the Dock through the controller rather than the last profile SmartDock asked
+  for — the two differ whenever macOS refused a setting, and what is on screen is the
+  thing worth copying.
+
 ## [2.5.3] — 2026-09-03
 
 ### Added
@@ -54,6 +65,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   without them the intents compile, link and are invisible to Shortcuts.
 
 ## [2.4.2] — 2026-08-28
+
+### Added
+- **Hide Dock / Show Dock** in the menu bar (⌘D). The title names what the click will
+  do rather than what the state is, and the eye icon follows the Dock's actual state,
+  so both are refreshed each time the menu opens instead of being set once. The item
+  runs through `HotkeyManager.perform`, joining the hotkey, `smartdock://` URLs and
+  AppleScript on one execution path rather than becoming a fourth implementation.
 
 ## [2.4.1] — 2026-08-28
 

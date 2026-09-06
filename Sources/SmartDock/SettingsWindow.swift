@@ -51,6 +51,7 @@ final class SettingsWindow: NSObject {
     private var animateCheckbox: NSButton!
     private var magSizeSlider: NSSlider!
     private var applyButton: NSButton!
+    private var useCurrentButton: NSButton!
     private var launchAtLoginCheckbox: NSButton!
     private var notificationsCheckbox: NSButton!
     private var syncFromSystemCheckbox: NSButton!
@@ -320,6 +321,18 @@ final class SettingsWindow: NSObject {
         applyButton.isEnabled = false
         card.addSubview(applyButton)
 
+        // Fills the form from the Dock as it is right now. Deliberately does not
+        // apply anything: it seeds the fields and lights up Apply, so the change is
+        // still the user's to confirm. Without it a profile has to be rebuilt from
+        // scratch — position, two sliders, three toggles and a popup — even when the
+        // Dock is already set up the way they want it saved.
+        useCurrentButton = NSButton(
+            title: "Use Current Dock", target: self, action: #selector(useCurrentDock))
+        useCurrentButton.translatesAutoresizingMaskIntoConstraints = false
+        useCurrentButton.bezelStyle = .rounded
+        useCurrentButton.controlSize = .large
+        card.addSubview(useCurrentButton)
+
         // General + buttons outside card
         let generalHeader = UI.label("GENERAL", font: .systemFont(ofSize: 11, weight: .medium))
         generalHeader.textColor = .secondaryLabelColor
@@ -413,10 +426,16 @@ final class SettingsWindow: NSObject {
             animateCheckbox.topAnchor.constraint(equalTo: minimizeTitle.bottomAnchor, constant: 14),
             animateCheckbox.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
 
-            applyButton.topAnchor.constraint(equalTo: animateCheckbox.bottomAnchor, constant: 16),
-            applyButton.centerXAnchor.constraint(equalTo: card.centerXAnchor),
-            applyButton.widthAnchor.constraint(equalToConstant: 120),
-            applyButton.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -14),
+            // The pair is centred as a unit, with Apply on the right where the
+            // confirming button belongs.
+            useCurrentButton.topAnchor.constraint(equalTo: animateCheckbox.bottomAnchor, constant: 16),
+            useCurrentButton.trailingAnchor.constraint(equalTo: card.centerXAnchor, constant: -5),
+            useCurrentButton.widthAnchor.constraint(equalToConstant: 150),
+            useCurrentButton.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -14),
+
+            applyButton.topAnchor.constraint(equalTo: useCurrentButton.topAnchor),
+            applyButton.leadingAnchor.constraint(equalTo: card.centerXAnchor, constant: 5),
+            applyButton.widthAnchor.constraint(equalToConstant: 110),
 
             // General — below card
             generalHeader.topAnchor.constraint(equalTo: card.bottomAnchor, constant: 14),
@@ -546,6 +565,17 @@ final class SettingsWindow: NSObject {
 
     @objc private func sliderChanged(_ sender: NSSlider) { markDirty() }
     @objc private func applySettings(_ sender: Any) { saveAndApply() }
+
+    /// Seeds the form from the live Dock, leaving the Dock itself untouched.
+    ///
+    /// Reads through the controller rather than the service's `currentConfig`: that
+    /// one is what SmartDock last *asked* for, and the point here is what the Dock
+    /// actually holds — the two differ whenever macOS refused a setting.
+    @objc private func useCurrentDock(_ sender: Any) {
+        populate(from: service.dockController.readSystemConfig())
+        markDirty()
+        Log.info("Settings: seeded the form from the live Dock")
+    }
     @objc private func refreshNow(_ sender: Any) { service.refresh() }
     @objc private func quitApp(_ sender: Any) { NSApp.terminate(nil) }
 
@@ -613,8 +643,16 @@ final class SettingsWindow: NSObject {
     // MARK: - Load / Save
 
     private func loadCurrentMode() {
-        let config = activeConfig
+        populate(from: activeConfig)
+        updateStatus()
+    }
 
+    /// Fills every control from a configuration.
+    ///
+    /// Shared by loading a stored profile and by **Use Current Dock**, so the two
+    /// cannot drift: a control added to the form but forgotten in one of them would
+    /// show a stale value from the other.
+    private func populate(from config: DockConfiguration) {
         positionPicker.selectedPosition = config.position
         autohideCheckbox.state = config.autohide ? .on : .off
         iconSizeSlider.doubleValue = config.iconSize
@@ -625,7 +663,6 @@ final class SettingsWindow: NSObject {
         animateCheckbox.state = config.animatesLaunch ? .on : .off
 
         headerIconView.image = PositionIcon.image(for: config.position, selected: true)
-        updateStatus()
     }
 
     private func saveAndApply() {
