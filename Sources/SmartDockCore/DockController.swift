@@ -121,6 +121,8 @@ public final class DockController: DockControlling {
         // it had to turn the animation back on.
         let effectRaw = d.string(forKey: "mineffect") ?? MinimizeEffect.genie.rawValue
         let animates = d.object(forKey: "launchanim") != nil ? d.bool(forKey: "launchanim") : true
+        let recents =
+            d.object(forKey: "show-recents") != nil ? d.bool(forKey: "show-recents") : true
 
         return DockConfiguration(
             autohide: d.bool(forKey: "autohide"),
@@ -129,7 +131,8 @@ public final class DockController: DockControlling {
             magnification: d.bool(forKey: "magnification"),
             magnificationSize: largesize > 0 ? DockConfiguration.pixelsToScale(largesize) : 0.4286,
             minimizeEffect: MinimizeEffect(rawValue: effectRaw) ?? .genie,
-            animatesLaunch: animates
+            animatesLaunch: animates,
+            showsRecents: recents
         )
     }
 
@@ -214,6 +217,7 @@ public final class DockController: DockControlling {
         case .magnificationSize: return applyMagnificationSize(config.magnificationSize)
         case .minimizeEffect: return applyMinimizeEffect(config.minimizeEffect)
         case .animatesLaunch: return applyLaunchAnimation(config.animatesLaunch)
+        case .showsRecents: return applyShowRecents(config.showsRecents)
         }
     }
 
@@ -290,6 +294,17 @@ public final class DockController: DockControlling {
             tell application "System Events"
                 tell dock preferences
                     set minimize effect to \(effect.rawValue)
+                end tell
+            end tell
+            """)
+    }
+
+    private func applyShowRecents(_ shows: Bool) -> Bool {
+        runAppleScript(
+            """
+            tell application "System Events"
+                tell dock preferences
+                    set show recents to \(shows)
                 end tell
             end tell
             """)
@@ -388,7 +403,7 @@ private final class DockPrefsObserver: NSObject {
     private let watchedKeys = [
         "autohide", "orientation", "tilesize",
         "magnification", "largesize",
-        "mineffect", "launchanim",
+        "mineffect", "launchanim", "show-recents",
     ]
 
     /// Thread-safe flag — accessed from deinit (nonisolated) and @MainActor methods.

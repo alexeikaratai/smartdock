@@ -105,6 +105,31 @@ struct DockScriptTests {
         #expect(scripts()[0].contains("set minimize effect to scale"), "\(scripts())")
     }
 
+    @Test func showRecentsScriptSetsShowRecents() {
+        let (scripts, controller) = makeRecorder()
+
+        controller.apply(DockConfiguration(showsRecents: false))
+
+        #expect(scripts().count == 1)
+        #expect(scripts()[0].contains("set show recents to false"), "\(scripts())")
+    }
+
+    /// macOS ships with recents **on** and writes the key only once it is turned
+    /// off, so a missing key must read as `true` — otherwise every apply pushes a
+    /// script to re-enable something that was never off.
+    @Test func anAbsentShowRecentsKeyReadsAsOn() {
+        let (_, controller) = makeRecorder()
+
+        #expect(controller.readSystemConfig().showsRecents)
+    }
+
+    @Test(arguments: [true, false])
+    func aStoredShowRecentsIsReadBack(stored: Bool) {
+        let (_, controller) = makeRecorder(seed: ["show-recents": stored])
+
+        #expect(controller.readSystemConfig().showsRecents == stored)
+    }
+
     @Test func launchAnimationScriptSetsAnimate() {
         let (scripts, controller) = makeRecorder()
 
