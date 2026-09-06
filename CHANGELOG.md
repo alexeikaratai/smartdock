@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.4] — 2026-09-06
+
+### Added
+- **Use Current Dock** in Settings — fills the form from the Dock as it is right now,
+  so a profile can start from what is already on screen instead of being rebuilt from
+  scratch through a position picker, two sliders, three toggles and a popup. It applies
+  nothing: the fields are seeded and Apply lights up, leaving the change to confirm.
+  Reads the Dock through the controller rather than the last profile SmartDock asked
+  for — the two differ whenever macOS refused a setting, and what is on screen is the
+  thing worth copying.
+
 ## [2.5.3] — 2026-09-03
 
 ### Added

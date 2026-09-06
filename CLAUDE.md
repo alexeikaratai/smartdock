@@ -2,6 +2,120 @@
 
 Project instructions for Claude Code. Follow these exactly.
 
+## Working on a Task
+
+One task at a time, carried through these steps in order. Each ends with the tree
+ready for the **user** to commit and release — see the last step.
+
+### 1. Plan before writing code
+
+Say what the change is, what it touches, roughly how long, and what could break.
+Where there is a real choice, give the options and a recommendation rather than a
+survey. Wait for a decision on anything that changes behaviour users already rely on.
+
+A plan built on an assumption is worth nothing here — see the next step.
+
+### 2. Measure, do not assume
+
+macOS is full of settings that look obvious and are not. Everything load-bearing gets
+checked against the running system before it reaches a plan:
+
+- `mineffect` and `launchanim` are **absent** until changed, so `bool(forKey:)` answers
+  `false` for a Dock that animates — found by reading the domain, not by guessing.
+- `vendor + model` does not identify a display: two identical monitors differ only by
+  serial — found by enumerating the real ones.
+- `show recents` was written off as needing `killall Dock` until the scripting
+  dictionary said otherwise.
+- App Intents metadata needs three undocumented compiler details, each failing silently
+  — found by building it and looking at the output.
+
+State plainly which claims are measured and which are knowledge. "I believe" and
+"I checked" are different words; never let one stand in for the other.
+
+### 3. Implement
+
+Match the surrounding code. Prefer a structural fix over a patch: a list of fields
+repeated in two places **will** drift — `toggleAutohide` silently reset every setting
+it had not heard of, a `zip` in a test quietly stopped checking two cases, and the
+settings form reads and writes through two separate lists to this day. When the same
+knowledge has to live twice, make the compiler or a test hold them together.
+
+### 4. Tests
+
+`SmartDockCore` is covered and stays that way. The `SmartDock` target is an executable
+and is **not** in the test bundle — when a change lands there, say so rather than
+implying coverage that does not exist, and verify it by running the app instead.
+
+A new guard is proven by **mutation**: break it deliberately, watch the intended test
+fail, restore, re-run. A test that cannot fail is decoration. Restore from a copy taken
+before the mutation, and re-run afterwards to prove the tree is clean.
+
+### 5. Re-check for regressions
+
+Green tests are the floor, not the ceiling. Read every call site the change touches and
+ask what silently behaves differently now. In one session this step found four
+regressions after the suite was already green — all four would have shipped.
+
+Where tests cannot reach, verify live: build, run the app, read the unified log
+(`/usr/bin/log` with the absolute path — zsh shadows it), compare the Dock's settings
+before and after. Put the machine back afterwards: quit the test build, unregister it
+from LaunchServices, relaunch the installed one, restore any setting that was changed.
+
+### 6. CHANGELOG and commands
+
+The entry goes under `## [Unreleased]` as part of the task, not afterwards — write what
+changed for a person and why it mattered. Everything else goes through `make`; the
+targets and the rules around versioning are in **Version & Release** below.
+
+### 7. Stop at the commit
+
+**Claude does not commit, push, tag or release.** Leave the working tree ready and say
+what is in it. Bumping the version, committing and `make release` are the user's, one
+task per version, so a release can be traced to a single change.
+
+## Principles
+
+The rules this codebase actually runs on. Every one was paid for, so each carries the
+case that produced it — the reason has to survive the next refactor, not just the rule.
+A change that breaks one of these is a change to the design, not a detail.
+
+**One execution path.** Hotkeys, `smartdock://` URLs, AppleScript and Shortcuts are four
+front doors into `AppDelegate.performCommand` — never four implementations. A fifth
+input adds a door, not a behaviour.
+
+**Nothing the system reports is taken on trust.** `NSAppleScript` returns success as soon
+as the script *ran*, which says nothing about whether the Dock honoured it. Every apply
+is read back and the result recorded (`DockApplyOutcome`). Without that, "the app says it
+applied but nothing happened" cannot be diagnosed from a bug report.
+
+**An absent value is not a false one, and our default has to match theirs.** macOS writes
+a preference only once it has been changed, so a key that is missing means *default*, not
+`false` — the mechanics are under **UserDefaults** below. The consequence that is easy to
+miss: a struct default disagreeing with what macOS holds when the key is absent makes
+*every* apply push a redundant script and flash the Dock.
+`aDefaultConfigAsksTheDockForNothing` pins exactly that.
+
+**A value the user never chose comes from their system, not from our defaults.** A
+setting added today is absent from profiles saved yesterday; seeding it from
+`DockConfiguration`'s defaults would restyle the Dock of someone who had deliberately
+chosen otherwise. `backfillMissingSettings` reads it from the live Dock instead.
+
+**Break the build rather than write a note.** Agreement between two places is enforced by
+an exhaustive switch wherever the compiler can reach — `HotkeyAction(URLCommand)`,
+`push(_:of:)`, `ShortcutCoverage.intentType(for:)`. Where it cannot, a test or a make
+target stands in: `.sdef` parity, `appintents-check`, `version-check`.
+
+**A list repeated in two places will drift.** `toggleAutohide` rebuilt the config field by
+field and silently reset every setting it had not heard of; a `zip` against a literal
+list quietly stopped checking two properties; the settings form still reads and writes
+through two separate lists. Prefer a copy helper (`DockConfiguration.with`) or drive the
+test from `allCases`.
+
+**Report what is, not what was asked.** The menu bar reflects what the Dock actually
+holds, reconciled after verification — not the profile that was requested. But the
+*stored* profile is left alone: the user still wants auto-hide, macOS merely would not do
+it right now, and rewriting their choice over a temporary refusal throws it away.
+
 ## Build & Run
 
 ```bash
