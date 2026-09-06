@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.6] — 2026-09-06
+
+### Fixed
+- **Use Current Dock** and **Apply** are centred as a pair. Each was pinned to the
+  card's centre separately, which centres the *gap* between them rather than the group:
+  with labels of different widths — 150pt against 110 — the pair sat 20pt to the left of
+  centre. They now share a stack view that is centred as one unit, so the labels can
+  differ in width without pulling the row off centre.
+
 ## [2.5.5] — 2026-09-06
 
 ### Added

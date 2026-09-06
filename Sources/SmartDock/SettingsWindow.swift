@@ -54,6 +54,7 @@ final class SettingsWindow: NSObject {
     private var magSizeSlider: NSSlider!
     private var applyButton: NSButton!
     private var useCurrentButton: NSButton!
+    private var buttonRow: NSStackView!
     private var launchAtLoginCheckbox: NSButton!
     private var notificationsCheckbox: NSButton!
     private var syncFromSystemCheckbox: NSButton!
@@ -357,7 +358,6 @@ final class SettingsWindow: NSObject {
         applyButton.controlSize = .large
         applyButton.keyEquivalent = "\r"
         applyButton.isEnabled = false
-        card.addSubview(applyButton)
 
         // Fills the form from the Dock as it is right now. Deliberately does not
         // apply anything: it seeds the fields and lights up Apply, so the change is
@@ -369,7 +369,14 @@ final class SettingsWindow: NSObject {
         useCurrentButton.translatesAutoresizingMaskIntoConstraints = false
         useCurrentButton.bezelStyle = .rounded
         useCurrentButton.controlSize = .large
-        card.addSubview(useCurrentButton)
+
+        // A stack so the two are laid out as one unit; their labels differ in width
+        // and always will, so centring them individually cannot come out symmetrical.
+        buttonRow = NSStackView(views: [useCurrentButton, applyButton])
+        buttonRow.translatesAutoresizingMaskIntoConstraints = false
+        buttonRow.orientation = .horizontal
+        buttonRow.spacing = 10
+        card.addSubview(buttonRow)
 
         // General + buttons outside card
         let generalHeader = UI.label("GENERAL", font: .systemFont(ofSize: 11, weight: .medium))
@@ -464,19 +471,18 @@ final class SettingsWindow: NSObject {
             animateCheckbox.topAnchor.constraint(equalTo: minimizeTitle.bottomAnchor, constant: 14),
             animateCheckbox.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
 
-            // The pair is centred as a unit, with Apply on the right where the
-            // confirming button belongs.
             recentsCheckbox.topAnchor.constraint(equalTo: animateCheckbox.bottomAnchor, constant: 8),
             recentsCheckbox.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
 
-            useCurrentButton.topAnchor.constraint(equalTo: recentsCheckbox.bottomAnchor, constant: 16),
-            useCurrentButton.trailingAnchor.constraint(equalTo: card.centerXAnchor, constant: -5),
-            useCurrentButton.widthAnchor.constraint(equalToConstant: 150),
-            useCurrentButton.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -14),
+            // Centred as a group, with Apply on the right where the confirming button
+            // belongs. Pinning each button to `card.centerXAnchor` separately centres
+            // the *gap* instead, which leaves a pair of unequal buttons visibly off to
+            // one side — 20pt to the left, with these two labels.
+            buttonRow.topAnchor.constraint(equalTo: recentsCheckbox.bottomAnchor, constant: 16),
+            buttonRow.centerXAnchor.constraint(equalTo: card.centerXAnchor),
+            buttonRow.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -14),
 
-            applyButton.topAnchor.constraint(equalTo: useCurrentButton.topAnchor),
-            applyButton.leadingAnchor.constraint(equalTo: card.centerXAnchor, constant: 5),
-            applyButton.widthAnchor.constraint(equalToConstant: 110),
+            applyButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 90),
 
             // General — below card
             generalHeader.topAnchor.constraint(equalTo: card.bottomAnchor, constant: 14),
