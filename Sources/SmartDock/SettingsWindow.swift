@@ -11,10 +11,13 @@ final class SettingsWindow: NSObject {
 
     // MARK: - Types
 
+    /// Raw values are the segment indices of `tabControl` — the two are read off each
+    /// other in `selectTab` and `tabChanged`, so they have to stay in the same order.
     enum Tab: Int {
-        case settings = 0
-        case shortcuts = 1
-        case about = 2
+        case dock = 0
+        case general = 1
+        case shortcuts = 2
+        case about = 3
     }
 
     enum Mode: Int {
@@ -30,7 +33,7 @@ final class SettingsWindow: NSObject {
     private let hotkeyRecorder: HotkeyRecorder
     private let prefs = UserPreferences.shared
 
-    private var currentTab: Tab = .settings
+    private var currentTab: Tab = .dock
     private var selectedMode: Mode = .external
 
     // Controls — Top-level
@@ -38,6 +41,7 @@ final class SettingsWindow: NSObject {
     private var tabControl: NSSegmentedControl!
     private var settingsContainer: NSView!
     private var settingsScroll: NSScrollView!
+    private var generalContainer: GeneralTabView!
     private var shortcutsContainer: NSView!
     private var aboutContainer: NSView!
     private var statusLabel: NSTextField!
@@ -55,9 +59,6 @@ final class SettingsWindow: NSObject {
     private var applyButton: NSButton!
     private var useCurrentButton: NSButton!
     private var buttonRow: NSStackView!
-    private var launchAtLoginCheckbox: NSButton!
-    private var notificationsCheckbox: NSButton!
-    private var syncFromSystemCheckbox: NSButton!
 
     // Controls — Shortcuts tab
     private var hotkeyButtons: [HotkeyAction: NSButton] = [:]
@@ -79,12 +80,6 @@ final class SettingsWindow: NSObject {
             name: .smartDockStateDidChange,
             object: nil
         )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(handleNotificationPermissionChanged),
-            name: .smartDockNotificationPermissionChanged,
-            object: nil
-        )
     }
 
     deinit {
@@ -93,7 +88,7 @@ final class SettingsWindow: NSObject {
 
     // MARK: - Public
 
-    func show(tab: Tab = .settings) {
+    func show(tab: Tab = .dock) {
         if let existing = window, existing.isVisible {
             existing.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
@@ -140,11 +135,11 @@ final class SettingsWindow: NSObject {
 
     // MARK: - Window Construction
 
-    /// Tall enough that the Settings tab does not scroll at the default size: its
-    /// content measures 608pt, and the header and tab control above it take another
-    /// 120. The scroll view stays as the safety net for a shrunk window and for
-    /// whatever the tab grows next — it is not a substitute for a size that fits.
-    private static let defaultContentSize = NSSize(width: 420, height: 740)
+    /// Tall enough that no tab scrolls at the default size. Measured: the Dock tab
+    /// needs 512pt and General 116, with the header and tab control above them taking
+    /// another 120. The scroll view on the Dock tab stays as the safety net for a
+    /// shrunk window — it is not a substitute for a size that fits.
+    private static let defaultContentSize = NSSize(width: 420, height: 640)
 
     private func makeWindow() -> NSWindow {
         let (w, contentView) = UI.glassWindow(
@@ -187,7 +182,7 @@ final class SettingsWindow: NSObject {
 
         // --- Tab Control ---
         tabControl = NSSegmentedControl(
-            labels: ["Settings", "Shortcuts", "About"],
+            labels: ["Dock", "General", "Shortcuts", "About"],
             trackingMode: .selectOne,
             target: self,
             action: #selector(tabChanged)
@@ -217,6 +212,10 @@ final class SettingsWindow: NSObject {
         settingsScroll.drawsBackground = false
         settingsScroll.documentView = settingsContainer
         container.addSubview(settingsScroll)
+
+        generalContainer = GeneralTabView(service: service, prefs: prefs)
+        generalContainer.isHidden = true
+        container.addSubview(generalContainer)
 
         shortcutsContainer = NSView()
         shortcutsContainer.translatesAutoresizingMaskIntoConstraints = false
@@ -264,6 +263,10 @@ final class SettingsWindow: NSObject {
                 equalTo: settingsScroll.contentView.trailingAnchor),
             settingsContainer.widthAnchor.constraint(
                 equalTo: settingsScroll.contentView.widthAnchor),
+
+            generalContainer.topAnchor.constraint(equalTo: tabControl.bottomAnchor, constant: 14),
+            generalContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            generalContainer.trailingAnchor.constraint(equalTo: container.trailingAnchor),
 
             shortcutsContainer.topAnchor.constraint(equalTo: tabControl.bottomAnchor, constant: 14),
             shortcutsContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
@@ -378,37 +381,11 @@ final class SettingsWindow: NSObject {
         buttonRow.spacing = 10
         card.addSubview(buttonRow)
 
-        // General + buttons outside card
-        let generalHeader = UI.label("GENERAL", font: .systemFont(ofSize: 11, weight: .medium))
-        generalHeader.textColor = .secondaryLabelColor
-        container.addSubview(generalHeader)
-
-        launchAtLoginCheckbox = UI.checkbox(
-            "Launch at Login", target: self,
-            action: #selector(toggleLaunchAtLogin))
-        launchAtLoginCheckbox.state = LaunchAtLogin.isEnabled ? .on : .off
-        container.addSubview(launchAtLoginCheckbox)
-
-        notificationsCheckbox = UI.checkbox(
-            "Notify on Profile Switch", target: self,
-            action: #selector(toggleNotifications))
-        notificationsCheckbox.state = prefs.notificationsEnabled ? .on : .off
-        container.addSubview(notificationsCheckbox)
-
-        syncFromSystemCheckbox = UI.checkbox(
-            "Auto-import System changes", target: self,
-            action: #selector(toggleSyncFromSystem))
-        syncFromSystemCheckbox.state = prefs.syncFromSystemEnabled ? .on : .off
-        container.addSubview(syncFromSystemCheckbox)
-
+        // Stays with the profile it acts on: it writes the live Dock into whichever
+        // mode is selected above, so separating it from that picker would leave a
+        // button whose effect depends on a control on another tab.
         let syncButton = UI.smallButton("Sync from System", target: self, action: #selector(syncFromSystem))
         container.addSubview(syncButton)
-
-        let refreshButton = UI.smallButton("Refresh Now", target: self, action: #selector(refreshNow))
-        container.addSubview(refreshButton)
-
-        let quitButton = UI.smallButton("Quit SmartDock", target: self, action: #selector(quitApp))
-        container.addSubview(quitButton)
 
         statusLabel = UI.label(statusText(), font: .systemFont(ofSize: 11))
         statusLabel.textColor = .tertiaryLabelColor
@@ -484,29 +461,10 @@ final class SettingsWindow: NSObject {
 
             applyButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 90),
 
-            // General — below card
-            generalHeader.topAnchor.constraint(equalTo: card.bottomAnchor, constant: 14),
-            generalHeader.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
-
-            launchAtLoginCheckbox.topAnchor.constraint(equalTo: generalHeader.bottomAnchor, constant: 8),
-            launchAtLoginCheckbox.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
-
-            notificationsCheckbox.topAnchor.constraint(equalTo: launchAtLoginCheckbox.bottomAnchor, constant: 8),
-            notificationsCheckbox.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
-
-            syncFromSystemCheckbox.topAnchor.constraint(equalTo: notificationsCheckbox.bottomAnchor, constant: 8),
-            syncFromSystemCheckbox.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
-
-            syncButton.topAnchor.constraint(equalTo: syncFromSystemCheckbox.bottomAnchor, constant: 12),
+            syncButton.topAnchor.constraint(equalTo: card.bottomAnchor, constant: 14),
             syncButton.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
 
-            refreshButton.centerYAnchor.constraint(equalTo: syncButton.centerYAnchor),
-            refreshButton.leadingAnchor.constraint(equalTo: syncButton.trailingAnchor, constant: 8),
-
-            quitButton.centerYAnchor.constraint(equalTo: syncButton.centerYAnchor),
-            quitButton.leadingAnchor.constraint(equalTo: refreshButton.trailingAnchor, constant: 8),
-
-            statusLabel.topAnchor.constraint(equalTo: syncButton.bottomAnchor, constant: 8),
+            statusLabel.topAnchor.constraint(equalTo: syncButton.bottomAnchor, constant: 10),
             statusLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
             statusLabel.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -8),
         ])
@@ -579,8 +537,8 @@ final class SettingsWindow: NSObject {
     }
 
     private func selectTab(_ tab: Tab) {
-        // Auto-save if leaving Settings with unsaved changes
-        if currentTab == .settings && tab != .settings && applyButton.isEnabled {
+        // Auto-save if leaving the Dock tab with unsaved changes
+        if currentTab == .dock && tab != .dock && applyButton.isEnabled {
             saveAndApply()
         }
 
@@ -592,7 +550,8 @@ final class SettingsWindow: NSObject {
         currentTab = tab
         tabControl.selectedSegment = tab.rawValue
 
-        settingsScroll.isHidden = tab != .settings
+        settingsScroll.isHidden = tab != .dock
+        generalContainer.isHidden = tab != .general
         shortcutsContainer.isHidden = tab != .shortcuts
         aboutContainer.isHidden = tab != .about
     }
@@ -623,9 +582,6 @@ final class SettingsWindow: NSObject {
         markDirty()
         Log.info("Settings: seeded the form from the live Dock")
     }
-    @objc private func refreshNow(_ sender: Any) { service.refresh() }
-    @objc private func quitApp(_ sender: Any) { NSApp.terminate(nil) }
-
     @objc private func syncFromSystem(_ sender: NSButton) {
         let systemConfig = service.dockController.readSystemConfig()
         if selectedMode == .external {
@@ -635,27 +591,6 @@ final class SettingsWindow: NSObject {
         }
         loadCurrentMode()
         applyButton.isEnabled = false
-    }
-
-    @objc private func toggleLaunchAtLogin(_ sender: NSButton) {
-        LaunchAtLogin.toggle()
-        sender.state = LaunchAtLogin.isEnabled ? .on : .off
-    }
-
-    @objc private func toggleNotifications(_ sender: NSButton) {
-        let enabled = sender.state == .on
-        prefs.notificationsEnabled = enabled
-        if enabled {
-            NotificationCenter.default.post(name: .smartDockRequestNotificationAuth, object: nil)
-        }
-    }
-
-    @objc private func toggleSyncFromSystem(_ sender: NSButton) {
-        prefs.syncFromSystemEnabled = sender.state == .on
-    }
-
-    @objc private func handleNotificationPermissionChanged(_ notification: Notification) {
-        notificationsCheckbox.state = prefs.notificationsEnabled ? .on : .off
     }
 
     @objc private func hotkeyButtonClicked(_ sender: NSButton) {
@@ -749,10 +684,7 @@ final class SettingsWindow: NSObject {
 
     private func updateStatus() { statusLabel.stringValue = statusText() }
 
-    private func statusText() -> String {
-        let mode = service.hasExternalDisplay ? "External monitor connected" : "Built-in display only"
-        return "Current: \(mode)"
-    }
+    private func statusText() -> String { "Current: \(service.activeProfileDescription)" }
 
     /// "Small ◀─▶ Large" caption shown beside a size slider.
     private func makeScaleHintLabel() -> NSTextField {

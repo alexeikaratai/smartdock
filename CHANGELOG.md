@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.0] — 2026-09-06
+
+### Changed
+- **The Settings window has four tabs: Dock, General, Shortcuts, About.** What the Dock
+  looks like and how the app behaves were sharing one tab, so "Launch at Login" sat
+  directly under a Dock profile picker as though it were part of the profile. General now
+  holds the three app switches and Refresh Now / Quit; the Dock tab keeps everything that
+  belongs to a profile. The first tab is called **Dock** rather than Settings, which had
+  meant a Settings tab inside a Settings window.
+- **Sync from System stayed on the Dock tab**, against the original plan. It writes the
+  live Dock into whichever profile the mode control above it has selected — moving it to
+  General would have left a button whose effect depends on a control on another tab.
+- The window opens at 640pt instead of 740. Measured after the split, not guessed: the
+  Dock tab needs 512pt and General 116, with 120 for the header and tabs above them.
+- The wording of the active profile is defined once in `SmartDockService`. The menu bar
+  said "Status: External monitor connected" and the settings window "Current: External
+  monitor connected" — the same fact written out in two files, both of which would have
+  had to be found and edited together the moment a third state exists. It is now covered
+  by tests, which the two copies never were.
+
 ## [2.5.7] — 2026-09-06
 
 ### Fixed

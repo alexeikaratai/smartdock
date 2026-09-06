@@ -185,7 +185,7 @@ final class StatusBarController: NSObject {
         service.refresh()
     }
 
-    func showSettings(tab: SettingsWindow.Tab = .settings) {
+    func showSettings(tab: SettingsWindow.Tab = .dock) {
         settingsWindow.show(tab: tab)
     }
 
@@ -280,9 +280,7 @@ final class StatusBarController: NSObject {
         if !service.isEnabled {
             return "Status: Disabled"
         }
-        return service.hasExternalDisplay
-            ? "Status: External monitor connected"
-            : "Status: Built-in display only"
+        return "Status: \(service.activeProfileDescription)"
     }
 
     /// Draws a menu bar icon showing dock position and visibility.
