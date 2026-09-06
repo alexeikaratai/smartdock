@@ -155,9 +155,27 @@ jobs:
           sed -i '' "s/version \".*\"/version \"${VERSION}\"/" Casks/smartdock.rb
           sed -i '' "s/sha256 \".*\"/sha256 \"${ZIP_SHA}\"/" Casks/smartdock.rb
 
-          # Update Formula
-          sed -i '' "s|/v[0-9]*\.[0-9]*\.[0-9]*/|/v${VERSION}/|g" Formula/smartdock.rb
+          # Update Formula — rewrite the whole url line rather than matching a
+          # version pattern inside it, which cannot drift as the url changes shape.
+          sed -i '' "s|^  url \".*\"|  url \"${TAR_URL}\"|" Formula/smartdock.rb
           sed -i '' "s/sha256 \".*\"/sha256 \"${TAR_SHA}\"/" Formula/smartdock.rb
+
+          # A sed that matches nothing is silent. The old Formula pattern required a
+          # trailing slash the tarball url never had, so the url stayed at v1.2.1
+          # while its sha256 tracked every release — the Formula could not install at
+          # all. Fail the release rather than publish a broken tap again.
+          for check in \
+            "Formula/smartdock.rb:v${VERSION}.tar.gz" \
+            "Formula/smartdock.rb:${TAR_SHA}" \
+            "Casks/smartdock.rb:version \"${VERSION}\"" \
+            "Casks/smartdock.rb:${ZIP_SHA}"; do
+            file="${check%%:*}"
+            needle="${check#*:}"
+            grep -qF "${needle}" "${file}" || {
+              echo "::error::${file} was not updated — expected to find: ${needle}"
+              exit 1
+            }
+          done
 
           # Commit & push
           git config user.name "github-actions[bot]"
