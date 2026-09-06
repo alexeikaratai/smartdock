@@ -41,6 +41,17 @@ public final class SmartDockService {
     /// `hasExternalDisplay` is the cached state the profile decision was made on.
     public var externalDisplayCount: Int { displayMonitor.externalDisplayCount() }
 
+    /// Names the display setup in force, for anything that shows it to a person.
+    ///
+    /// Defined once because it was written twice — the menu bar said "Status: External
+    /// monitor connected" and the settings window "Current: External monitor
+    /// connected". The same fact, phrased separately, in two files that would have to
+    /// be found and edited together the moment a third state exists. Each caller adds
+    /// its own prefix; only the wording of the state itself lives here.
+    public var activeProfileDescription: String {
+        hasExternalDisplay ? "External monitor connected" : "Built-in display only"
+    }
+
     /// The dock configuration we last applied (not the transient system state).
     public private(set) var currentConfig: DockConfiguration = DockConfiguration()
 

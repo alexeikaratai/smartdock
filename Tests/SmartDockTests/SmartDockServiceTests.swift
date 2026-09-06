@@ -223,6 +223,31 @@ struct SmartDockServiceTests {
         #expect(!f.service.currentConfig.animatesLaunch, "their choice, not our default")
     }
 
+    // MARK: - Describing the Active Profile
+
+    /// The wording the menu bar and the settings window both show. It used to be
+    /// written out in each of them, so a third state would have had to be found and
+    /// edited in two files.
+    @Test(arguments: [(1, "External monitor connected"), (0, "Built-in display only")])
+    func theActiveProfileIsNamedForTheDisplaysInUse(externalCount: Int, expected: String) {
+        let f = Fixture(externalCount: externalCount)
+
+        f.service.start()
+
+        #expect(f.service.activeProfileDescription == expected)
+    }
+
+    /// Follows the displays, not the moment the service happened to start.
+    @Test func theDescriptionFollowsADisplayChange() {
+        let f = Fixture(externalCount: 0)
+        f.service.start()
+        #expect(f.service.activeProfileDescription == "Built-in display only")
+
+        f.monitor.simulateDisplayChange(externalCount: 1)
+
+        #expect(f.service.activeProfileDescription == "External monitor connected")
+    }
+
     // MARK: - Display Change → Dock Config Applied
 
     @Test func startAppliesConfig() {
