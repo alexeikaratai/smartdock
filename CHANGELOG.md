@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.7] — 2026-09-06
+
+### Fixed
+- `brew install alexeikaratai/tap/smartdock` works again. The release workflow updated
+  the Homebrew formula's `sha256` on every release but never its `url`: the pattern it
+  matched on required a slash after the version, and the tarball url ends `v1.2.1.tar.gz`
+  instead. The formula therefore pointed at the v1.2.1 source with the current release's
+  checksum, and every install failed on a checksum mismatch. The url line is now rewritten
+  whole rather than pattern-matched, and the workflow greps its own output afterwards and
+  fails the release if either the formula or the cask was left stale — a `sed` that
+  matches nothing is otherwise completely silent. The cask was unaffected; it derives its
+  url from the `version` stanza.
+
 ## [2.5.6] — 2026-09-06
 
 ### Fixed
