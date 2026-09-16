@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.2] — 2026-09-16
+
+### Changed
+- **Nothing in the Dock tab is applied without pressing Apply.** A draft used to be
+  applied silently by three different things — switching tabs, switching between the
+  External and Built-in profiles, and any display change while the window was open — so
+  "let me look at Shortcuts for a second" or plugging in a monitor mid-edit committed
+  whatever the sliders happened to be at. Closing the window, meanwhile, threw the draft
+  away without a word. Now a draft survives a tab switch and a display change untouched,
+  and the two places where it really would be lost — switching profiles and closing the
+  window — ask: Apply, Discard or Cancel.
+- **Discard** sits between Use Current Dock and Apply. Until now the only way out of an
+  experiment was to close the window.
+- **A refused setting is named right under the Apply button.** The menu bar has said
+  "macOS declined auto-hide" since 2.5.3, but that is not where anyone is looking a
+  second after pressing Apply; the settings window itself said nothing at all.
+- **Sliders show the size in pixels** — "48 px" — instead of a static "Small ◀─▶ Large"
+  hint. Pixels are the unit System Settings uses, so a size seen there can be matched,
+  and two profiles can be made to agree, without guessing at a thumb position. This
+  reverses an earlier design choice; the number is what people compare against.
+- **The active profile is marked in the picker** with ● on its segment, and the picker is
+  labelled "Editing profile". The status line at the bottom said which profile was live,
+  but the picker — the thing being looked at while editing — gave no hint, and nothing
+  said that switching it changes which profile the form edits.
+- The window opens at 680pt (measured: the Dock tab now needs 552) so nothing scrolls at
+  the default size.
+
 ## [2.6.1] — 2026-09-16
 
 ### Fixed

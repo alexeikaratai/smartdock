@@ -23,6 +23,13 @@ final class SettingsWindow: NSObject {
     enum Mode: Int {
         case external = 0
         case builtin = 1
+
+        var title: String {
+            switch self {
+            case .external: return "External Monitor"
+            case .builtin: return "Built-in Only"
+            }
+        }
     }
 
     // MARK: - Properties
@@ -58,7 +65,11 @@ final class SettingsWindow: NSObject {
     private var magSizeSlider: NSSlider!
     private var applyButton: NSButton!
     private var useCurrentButton: NSButton!
+    private var discardButton: NSButton!
     private var buttonRow: NSStackView!
+    private var refusalLabel: NSTextField!
+    private var iconSizeValueLabel: NSTextField!
+    private var magSizeValueLabel: NSTextField!
 
     // Controls — Shortcuts tab
     private var hotkeyButtons: [HotkeyAction: NSButton] = [:]
@@ -136,10 +147,10 @@ final class SettingsWindow: NSObject {
     // MARK: - Window Construction
 
     /// Tall enough that no tab scrolls at the default size. Measured: the Dock tab
-    /// needs 512pt and General 116, with the header and tab control above them taking
+    /// needs 552pt and General 116, with the header and tab control above them taking
     /// another 120. The scroll view on the Dock tab stays as the safety net for a
     /// shrunk window — it is not a substitute for a size that fits.
-    private static let defaultContentSize = NSSize(width: 420, height: 640)
+    private static let defaultContentSize = NSSize(width: 420, height: 680)
 
     private func makeWindow() -> NSWindow {
         let (w, contentView) = UI.glassWindow(
@@ -283,9 +294,16 @@ final class SettingsWindow: NSObject {
     private func buildSettingsTab(in container: NSView) {
         let margin: CGFloat = 24
 
-        // Mode control (External / Built-in)
+        // Names what the control below actually does. Without it the segmented
+        // control reads as a mode switch for the app rather than a choice of which
+        // profile the form is editing.
+        let editingLabel = UI.label("EDITING PROFILE", font: .systemFont(ofSize: 11, weight: .medium))
+        editingLabel.textColor = .secondaryLabelColor
+
+        // Mode control (External / Built-in). Segment titles are refreshed by
+        // `updateModeTitles` so the active profile carries a marker.
         modeControl = NSSegmentedControl(
-            labels: ["External Monitor", "Built-in Only"],
+            labels: [Mode.external.title, Mode.builtin.title],
             trackingMode: .selectOne,
             target: self,
             action: #selector(modeChanged)
@@ -298,6 +316,7 @@ final class SettingsWindow: NSObject {
         let card = UI.glassCard()
         container.addSubview(card)
 
+        card.addSubview(editingLabel)
         card.addSubview(modeControl)
 
         let posLabel = UI.label("Dock Position", font: .systemFont(ofSize: 13, weight: .medium))
@@ -320,7 +339,8 @@ final class SettingsWindow: NSObject {
         iconSizeSlider = UI.scaleSlider(value: 0.29, target: self, action: #selector(sliderChanged))
         card.addSubview(iconSizeSlider)
 
-        let iconSizeLabel = makeScaleHintLabel()
+        iconSizeValueLabel = makeValueLabel()
+        let iconSizeLabel = iconSizeValueLabel!
         card.addSubview(iconSizeLabel)
 
         magnificationCheckbox = UI.checkbox("Magnification", target: self, action: #selector(settingChanged))
@@ -332,7 +352,8 @@ final class SettingsWindow: NSObject {
         magSizeSlider = UI.scaleSlider(value: 0.43, target: self, action: #selector(sliderChanged))
         card.addSubview(magSizeSlider)
 
-        let magSizeLabel = makeScaleHintLabel()
+        magSizeValueLabel = makeValueLabel()
+        let magSizeLabel = magSizeValueLabel!
         card.addSubview(magSizeLabel)
 
         let minimizeTitle = UI.label("Minimize Effect", font: .systemFont(ofSize: 13, weight: .medium))
@@ -375,11 +396,29 @@ final class SettingsWindow: NSObject {
 
         // A stack so the two are laid out as one unit; their labels differ in width
         // and always will, so centring them individually cannot come out symmetrical.
-        buttonRow = NSStackView(views: [useCurrentButton, applyButton])
+        // Reloads the stored profile and drops the draft. Until it existed the only
+        // way out of an experiment was to close the window — which threw the draft
+        // away silently — or to switch tabs, which applied it silently.
+        discardButton = NSButton(title: "Discard", target: self, action: #selector(discardChanges))
+        discardButton.translatesAutoresizingMaskIntoConstraints = false
+        discardButton.bezelStyle = .rounded
+        discardButton.controlSize = .large
+        discardButton.isEnabled = false
+
+        buttonRow = NSStackView(views: [useCurrentButton, discardButton, applyButton])
         buttonRow.translatesAutoresizingMaskIntoConstraints = false
         buttonRow.orientation = .horizontal
         buttonRow.spacing = 10
         card.addSubview(buttonRow)
+
+        // Names a setting macOS refused, right under the button that asked for it.
+        // The same fact has been in the menu bar since 2.5.3, but that is not where
+        // a person is looking a second after pressing Apply.
+        refusalLabel = UI.label("", font: .systemFont(ofSize: 11))
+        refusalLabel.textColor = .systemOrange
+        refusalLabel.alignment = .center
+        refusalLabel.isHidden = true
+        card.addSubview(refusalLabel)
 
         // Stays with the profile it acts on: it writes the live Dock into whichever
         // mode is selected above, so separating it from that picker would leave a
@@ -397,7 +436,10 @@ final class SettingsWindow: NSObject {
             card.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin - 4),
             card.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -(margin - 4)),
 
-            modeControl.topAnchor.constraint(equalTo: card.topAnchor, constant: 14),
+            editingLabel.topAnchor.constraint(equalTo: card.topAnchor, constant: 12),
+            editingLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
+
+            modeControl.topAnchor.constraint(equalTo: editingLabel.bottomAnchor, constant: 6),
             modeControl.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
             modeControl.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14),
 
@@ -457,7 +499,10 @@ final class SettingsWindow: NSObject {
             // one side — 20pt to the left, with these two labels.
             buttonRow.topAnchor.constraint(equalTo: recentsCheckbox.bottomAnchor, constant: 16),
             buttonRow.centerXAnchor.constraint(equalTo: card.centerXAnchor),
-            buttonRow.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -14),
+            refusalLabel.topAnchor.constraint(equalTo: buttonRow.bottomAnchor, constant: 8),
+            refusalLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
+            refusalLabel.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14),
+            refusalLabel.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -12),
 
             applyButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 90),
 
@@ -537,10 +582,9 @@ final class SettingsWindow: NSObject {
     }
 
     private func selectTab(_ tab: Tab) {
-        // Auto-save if leaving the Dock tab with unsaved changes
-        if currentTab == .dock && tab != .dock && applyButton.isEnabled {
-            saveAndApply()
-        }
+        // A draft on the Dock tab survives a tab switch untouched. It used to be
+        // applied here, which turned "let me look at Shortcuts for a second" into a
+        // change to the Dock the user never confirmed.
 
         // Cancel hotkey recording if leaving Shortcuts
         if currentTab == .shortcuts && tab != .shortcuts && hotkeyRecorder.isRecording {
@@ -559,9 +603,42 @@ final class SettingsWindow: NSObject {
     // MARK: - Actions
 
     @objc private func modeChanged(_ sender: NSSegmentedControl) {
-        if applyButton.isEnabled { saveAndApply() }
-        selectedMode = Mode(rawValue: sender.selectedSegment) ?? .external
+        let target = Mode(rawValue: sender.selectedSegment) ?? .external
+        guard target != selectedMode else { return }
+
+        // The form is about to show a different profile, so a draft here really
+        // would be lost — this is the one place a question is warranted.
+        if isDirty {
+            switch askAboutDraft() {
+            case .apply: saveAndApply()
+            case .discard: break
+            case .cancel:
+                sender.selectedSegment = selectedMode.rawValue
+                return
+            }
+        }
+        selectedMode = target
         loadCurrentMode()
+        markClean()
+    }
+
+    private enum DraftDecision { case apply, discard, cancel }
+
+    /// Apply / Discard / Cancel for a draft that is about to be lost. Only two paths
+    /// reach it — switching profiles and closing the window. Everything else keeps
+    /// the draft where it is.
+    private func askAboutDraft() -> DraftDecision {
+        let alert = NSAlert()
+        alert.messageText = "Apply changes to the \(selectedMode.title) profile?"
+        alert.informativeText = "The Dock settings you changed have not been applied."
+        alert.addButton(withTitle: "Apply")
+        alert.addButton(withTitle: "Discard")
+        alert.addButton(withTitle: "Cancel")
+        switch alert.runModal() {
+        case .alertFirstButtonReturn: return .apply
+        case .alertSecondButtonReturn: return .discard
+        default: return .cancel
+        }
     }
 
     @objc private func settingChanged(_ sender: Any) {
@@ -569,7 +646,10 @@ final class SettingsWindow: NSObject {
         markDirty()
     }
 
-    @objc private func sliderChanged(_ sender: NSSlider) { markDirty() }
+    @objc private func sliderChanged(_ sender: NSSlider) {
+        updateSizeLabels()
+        markDirty()
+    }
     @objc private func applySettings(_ sender: Any) { saveAndApply() }
 
     /// Seeds the form from the live Dock, leaving the Dock itself untouched.
@@ -590,7 +670,7 @@ final class SettingsWindow: NSObject {
             prefs.builtinConfig = systemConfig
         }
         loadCurrentMode()
-        applyButton.isEnabled = false
+        markClean()
     }
 
     @objc private func hotkeyButtonClicked(_ sender: NSButton) {
@@ -603,15 +683,37 @@ final class SettingsWindow: NSObject {
     }
 
     /// Display state changed — refresh Settings UI.
+    /// A display change or a verified apply while the window is open. Refreshes what
+    /// describes the outside world — status, active-profile marker, refusal — and
+    /// leaves the form alone if it holds a draft. It used to apply the draft first, on
+    /// the reasoning that reloading would lose it; plugging in a monitor mid-edit
+    /// therefore committed whatever the sliders happened to be at.
     @objc private func handleStateChange(_ notification: Notification) {
         guard window?.isVisible == true else { return }
-        if applyButton.isEnabled { saveAndApply() }
-        loadCurrentMode()
+        updateStatus()
+        updateModeTitles()
+        updateRefusalNotice()
+        if !isDirty { loadCurrentMode() }
     }
 
     // MARK: - Dirty State
 
-    private func markDirty() { applyButton.isEnabled = true }
+    private var isDirty: Bool { applyButton.isEnabled }
+
+    private func markDirty() {
+        applyButton.isEnabled = true
+        discardButton.isEnabled = true
+    }
+
+    private func markClean() {
+        applyButton.isEnabled = false
+        discardButton.isEnabled = false
+    }
+
+    @objc private func discardChanges(_ sender: Any) {
+        loadCurrentMode()
+        markClean()
+    }
 
     /// Resolves the popup back to a case by index rather than by title — the popup
     /// is populated from `allCases` in the same order, and matching on the displayed
@@ -627,6 +729,8 @@ final class SettingsWindow: NSObject {
     private func loadCurrentMode() {
         populate(from: activeConfig)
         updateStatus()
+        updateModeTitles()
+        updateRefusalNotice()
     }
 
     /// Fills every control from a configuration.
@@ -644,6 +748,7 @@ final class SettingsWindow: NSObject {
         minimizeEffectPopup.selectItem(withTitle: config.minimizeEffect.displayName)
         animateCheckbox.state = config.animatesLaunch ? .on : .off
         recentsCheckbox.state = config.showsRecents ? .on : .off
+        updateSizeLabels()
 
         headerIconView.image = PositionIcon.image(for: config.position, selected: true)
     }
@@ -670,7 +775,7 @@ final class SettingsWindow: NSObject {
             (selectedMode == .external && service.hasExternalDisplay)
             || (selectedMode == .builtin && !service.hasExternalDisplay)
 
-        applyButton.isEnabled = false
+        markClean()
         if editingActiveMode { service.refresh() }
         updateStatus()
     }
@@ -687,11 +792,40 @@ final class SettingsWindow: NSObject {
     private func statusText() -> String { "Current: \(service.activeProfileDescription)" }
 
     /// "Small ◀─▶ Large" caption shown beside a size slider.
-    private func makeScaleHintLabel() -> NSTextField {
-        let label = UI.label("Small \u{25C0}\u{2500}\u{25B6} Large", font: .systemFont(ofSize: 10))
-        label.textColor = .tertiaryLabelColor
-        label.alignment = .center
+    /// Shows the size in pixels, the unit System Settings uses. The label used to be a
+    /// static "Small ◀─▶ Large" hint on the grounds that the scale is what is stored;
+    /// but a person comparing against System Settings, or trying to make two profiles
+    /// match, needs the number the system shows them, not a reminder of which way is up.
+    private func makeValueLabel() -> NSTextField {
+        let label = UI.label("", font: .monospacedDigitSystemFont(ofSize: 11, weight: .regular))
+        label.textColor = .secondaryLabelColor
+        label.alignment = .right
         return label
+    }
+
+    private func updateSizeLabels() {
+        iconSizeValueLabel.stringValue = "\(DockConfiguration.scaleToPixels(iconSizeSlider.doubleValue)) px"
+        magSizeValueLabel.stringValue = "\(DockConfiguration.scaleToPixels(magSizeSlider.doubleValue)) px"
+    }
+
+    /// Marks the profile the displays currently call for. The status line at the
+    /// bottom said the same thing, but a person editing a profile looks at the picker,
+    /// and the picker gave no hint which of the two was live.
+    private func updateModeTitles() {
+        let active: Mode = service.hasExternalDisplay ? .external : .builtin
+        for mode in [Mode.external, .builtin] {
+            let marker = mode == active ? "\u{25CF} " : ""
+            modeControl.setLabel(marker + mode.title, forSegment: mode.rawValue)
+        }
+    }
+
+    private func updateRefusalNotice() {
+        guard let notice = service.dockController.lastApplyOutcome?.refusalNotice else {
+            refusalLabel.isHidden = true
+            return
+        }
+        refusalLabel.stringValue = "\u{26A0}\u{FE0F} \(notice)"
+        refusalLabel.isHidden = false
     }
 
     private func makeHotkeyButton(for action: HotkeyAction) -> NSButton {
@@ -714,6 +848,19 @@ final class SettingsWindow: NSObject {
 // MARK: - NSWindowDelegate
 
 extension SettingsWindow: NSWindowDelegate {
+    /// Closing used to drop a draft without a word, while every other exit applied
+    /// it — inconsistent in both directions. Now it asks, and Cancel keeps the window.
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard isDirty else { return true }
+        switch askAboutDraft() {
+        case .apply:
+            saveAndApply()
+            return true
+        case .discard: return true
+        case .cancel: return false
+        }
+    }
+
     func windowWillClose(_ notification: Notification) {
         if hotkeyRecorder.isRecording { hotkeyRecorder.stop() }
         if let monitor = keyMonitor {
