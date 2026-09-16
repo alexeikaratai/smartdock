@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.1] — 2026-09-16
+
+### Fixed
+- **Builds on Xcode 27 / Swift 6.4.** SPM now builds through swift-build, which moves the
+  compiled module from `.build/release/Modules/` to an Xcode-style bundle directory under
+  `.build/release` itself. App Intents extraction reached in by the old path, found no
+  module, and produced nothing — the only symptom was the metadata processor listing
+  twelve missing files, because the recipe chained its steps with `;` and let it run after
+  `swiftc` had already failed. Both search paths are passed now (CI is still on Xcode 26.6
+  and needs the old one), and the recipe stops at the first failure so the next toolchain
+  change reports its real cause.
+- `make coverage` works on Xcode 27. The same SPM move renamed the test bundle from
+  `SmartDockPackageTests.xctest` (after the package) to `SmartDockTests.xctest` (after
+  the target), and the recipe named it by hand. It now finds whichever `*.xctest` the
+  build produced and derives the binary from that, so both toolchains are served.
+- `make lint` works on Xcode 27. Its `swift-format` now requires
+  `orderedImports.shouldGroupImports` and refuses to load a `.swift-format` without it,
+  failing every file at once. Set to `true` — the value that changes no existing file —
+  and ignored by the Xcode 26 formatter, so CI and a developer on the newer toolchain
+  share one config.
+
+Verified on macOS 27.0 with Xcode 27.0: all eight Dock properties still answer through
+System Events, the app launches and applies, Apple Events reach it, the suite passes with
+no compiler warnings. GitHub ships no `macos-27` runner image yet, so CI stays on
+`macos-26` / Xcode 26.6 until one exists.
+
 ## [2.6.0] — 2026-09-06
 
 ### Changed

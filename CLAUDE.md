@@ -227,7 +227,39 @@ Both workflows set the Xcode version via `env.XCODE_PATH` at workflow level — 
 
 Action versions are pinned by major (`@v7`). Run `make actions-check` to see how they compare to latest — don't hardcode them into this file, it goes stale.
 
-## Known Build Gotcha
+## Known Build Gotchas
+
+**SPM's output layout moved between toolchains.** Up to Swift 6.3, `swift build` writes
+modules to `.build/release/Modules/SmartDockCore.swiftmodule`. From Swift 6.4 (Xcode 27)
+SPM builds through swift-build: `.build/release` becomes a symlink to
+`out/Products/Release`, and the module is an Xcode-style bundle directory there. Anything
+that reaches into `.build` by path — `make appintents` did — breaks on one side or the
+other, so it now passes both search paths. The day Xcode 27 landed, App Intents
+extraction stopped producing files and the only symptom was the metadata processor
+listing twelve missing inputs; the real cause, `no such module 'SmartDockCore'`, was
+hidden because the recipe chained its steps with `;`. It runs under `set -e` now.
+The same move renamed the test bundle — `SmartDockPackageTests.xctest` after the
+package became `SmartDockTests.xctest` after the target — which broke `make coverage`
+the same day; it now locates `*.xctest` in the bin path instead of naming it. That one
+was missed on the first pass because `swift test` was run and `make coverage` was not:
+when a toolchain changes, run **every** make target, not the ones that seem relevant.
+
+**`swift-format` in Xcode 27 rejects the old `.swift-format`.** Its
+`OrderedImportsConfiguration` gained a non-optional `shouldGroupImports` with a
+synthesized `Decodable`, so a config without the key fails to *load* — every file
+reports "Unable to read configuration" and `make lint` fails on all 51 at once. The key
+is set to `true`, which is the value that leaves every existing file untouched (`false`
+would reformat 19). The Xcode 26 formatter has no such property and, as synthesized
+`Decodable` does, ignores the unknown key — so one config serves both toolchains.
+Checked against the formatter's source, not assumed.
+
+**CI cannot follow the dev machine yet.** GitHub ships no `macos-27` runner image, and
+`macos-26` carries Xcode up to 26.6 only — check the
+[runner image readme](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md)
+before bumping `XCODE_PATH`. Until an image exists, CI verifies the old layout and a
+developer on Xcode 27 verifies the new one, which is the one useful thing about the gap.
+
+**Stale incremental build after an initialiser change.**
 
 Changing an initialiser in `SmartDockCore` that is used as a **default argument**
 elsewhere — `SmartDockService.init(dockController: any DockControlling = DockController())`

@@ -5,7 +5,7 @@
 # === Config ===
 APP_NAME     := SmartDock
 BUNDLE_ID    := com.smartdock.app
-VERSION      := 2.6.0
+VERSION      := 2.6.1
 BUILD_DIR    := .build/release
 APP_DIR      := build/$(APP_NAME).app
 CONTENTS     := $(APP_DIR)/Contents
@@ -47,15 +47,27 @@ lint:
 # Prints a per-file table for SmartDockCore. The SmartDock target is an executable
 # and is not linked into the test bundle, so it never appears here — that gap is
 # intentional and documented in CONTRIBUTING.md.
+#
+# The test bundle is located, not named: up to Swift 6.3 SPM calls it
+# SmartDockPackageTests.xctest after the package, from Swift 6.4 (swift-build)
+# SmartDockTests.xctest after the test target. The binary inside always carries the
+# bundle's own name, so deriving it from whatever *.xctest is present serves both.
 
 coverage:
 	@echo "🧪 Running tests with coverage..."
 	@swift test --enable-code-coverage
 	@echo ""
-	@bin=$$(swift build --show-bin-path); \
+	@set -e; \
+	bin=$$(swift build --show-bin-path); \
 	prof=$$(swift test --show-codecov-path); \
+	bundle=$$(ls -d "$$bin"/*.xctest 2>/dev/null | head -1); \
+	if [ -z "$$bundle" ]; then \
+		echo "❌ No .xctest bundle in $$bin — did the test build change layout again?"; \
+		exit 1; \
+	fi; \
+	binary="$$bundle/Contents/MacOS/$$(basename "$$bundle" .xctest)"; \
 	xcrun llvm-cov report \
-		"$$bin/SmartDockPackageTests.xctest/Contents/MacOS/SmartDockPackageTests" \
+		"$$binary" \
 		-instr-profile="$$(dirname $$prof)/default.profdata" \
 		-ignore-filename-regex='.build|Tests/'
 
@@ -85,6 +97,15 @@ coverage:
 # The two -enable-upcoming-feature flags must match `upcomingFeatures` in
 # Package.swift; adding one there and not here fails this step loudly.
 #
+# Two module search paths, because SPM moved its output between toolchains: up to
+# Swift 6.3 the module sits at .build/release/Modules/SmartDockCore.swiftmodule;
+# from Swift 6.4 SPM builds through swift-build, .build/release becomes a symlink to
+# out/Products/Release and the module is an Xcode-style bundle directory right
+# there. A missing -I directory is harmless, so both are always passed. Found the
+# day Xcode 27 landed: swiftc failed with "no such module", but the recipe chained
+# its commands with `;`, so the processor ran anyway and reported twelve missing
+# files instead of the one real cause. The recipe now runs under `set -e`.
+#
 # Two details that are easy to get wrong and silently produce an empty bundle:
 #   - The toolchain ships the protocol list as {version, constValueProtocols} but
 #     the compiler wants the bare array, hence `plutil -extract`. Reading the
@@ -104,7 +125,8 @@ appintents: build
 	@echo "🧩 Extracting App Intents metadata..."
 	@rm -rf $(APPINTENTS_DIR)
 	@mkdir -p $(APPINTENTS_CV)
-	@toolchain=$$(xcrun --find swiftc | sed 's|/usr/bin/swiftc$$||'); \
+	@set -e; \
+	toolchain=$$(xcrun --find swiftc | sed 's|/usr/bin/swiftc$$||'); \
 	sdk=$$(xcrun --show-sdk-path --sdk macosx); \
 	triple=$$(uname -m)-apple-macos$(DEPLOY_TARGET); \
 	cv=$(CURDIR)/$(APPINTENTS_CV); \
@@ -123,7 +145,7 @@ appintents: build
 		-module-name $(APP_NAME) -swift-version 6 \
 		-enable-upcoming-feature ExistentialAny \
 		-enable-upcoming-feature MemberImportVisibility \
-		-target "$$triple" -sdk "$$sdk" -I $(BUILD_DIR)/Modules \
+		-target "$$triple" -sdk "$$sdk" -I $(BUILD_DIR)/Modules -I $(BUILD_DIR) \
 		-output-file-map $(APPINTENTS_DIR)/output-file-map.json \
 		-Xfrontend -const-gather-protocols-file \
 		-Xfrontend $(CURDIR)/$(APPINTENTS_DIR)/protocols.json; \
