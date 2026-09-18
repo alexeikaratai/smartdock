@@ -29,6 +29,7 @@ public struct DiagnosticReport: Sendable {
     public let isAccessibilityGranted: Bool
     public let externalDisplayCount: Int
     public let hasExternalDisplay: Bool
+    public let activeProfile: DockProfile
     public let externalConfig: DockConfiguration
     public let builtinConfig: DockConfiguration
     public let notificationsEnabled: Bool
@@ -47,6 +48,7 @@ public struct DiagnosticReport: Sendable {
         isAccessibilityGranted: Bool,
         externalDisplayCount: Int,
         hasExternalDisplay: Bool,
+        activeProfile: DockProfile,
         externalConfig: DockConfiguration,
         builtinConfig: DockConfiguration,
         notificationsEnabled: Bool,
@@ -61,6 +63,7 @@ public struct DiagnosticReport: Sendable {
         self.isAccessibilityGranted = isAccessibilityGranted
         self.externalDisplayCount = externalDisplayCount
         self.hasExternalDisplay = hasExternalDisplay
+        self.activeProfile = activeProfile
         self.externalConfig = externalConfig
         self.builtinConfig = builtinConfig
         self.notificationsEnabled = notificationsEnabled
@@ -76,7 +79,10 @@ public struct DiagnosticReport: Sendable {
         lines.append("- macOS: \(systemVersion)")
         lines.append("- Accessibility: \(isAccessibilityGranted ? "granted" : "NOT granted")")
         lines.append("- External displays: \(externalDisplayCount)")
-        lines.append("- Active profile: \(hasExternalDisplay ? "External Monitor" : "Built-in Only")")
+        // Both facts, because they can disagree: a profile applied on request is
+        // exactly the situation a report needs to make visible.
+        lines.append("- Active profile: \(activeProfile.displayName)")
+        lines.append("- Displays: \(hasExternalDisplay ? "external monitor connected" : "built-in only")")
         if let outcome = lastApplyOutcome {
             // Flagged like a missing permission — a silently refused setting is the
             // same class of problem and just as easy to overlook in a pasted report.

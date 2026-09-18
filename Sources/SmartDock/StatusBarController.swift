@@ -29,6 +29,9 @@ final class StatusBarController: NSObject {
     private var dockVisibilityMenuItem: NSMenuItem!
     private var refusalMenuItem: NSMenuItem!
     private var refreshMenuItem: NSMenuItem!
+    private var profileMenuItems: [DockProfile: NSMenuItem] = [:]
+    private var positionMenuItem: NSMenuItem!
+    private var positionMenuItems: [DockPosition: NSMenuItem] = [:]
 
     // MARK: - Init
 
@@ -112,8 +115,50 @@ final class StatusBarController: NSObject {
             systemSymbolName: "arrow.clockwise", accessibilityDescription: nil)
         menu.addItem(refreshMenuItem)
 
+        menu.addItem(.separator())
+
+        // Which profile is in force. A checkmark marks the applied one; picking the
+        // other applies it on request, exactly as the hotkey or a `smartdock://`
+        // URL would — same `HotkeyAction`, same path.
+        for profile in DockProfile.allCases {
+            let item = NSMenuItem(
+                title: profile.displayName,
+                action: #selector(selectProfile(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = profile
+            item.image = NSImage(
+                systemSymbolName: profile == .external ? "display.2" : "laptopcomputer",
+                accessibilityDescription: nil)
+            profileMenuItems[profile] = item
+            menu.addItem(item)
+        }
+
+        // Edits to the profile in force: position and visibility. Both write the
+        // stored profile and apply at once — there is no draft here, unlike the
+        // Dock tab in Settings.
+        positionMenuItem = NSMenuItem(title: "Dock Position", action: nil, keyEquivalent: "")
+        positionMenuItem.image = NSImage(
+            systemSymbolName: "rectangle.bottomthird.inset.filled", accessibilityDescription: nil)
+        let positionMenu = NSMenu()
+        positionMenu.autoenablesItems = false
+        for position in DockPosition.allCases {
+            let item = NSMenuItem(
+                title: position.displayName,
+                action: #selector(selectPosition(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = position
+            positionMenuItems[position] = item
+            positionMenu.addItem(item)
+        }
+        positionMenuItem.submenu = positionMenu
+        menu.addItem(positionMenuItem)
+
         // Hide/show the Dock. Title and icon follow the Dock's actual state, which
-        // is why they are refreshed in `menuNeedsUpdate` rather than set once.
+        // is why they are refreshed every time the menu opens rather than set once.
         dockVisibilityMenuItem = NSMenuItem(
             title: dockVisibilityTitle(),
             action: #selector(toggleDockVisibility),
@@ -181,8 +226,23 @@ final class StatusBarController: NSObject {
         updateUI()
     }
 
+    /// Every item that moves the Dock goes through `HotkeyManager.perform` — the
+    /// menu is one more front door onto the path hotkeys, URLs, AppleScript and
+    /// Shortcuts share, not a second implementation of any of them.
     @objc private func refresh() {
-        service.refresh()
+        hotkeyManager.perform(.refreshNow)
+    }
+
+    @objc private func selectProfile(_ sender: NSMenuItem) {
+        guard let profile = sender.representedObject as? DockProfile else { return }
+        hotkeyManager.perform(HotkeyAction(profile.command))
+    }
+
+    /// Position has no hotkey, URL or script command, so it edits the profile in
+    /// force directly — through the service, which knows which profile that is.
+    @objc private func selectPosition(_ sender: NSMenuItem) {
+        guard let position = sender.representedObject as? DockPosition else { return }
+        service.updateActiveProfile(service.currentConfig.with(position: position))
     }
 
     func showSettings(tab: SettingsWindow.Tab = .dock) {
@@ -209,12 +269,7 @@ final class StatusBarController: NSObject {
     // MARK: - UI Updates
 
     private func updateUI() {
-        statusMenuItem.title = statusText()
-        toggleMenuItem.title = service.isEnabled ? "Disable" : "Enable"
-        dockVisibilityMenuItem.title = dockVisibilityTitle()
-        applyDockVisibilityAppearance()
-        updateRefusalNotice()
-        updateActionAvailability()
+        updateMenuState()
 
         if let button = statusItem.button {
             // Use our saved config, not readSystemConfig() — the system config can
@@ -227,8 +282,26 @@ final class StatusBarController: NSObject {
         }
     }
 
+    /// Everything in the menu that reflects state, in one place — it is refreshed
+    /// both when the service reports a change and each time the menu opens, since
+    /// a refusal only becomes known a second after the apply.
+    private func updateMenuState() {
+        statusMenuItem.title = statusText()
+        toggleMenuItem.title = service.isEnabled ? "Disable" : "Enable"
+        dockVisibilityMenuItem.title = dockVisibilityTitle()
+        applyDockVisibilityAppearance()
+        for (profile, item) in profileMenuItems {
+            item.state = profile == service.activeProfile ? .on : .off
+        }
+        for (position, item) in positionMenuItems {
+            item.state = position == service.currentConfig.position ? .on : .off
+        }
+        updateRefusalNotice()
+        updateActionAvailability()
+    }
+
     private func tooltipText() -> String {
-        let profile = service.hasExternalDisplay ? "External Monitor" : "Built-in Only"
+        let profile = service.activeProfile.displayName
         let config = service.currentConfig
         let autohide = config.autohide ? "hidden" : "visible"
         return "SmartDock — \(profile)\nDock: \(config.position.displayName), \(autohide)"
@@ -265,6 +338,8 @@ final class StatusBarController: NSObject {
     private func updateActionAvailability() {
         refreshMenuItem.isEnabled = service.isEnabled
         dockVisibilityMenuItem.isEnabled = service.isEnabled
+        positionMenuItem.isEnabled = service.isEnabled
+        for item in profileMenuItems.values { item.isEnabled = service.isEnabled }
     }
 
     private func updateRefusalNotice() {
@@ -341,12 +416,7 @@ final class StatusBarController: NSObject {
 extension StatusBarController: NSMenuDelegate {
     /// Update menu item state each time the menu is opened.
     func menuNeedsUpdate(_ menu: NSMenu) {
-        statusMenuItem.title = statusText()
-        toggleMenuItem.title = service.isEnabled ? "Disable" : "Enable"
-        dockVisibilityMenuItem.title = dockVisibilityTitle()
-        applyDockVisibilityAppearance()
-        updateRefusalNotice()
-        updateActionAvailability()
+        updateMenuState()
     }
 }
 

@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.0] — 2026-09-18
+
+### Added
+
+- The menu bar is now a control panel, not just a status line. **External
+  Monitor** and **Built-in Display** switch the profile in force, with a
+  checkmark on the one applied; a **Dock Position** submenu moves the Dock
+  without opening Settings. All of it runs through the same path as the hotkeys,
+  `smartdock://` URLs and AppleScript — Refresh Now included, which used to be
+  the one item calling the service directly.
+- SmartDock now knows which profile is *applied*, separately from which display
+  is connected. Switch to the built-in profile while a monitor is attached and
+  the menu says so ("Built-in profile · external monitor connected"), the
+  Settings picker marks that profile as live, and the diagnostic report shows
+  both facts instead of deriving one from the other.
+- `make app` now proves two things it used to take on trust. `entitlements-check`
+  reads the entitlements back out of the signed bundle and compares them with
+  `Resources/SmartDock.entitlements` — a build that lost the Apple Events
+  entitlement (the one that lets SmartDock change the Dock at all) fails on the
+  PR instead of shipping. `sdef-check` verifies every scripting class the
+  AppleScript dictionary names actually exists, so a typo can no longer surface
+  as "unrecognised command" in Script Editor.
+- A new `URLCommand` no longer compiles in the test suite until it names its
+  AppleScript command, and the suite then checks the dictionary declares it — in
+  both directions, so a command left in the dictionary after its Swift
+  counterpart is gone also fails.
+
+### Changed
+
+- A fresh install no longer touches the Dock. Both profiles start as your Dock
+  exactly as it is — auto-hide included — so the first launch changes nothing;
+  edit a profile when you want the two setups to differ. Previously the external
+  profile was forced visible and the built-in one hidden, and the first thing
+  SmartDock did was move a Dock nobody had asked it to. Existing installs keep
+  their profiles.
+
+### Fixed
+
+- Toggling auto-hide (menu, hotkey, URL or script) after switching profiles on
+  request used to write the change into the wrong profile: it took the applied
+  built-in values, flipped auto-hide, and stored the lot as the external profile.
+  Edits made "in place" — auto-hide, position, and settings imported from System
+  Settings — now go to the profile that is actually applied.
+- The profile-switch banner named the profile by which display was connected.
+  After a switch on request, unplugging the monitor could announce a switch that
+  never happened, or stay silent about one that did. It now names what is
+  applied, so a switch made from the menu, a hotkey or a script is announced too.
+- Applying an edited profile from Settings no longer drops a switch made on
+  request; it re-applies the profile by name instead of re-deriving it from the
+  displays.
+
 ## [2.6.2] — 2026-09-16
 
 ### Changed

@@ -190,17 +190,13 @@ final class HotkeyManager: NSObject {
             service.refresh()
             Log.info("Hotkey: refreshed dock config")
         case .switchToExternal:
-            applyProfile(external: true)
+            service.applyProfile(.external)
         case .switchToBuiltin:
-            applyProfile(external: false)
+            service.applyProfile(.builtin)
         case .openSettings:
             onOpenSettings?()
             Log.info("Hotkey: opened settings")
         }
-    }
-
-    private func applyProfile(external: Bool) {
-        service.applyProfile(external: external)
     }
 
     private func toggleAutohide() {
@@ -209,15 +205,10 @@ final class HotkeyManager: NSObject {
         // `with` rather than rebuilding field by field: this call site used to list
         // every property, so each new setting silently reverted to its default the
         // moment somebody toggled auto-hide.
-        let toggled = current.with(autohide: !current.autohide)
-
-        if service.hasExternalDisplay {
-            prefs.externalConfig = toggled
-        } else {
-            prefs.builtinConfig = toggled
-        }
-
-        service.refresh()
+        // The service decides which profile receives it — this used to pick by
+        // `hasExternalDisplay`, which wrote built-in values into the external
+        // profile whenever the built-in one had been applied on request.
+        service.updateActiveProfile(current.with(autohide: !current.autohide))
         Log.info("Hotkey: toggled autohide → \(!current.autohide)")
     }
 }

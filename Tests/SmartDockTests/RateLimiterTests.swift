@@ -90,7 +90,7 @@ struct RateLimiterTests {
     @Test func firstSwitchIsAnnounced() {
         var announcer = ProfileSwitchAnnouncer(cooldown: 3.0)
 
-        let announced = announcer.shouldAnnounce(hasExternal: true, at: t0)
+        let announced = announcer.shouldAnnounce(profile: .external, at: t0)
 
         #expect(announced)
     }
@@ -100,8 +100,8 @@ struct RateLimiterTests {
     @Test func unchangedProfileIsNotAnnouncedAgain() {
         var announcer = ProfileSwitchAnnouncer(cooldown: 3.0)
 
-        let first = announcer.shouldAnnounce(hasExternal: true, at: t0)
-        let repeated = announcer.shouldAnnounce(hasExternal: true, at: t0.addingTimeInterval(60))
+        let first = announcer.shouldAnnounce(profile: .external, at: t0)
+        let repeated = announcer.shouldAnnounce(profile: .external, at: t0.addingTimeInterval(60))
 
         #expect(first)
         #expect(!repeated)
@@ -110,8 +110,8 @@ struct RateLimiterTests {
     @Test func rapidFlipFlopIsSuppressed() {
         var announcer = ProfileSwitchAnnouncer(cooldown: 3.0)
 
-        let first = announcer.shouldAnnounce(hasExternal: true, at: t0)
-        let bounced = announcer.shouldAnnounce(hasExternal: false, at: t0.addingTimeInterval(0.5))
+        let first = announcer.shouldAnnounce(profile: .external, at: t0)
+        let bounced = announcer.shouldAnnounce(profile: .builtin, at: t0.addingTimeInterval(0.5))
 
         #expect(first)
         #expect(!bounced, "A monitor bouncing during connect must not produce a second banner")
@@ -125,9 +125,9 @@ struct RateLimiterTests {
     @Test func aStateSuppressedByCooldownIsStillAnnouncedOnceThingsSettle() {
         var announcer = ProfileSwitchAnnouncer(cooldown: 3.0)
 
-        let first = announcer.shouldAnnounce(hasExternal: true, at: t0)
-        let suppressed = announcer.shouldAnnounce(hasExternal: false, at: t0.addingTimeInterval(1))
-        let settled = announcer.shouldAnnounce(hasExternal: false, at: t0.addingTimeInterval(10))
+        let first = announcer.shouldAnnounce(profile: .external, at: t0)
+        let suppressed = announcer.shouldAnnounce(profile: .builtin, at: t0.addingTimeInterval(1))
+        let settled = announcer.shouldAnnounce(profile: .builtin, at: t0.addingTimeInterval(10))
 
         #expect(first)
         #expect(!suppressed)
@@ -139,9 +139,9 @@ struct RateLimiterTests {
     @Test func genuineSwitchAfterCooldownIsAnnounced() {
         var announcer = ProfileSwitchAnnouncer(cooldown: 3.0)
 
-        let toExternal = announcer.shouldAnnounce(hasExternal: true, at: t0)
-        let toBuiltin = announcer.shouldAnnounce(hasExternal: false, at: t0.addingTimeInterval(5))
-        let backToExternal = announcer.shouldAnnounce(hasExternal: true, at: t0.addingTimeInterval(10))
+        let toExternal = announcer.shouldAnnounce(profile: .external, at: t0)
+        let toBuiltin = announcer.shouldAnnounce(profile: .builtin, at: t0.addingTimeInterval(5))
+        let backToExternal = announcer.shouldAnnounce(profile: .external, at: t0.addingTimeInterval(10))
 
         #expect(toExternal)
         #expect(toBuiltin)

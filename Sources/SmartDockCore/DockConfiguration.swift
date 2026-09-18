@@ -347,37 +347,25 @@ public final class UserPreferences {
 
     // MARK: - First Launch
 
-    /// On first launch (no saved preferences), read the current system dock
-    /// config and set sensible defaults: external = autohide off, built-in = autohide on.
-    /// Other properties (position, size, magnification) are taken from the current system config.
+    /// On first launch (no saved preferences), both profiles become the Dock
+    /// exactly as the person has it. Nothing changes until they edit one.
+    ///
+    /// This used to force auto-hide off for the external profile and on for the
+    /// built-in one, so the first thing SmartDock did on a machine was move a Dock
+    /// nobody had asked it to — a value the user never chose has to come from
+    /// their system, not from our defaults. The first apply is now a no-op: the
+    /// profile equals the Dock, so there is no diff and no script runs.
     public func initializeDefaultsIfNeeded(from systemConfig: DockConfiguration) {
         guard !isConfigured else { return }
 
-        externalConfig = DockConfiguration(
-            autohide: false,
-            position: systemConfig.position,
-            iconSize: systemConfig.iconSize,
-            magnification: systemConfig.magnification,
-            magnificationSize: systemConfig.magnificationSize,
-            minimizeEffect: systemConfig.minimizeEffect,
-            animatesLaunch: systemConfig.animatesLaunch,
-            showsRecents: systemConfig.showsRecents
-        )
-        builtinConfig = DockConfiguration(
-            autohide: true,
-            position: systemConfig.position,
-            iconSize: systemConfig.iconSize,
-            magnification: systemConfig.magnification,
-            magnificationSize: systemConfig.magnificationSize,
-            minimizeEffect: systemConfig.minimizeEffect,
-            animatesLaunch: systemConfig.animatesLaunch,
-            showsRecents: systemConfig.showsRecents
-        )
+        for profile in DockProfile.allCases {
+            self[profile] = systemConfig
+        }
 
         Log.info(
-            "First launch — initialized defaults from system config: "
-                + "position=\(systemConfig.position.rawValue) size=\(systemConfig.iconSize) "
-                + "(external: autohide=false, builtin: autohide=true)")
+            "First launch — both profiles seeded from the Dock as it is: "
+                + "position=\(systemConfig.position.rawValue) autohide=\(systemConfig.autohide) "
+                + "size=\(systemConfig.iconSize)")
     }
 
     /// Whether any preferences have been saved (either mode).
@@ -398,6 +386,24 @@ public final class UserPreferences {
     public var builtinConfig: DockConfiguration {
         get { load(key: "builtin") ?? DockConfiguration(autohide: true) }
         set { save(newValue, key: "builtin") }
+    }
+
+    /// The profile's configuration by name, so a caller holding a `DockProfile`
+    /// never has to spell `if external { externalConfig } else { builtinConfig }`
+    /// — that branch was written in four files before this existed.
+    public subscript(profile: DockProfile) -> DockConfiguration {
+        get {
+            switch profile {
+            case .external: externalConfig
+            case .builtin: builtinConfig
+            }
+        }
+        set {
+            switch profile {
+            case .external: externalConfig = newValue
+            case .builtin: builtinConfig = newValue
+            }
+        }
     }
 
     // MARK: - Notifications

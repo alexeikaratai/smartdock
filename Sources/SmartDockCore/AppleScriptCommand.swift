@@ -2,7 +2,11 @@ import Foundation
 
 // MARK: - Dock Profile
 
-/// The `dock profile` enumeration declared in `Resources/SmartDock.sdef`.
+/// The two Dock profiles — the one for an external monitor and the one for the
+/// built-in display alone. `SmartDockService` reports which is in force and
+/// `UserPreferences` stores one configuration per case.
+///
+/// It is also the `dock profile` enumeration declared in `Resources/SmartDock.sdef`:
 ///
 /// ```applescript
 /// tell application "SmartDock" to switch to external
@@ -16,6 +20,19 @@ import Foundation
 public enum DockProfile: String, CaseIterable, Sendable {
     case external
     case builtin
+
+    /// How the profile is named to a person, in menus and status lines.
+    public var displayName: String {
+        switch self {
+        case .external: "External Monitor"
+        case .builtin: "Built-in Display"
+        }
+    }
+
+    /// The profile a display setup selects on its own.
+    public init(hasExternalDisplay: Bool) {
+        self = hasExternalDisplay ? .external : .builtin
+    }
 
     /// Four-character code AppleScript sends for this enumerator.
     /// Mirrors `<enumerator code="...">` in SmartDock.sdef.

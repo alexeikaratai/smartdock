@@ -69,6 +69,14 @@ struct DockSystemConfigTests {
         #expect(controller.readSystemConfig().position == .bottom)
     }
 
+    @Test func unknownMinimizeEffectFallsBackToGenie() {
+        let (store, controller) = makeSubject()
+
+        store.set("suck", forKey: "mineffect")
+
+        #expect(controller.readSystemConfig().minimizeEffect == .genie)
+    }
+
     @Test func missingOrientationFallsBackToBottom() {
         let (_, controller) = makeSubject()
 

@@ -80,9 +80,9 @@ final class OnboardingWindow: NSObject {
 
         // Feature list
         let features = [
-            "Auto-hide on built-in display",
-            "Show dock on external monitor",
-            "Position, size, magnification per mode",
+            "Your Dock as it is becomes both profiles — nothing changes until you edit one",
+            "Position, size, auto-hide, magnification per display setup",
+            "Switch from the menu bar, a hotkey, a URL or a script",
         ]
         let featureStack = NSStackView()
         featureStack.translatesAutoresizingMaskIntoConstraints = false

@@ -230,6 +230,7 @@ final class AboutTabView: NSView {
             isAccessibilityGranted: AccessibilityChecker.isGranted,
             externalDisplayCount: service.externalDisplayCount,
             hasExternalDisplay: service.hasExternalDisplay,
+            activeProfile: service.activeProfile,
             externalConfig: prefs.externalConfig,
             builtinConfig: prefs.builtinConfig,
             notificationsEnabled: prefs.notificationsEnabled,

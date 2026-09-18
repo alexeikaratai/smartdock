@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.6.2-blue?style=flat-square" alt="Version 2.6.2"/>
+  <img src="https://img.shields.io/badge/version-2.7.0-blue?style=flat-square" alt="Version 2.7.0"/>
   <img src="https://img.shields.io/badge/macOS-14.0%2B-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS 14+"/>
   <img src="https://img.shields.io/badge/Swift-6.2-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 6.2"/>
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License"/>
@@ -19,11 +19,14 @@
 
 SmartDock lives in your menu bar and automatically switches Dock configuration when you connect or disconnect an external monitor. Configure separate settings for each mode — position, icon size, magnification, autohide — and SmartDock applies them instantly.
 
+On first launch both profiles are your Dock exactly as it is. Nothing changes until you edit one.
+
 ## ✨ Features
 
 | | Feature | Details |
 |---|---|---|
 | 🖥️ | **Two-mode Dock profiles** | Separate settings for external monitor vs. built-in display |
+| 🎛️ | **Menu bar control panel** | Switch profile, move the Dock, hide it — from the menu, with a checkmark on what is applied |
 | 📍 | **Position control** | Bottom, Left, or Right — per mode |
 | 📐 | **Icon size & magnification** | Independent size sliders for each mode |
 | ✨ | **Minimize effect & animation** | Genie or Scale, and app-launch animation — per mode |

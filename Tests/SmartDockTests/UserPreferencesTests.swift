@@ -35,29 +35,26 @@ struct UserPreferencesTests {
         #expect(scratch.prefs.isConfigured)
     }
 
-    /// First launch seeds both profiles from whatever the Dock already looks like,
-    /// changing only autohide — so the user's Dock does not visibly jump the first
-    /// time the app runs.
-    @Test func firstLaunchSeedsBothProfilesFromTheSystem() {
+    /// First launch turns the Dock as it is into both profiles — every field, so
+    /// nothing changes until the person edits one. It used to force auto-hide on
+    /// and off, which moved a Dock nobody had asked it to. Every field here is
+    /// off its default, so a field that stopped being copied would show.
+    @Test(arguments: DockProfile.allCases)
+    func firstLaunchMakesEachProfileTheDockAsItIs(profile: DockProfile) {
         let scratch = ScratchPreferences()
         let system = DockConfiguration(
-            autohide: false,
+            autohide: true,
             position: .right,
             iconSize: DockConfiguration.pixelsToScale(64),
             magnification: true,
-            magnificationSize: DockConfiguration.pixelsToScale(96))
+            magnificationSize: DockConfiguration.pixelsToScale(96),
+            minimizeEffect: .scale,
+            animatesLaunch: false,
+            showsRecents: false)
 
         scratch.prefs.initializeDefaultsIfNeeded(from: system)
 
-        for profile in [scratch.prefs.externalConfig, scratch.prefs.builtinConfig] {
-            #expect(profile.position == .right)
-            expectClose(profile.iconSize, system.iconSize)
-            #expect(profile.magnification)
-            expectClose(profile.magnificationSize, system.magnificationSize)
-        }
-
-        #expect(!scratch.prefs.externalConfig.autohide, "Dock stays visible with a monitor attached")
-        #expect(scratch.prefs.builtinConfig.autohide, "Dock hides on the laptop screen alone")
+        #expect(scratch.prefs[profile] == system, "\(profile) must be the Dock verbatim, auto-hide included")
     }
 
     /// The guard that protects everything the user has configured. Without it, any
@@ -268,6 +265,29 @@ struct UserPreferencesTests {
 
     // MARK: - Hotkeys
 
+    /// Stored values that no longer decode fall back to the Dock's own defaults
+    /// rather than refusing to load the profile — a renamed enum case must not
+    /// wipe someone's settings.
+    @Test func aProfileWithValuesThatNoLongerDecodeFallsBackToTheDockDefaults() {
+        let scratch = ScratchPreferences()
+        scratch.prefs.externalConfig = DockConfiguration(position: .left, minimizeEffect: .scale)
+        scratch.defaults.set("diagonal", forKey: "com.smartdock.external.position")
+        scratch.defaults.set("suck", forKey: "com.smartdock.external.minimizeEffect")
+
+        let loaded = scratch.prefs.externalConfig
+
+        #expect(loaded.position == .bottom)
+        #expect(loaded.minimizeEffect == .genie)
+    }
+
+    @Test func aProfileMissingItsPositionKeyReadsAsBottom() {
+        let scratch = ScratchPreferences()
+        scratch.prefs.externalConfig = DockConfiguration(position: .right)
+        scratch.defaults.removeObject(forKey: "com.smartdock.external.position")
+
+        #expect(scratch.prefs.externalConfig.position == .bottom)
+    }
+
     @Test func unboundActionHasNoBinding() {
         let scratch = ScratchPreferences()
 
@@ -281,6 +301,16 @@ struct UserPreferencesTests {
         scratch.prefs.setHotkey(binding, for: "refreshNow")
 
         #expect(scratch.prefs.hotkey(for: "refreshNow") == binding)
+    }
+
+    /// A binding whose display name was lost still fires; it just shows a
+    /// placeholder until re-recorded.
+    @Test func aBindingWithoutADisplayNameShowsAPlaceholder() {
+        let scratch = ScratchPreferences()
+        scratch.prefs.setHotkey(HotkeyBinding(keyCode: 15, modifiers: 1_966_080, displayName: "R"), for: "refreshNow")
+        scratch.defaults.removeObject(forKey: "com.smartdock.hotkey.refreshNow.displayName")
+
+        #expect(scratch.prefs.hotkey(for: "refreshNow")?.displayName == "?")
     }
 
     @Test func clearingABindingRemovesItEntirely() {

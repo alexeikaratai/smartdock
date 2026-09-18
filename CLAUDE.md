@@ -113,11 +113,14 @@ apply push a redundant script — `aDefaultConfigAsksTheDockForNothing` pins it.
 **A value the user never chose comes from their system, not from our defaults.** A setting
 added today is absent from profiles saved yesterday; seeding it from struct defaults would
 restyle a Dock someone had deliberately set. `backfillMissingSettings` reads the live Dock.
+The same rule on a fresh install: both profiles are the Dock verbatim — it used to force
+auto-hide on one and off on the other, and the first thing the app did was move a Dock
+nobody had asked it to. Nothing changes until the person edits a profile.
 
 **Break the build rather than write a note.** Agreement between two places is enforced by
 an exhaustive switch where the compiler can reach — `HotkeyAction(URLCommand)`,
 `push(_:of:)`, `ShortcutCoverage.intentType(for:)` — and by a test or make target where it
-cannot: `.sdef` parity, `appintents-check`, `version-check`.
+cannot: `.sdef` parity, `appintents-check`, `sdef-check`, `entitlements-check`, `version-check`.
 
 **A list repeated in two places will drift.** `toggleAutohide` rebuilt the config field by
 field and silently reset every setting it had not heard of; a `zip` against a literal list
@@ -135,6 +138,7 @@ auto-hide, macOS merely would not do it right now.
 make build / test / app / run / clean          # swift build -c release · swift test · bundle (ad-hoc signed) · open · clean
 make format / lint / coverage                  # swift-format apply · check (CI gates) · llvm-cov table
 make appintents / appintents-check             # generate Metadata.appintents · verify every intent reached it
+make entitlements-check / sdef-check           # bundle carries the entitlements file · .sdef classes exist (both in app)
 make bump V=1.2.3 / version-check / release    # version everywhere · verify refs · build + zip + gh release (clean tree)
 make install / fix                             # copy to /Applications · xattr -cr + codesign
 make doctor / outdated / actions-check / logs  # env check · toolchain versions · Actions vs latest · live log
@@ -164,10 +168,12 @@ then `version-check` → `lint` → `coverage` → `swift build -c release` → 
 `codesign --verify --strict`. Lint runs first so a formatting PR fails in seconds.
 `coverage` replaces a bare `swift test` so the suite is not compiled twice; its step sets
 `shell: bash` because the default runner shell has no `pipefail` and `| tee` would mask a
-failure. `make app` is the only place `appintents-check` runs, so a toolchain that breaks
-metadata extraction fails the PR, not the release. The entitlements are only dumped into the
-log (`codesign --display --entitlements -`), not asserted — a dropped entitlement does not
-fail CI.
+failure. `make app` is the only place `appintents-check`, `entitlements-check` and `sdef-check`
+run, so a toolchain that breaks metadata extraction, a dropped entitlement or a scripting
+class the dictionary cannot find fails the PR, not the release. `entitlements-check` reads
+the sealed bundle back with `codesign -d --entitlements :-` and diffs it against
+`Resources/SmartDock.entitlements` — the file is the only list of keys, so a new entitlement
+needs no change to the check.
 
 **`release.yml`** (`v*` tag): 🧪 Test → 🔨 Build → 🎉 Release → 🍺 Homebrew (updates Cask +
 Formula in `alexeikaratai/homebrew-tap`).
@@ -219,16 +225,16 @@ and applies the entitlements through `codesign`. README images are in `assets/`.
 
 | File | Responsibility |
 |---|---|
-| `DockConfiguration.swift` | `DockConfiguration` value type: position, autohide, icon size (0.0–1.0 scale, `pixelsToScale`/`scaleToPixels`, 0.01 tolerance), magnification, `MinimizeEffect` genie/scale, `animatesLaunch`, `showsRecents`. `with(...)` copies with fields replaced — the guard against field-by-field rebuilds. `differences(from:)` is the apply diff, pure and tested. `UserPreferences` persists per-mode profiles plus flags and hotkeys; `migrateIfNeeded` converts the pre-scale pixel keys and is called once from `applicationDidFinishLaunching`, not by `load`; `initializeDefaultsIfNeeded` seeds a fresh install from the system (external = visible, built-in = hidden); `backfillMissingSettings` fills keys an old profile predates from the live Dock. `DockPosition`, `HotkeyBinding`. |
+| `DockConfiguration.swift` | `DockConfiguration` value type: position, autohide, icon size (0.0–1.0 scale, `pixelsToScale`/`scaleToPixels`, 0.01 tolerance), magnification, `MinimizeEffect` genie/scale, `animatesLaunch`, `showsRecents`. `with(...)` copies with fields replaced — the guard against field-by-field rebuilds. `differences(from:)` is the apply diff, pure and tested. `UserPreferences` persists per-mode profiles plus flags and hotkeys, `prefs[profile]` by `DockProfile` — never `if external { externalConfig } else …` at a call site; `migrateIfNeeded` converts the pre-scale pixel keys and is called once from `applicationDidFinishLaunching`, not by `load`; `initializeDefaultsIfNeeded` makes both profiles the Dock as it is on a fresh install, so the first apply is a no-op; `backfillMissingSettings` fills keys an old profile predates from the live Dock. `DockPosition`, `HotkeyBinding`. |
 | `DisplayMonitor.swift` | `CGDisplayRegisterReconfigurationCallback`, event-driven. Reacts only to add/remove/enable/disable — mode, move, mirror and shape changes fire during Mission Control and fullscreen — via the tested free function `shouldReactToDisplayChange(_:)`, using the named `CGDisplayChangeSummaryFlags` constants, never raw hex; `.beginConfigurationFlag` is skipped since completion follows. 1s settle debounce; fires only when the external count actually changes. `externalDisplayCount()` filters `CGDisplayIsBuiltin`, `CGDisplayIsActive`, `!CGDisplayIsAsleep` — clamshell, standby, phantom hubs. Wake: `didWakeNotification`/`screensDidWakeNotification` re-check after 2s on a separate work item (`pendingWakeCheck`) so a CG callback cannot cancel it; like every other check it fires only when the external count changed — a wake with the same displays never touches the Dock (`wakeWithTheSameDisplaysChangesNothing`). **`activeSpaceDidChangeNotification` is not observed** — AppleScript Dock changes trigger it and loop. |
 | `DockController.swift` | Applies via `NSAppleScript` → System Events, **one `tell` block per property** so one refusal cannot take the others down; never `killall Dock`. Diff-based: reads a fresh `UserDefaults(suiteName: "com.apple.dock")` and pushes only what differs, so frequent re-applies cost nothing. Reads back after 1s and records `DockApplyOutcome`. KVO on the same domain (`DockPrefsObserver`) reports System Settings edits via `onExternalConfigChanged`, debounced 0.5s; own changes are filtered by comparing to `lastAppliedConfig` with `approximatelyEquals`. Injectable `openDefaults`, `runScript`, delays. |
-| `SmartDockService.swift` | Orchestrator: display state → profile → apply. Guards every path on `isEnabled`. `handleExternalDockChange` writes a System Settings edit into the active profile, gated by `syncFromSystemEnabled`. `activeProfileDescription` is the one wording of the active profile for every UI. Reconciles `currentConfig` to the verified outcome on refusal, leaving the stored profile alone. Posts `smartDockStateDidChange` only on real change. |
+| `SmartDockService.swift` | Orchestrator: display state → profile → apply. Guards every path on `isEnabled`. **`activeProfile` is the profile in force** — the displays select it, `applyProfile(_:)` overrides it until the next display change, wake or refresh. Everything that edits "the current profile" in place goes through `updateActiveProfile(_:)` (auto-hide toggle, position menu, System Settings edits via `handleExternalDockChange`, gated by `syncFromSystemEnabled`) — writing by `hasExternalDisplay` put built-in values into the external profile. `activeProfileDescription` is the one wording for every UI, including the override state. Reconciles `currentConfig` to the verified outcome on refusal, leaving the stored profile alone. Posts `smartDockStateDidChange` with `activeProfileKey` only on real change. |
 | `URLCommand.swift` | Parses `smartdock://`. Rejects foreign schemes, unknown verbs and `switch` with no target rather than guessing. |
-| `AppleScriptCommand.swift` | `DockProfile` maps the `.sdef` enumerators' four-character codes to `URLCommand`. `AppleScriptCommandTests` pins the codes to literals **and** greps the shipped `.sdef`. |
+| `AppleScriptCommand.swift` | `DockProfile` — the two profiles, with `displayName` and `init(hasExternalDisplay:)`; also the `.sdef` enumeration, mapping four-character codes to `URLCommand`. `AppleScriptCommandTests` pins the codes to literals **and** greps the shipped `.sdef`. |
 | `DockApplyOutcome.swift` | What an apply actually achieved. Only **requested** properties can be reported rejected. `refusalNotice` is the user-facing line; `summary` the log line. |
-| `RateLimiter.swift` | Hotkey rate limit — a blocked attempt does not push the deadline out — and `ProfileSwitchAnnouncer` (notification cooldown); both take `now` so edges are testable. The announcer records a state only when a banner actually shows. |
+| `RateLimiter.swift` | Hotkey rate limit — a blocked attempt does not push the deadline out — and `ProfileSwitchAnnouncer` (notification cooldown, keyed on `DockProfile`, not the hardware); both take `now` so edges are testable. The announcer records a state only when a banner actually shows. |
 | `PendingCommandQueue.swift` | Holds commands that arrive before launch finishes — a URL or Apple Event can *launch* the app. In Core so the launch-crash fix is tested. |
-| `DiagnosticReport.swift` | Markdown snapshot for **Copy Diagnostic Info** — never anything identifying; a test fails if it appears. |
+| `DiagnosticReport.swift` | Markdown snapshot for **Copy Diagnostic Info** — never anything identifying; a test fails if it appears. Prints the active profile and the displays as two lines, since an override makes them disagree. |
 | `LogExport.swift` | `log show` invocation for **Export Logs**, home directory redacted. Absolute `/usr/bin/log` — zsh shadows it. |
 | `Log.swift` | `Logger`, subsystem `com.smartdock.app`, categories `general`/`display`. Records at **notice** or above — `.info`/`.debug` are never persisted and invisible to `log show`. |
 
@@ -237,13 +243,13 @@ and applies the entitlements through `codesign`. README images are in `assets/`.
 | File | Responsibility |
 |---|---|
 | `App.swift` | `@main`, manual `NSApplication` run loop, no nibs. `performCommand` is the single entry for every external input, queueing until managers exist. First-launch-only Accessibility prompt; "Reset Permission" flow polls `AXIsProcessTrusted` and relaunches. `applicationShouldHandleReopen` opens Settings when the app is launched again from `/Applications`. |
-| `StatusBarController.swift` | Menu bar icon + menu. `autoenablesItems = false` so `updateActionAvailability` can grey Refresh/Hide Dock while disabled. Shows `refusalNotice` under the status line. |
+| `StatusBarController.swift` | Menu bar icon + menu: profile items (checkmark on `activeProfile`), **Dock Position** submenu, Hide/Show Dock, Refresh. Every item that moves the Dock goes through `hotkeyManager.perform`; position edits the profile in force via `service.updateActiveProfile` since it has no command. `autoenablesItems = false` so `updateActionAvailability` can grey them while disabled. `updateMenuState` is the one list of state-driven items, called on state change and on every open. Shows `refusalNotice` under the status line. |
 | `SettingsWindow.swift` | Four tabs: **Dock** (profile card, Sync from System, status), **General** (`GeneralTabView`), **Shortcuts**, **About** (`AboutTabView`). Only the Dock tab scrolls — its height is defined from the inside, the others end in `lessThanOrEqualTo`. Default 420×680, measured; resizable 380×500–600×900, ⌘0 resets. Leaving the Shortcuts tab cancels a recording in progress. |
 | `HotkeyManager.swift` | Global + local `NSEvent` monitors; `HotkeyAction` enum; 0.3s rate limit; `isRecording` pauses dispatch. `toggleAutohide` uses `with(...)`. |
 | `HotkeyRecorder.swift` | Captures a keystroke into a `HotkeyBinding`; pauses the manager while recording; Escape clears; a ⌘/⌥/⌃ modifier is required — Shift alone is rejected (`HotkeyBinding.hasRequiredModifier`). Display names come from `charactersIgnoringModifiers`, so any keyboard layout works. |
 | `AppIntentsSupport.swift` | Four intents + `ShortcutDockProfile` (`AppEnum`), all routing into `performCommand`. `ShortcutCoverage` is a build-time tripwire on `URLCommand`. |
 | `ScriptingSupport.swift` | `NSScriptCommand` subclasses bound by `@objc(SD…Command)` name. Reach `@MainActor` via `MainActor.assumeIsolated` — sound because Apple Events arrive on the main thread. Bad input sets `scriptErrorNumber`/`scriptErrorString` rather than guessing a profile. |
-| `NotificationManager.swift` | `UNUserNotificationCenter` banners on profile switch, 3s cooldown; `willPresent` returns `[.banner, .sound]` (required for LSUIElement apps); lazy authorisation, flag cleared on denial. |
+| `NotificationManager.swift` | `UNUserNotificationCenter` banners on a change of `activeProfile` (from `activeProfileKey`), 3s cooldown; `willPresent` returns `[.banner, .sound]` (required for LSUIElement apps); lazy authorisation, flag cleared on denial. |
 | `AppUpdateWatcher.swift` / `AppRelauncher.swift` | FS watcher on the executable prompts a relaunch after a Homebrew upgrade; relauncher waits for PID exit (max 5s) then `open -n`, bundle path via env var so nothing is interpolated into the shell. |
 | `OnboardingWindow.swift`, `LaunchAtLogin.swift`, `AccessibilityChecker.swift` | First-launch welcome; `SMAppService` wrapper; `AXIsProcessTrusted` with a first-launch-only prompt (ad-hoc signing resets the grant on every update). |
 
@@ -302,6 +308,10 @@ closure, so a `mutating` call goes into a named `let` first.
 monitor, a dispatch source, the observed `UserDefaults`), each with a comment saying so; no `Task.detached`
 to escape isolation; closures crossing isolation are `@Sendable`.
 
+**Profile in force vs. hardware.** `service.activeProfile`, never `hasExternalDisplay`,
+is what the menu, the Settings picker, the banner and the diagnostic report mean by "the
+current profile". `hasExternalDisplay` is only for saying what is plugged in.
+
 **AppKit.** Programmatic Auto Layout, `NSLayoutConstraint.activate([...])`, no nibs.
 `LSUIElement = true`; never call `setActivationPolicy(.accessory)` — it can drop the
 status item at launch. Glass via `NSVisualEffectView` (`.hudWindow` / `.popover`).
@@ -319,10 +329,12 @@ CapsLock/Fn ride along on key events and a binding recorded under one flag state
 silently stop firing under another. `HotkeyBindingTests` guards it.
 
 **External commands.** Adding one touches four places: `URLCommand`, the `.sdef` plus its
-`NSScriptCommand`, and an intent. The exhaustive switches fail the build if the hotkey
-mapping or the intent is forgotten; the `.sdef` parity test checks only enumerator codes and
-command/class counts, so a missing `.sdef` entry or `NSScriptCommand` surfaces at runtime. `show settings`, not `open settings` — `open` collides
-with the Standard Suite. `make app` copies the `.sdef` into `Contents/Resources`; its filename
+`NSScriptCommand`, and an intent. Each is a tripwire: the exhaustive switches in
+`HotkeyAction(URLCommand)`, `ShortcutCoverage` and `AppleScriptCommandTests` fail the build
+until the hotkey, the intent and the `.sdef` command name are named; the test then checks
+the dictionary declares it, and `sdef-check` that its `cocoa class` exists in
+`ScriptingSupport.swift`. `show settings`, not `open settings` — `open` collides with the
+Standard Suite. `make app` copies the `.sdef` into `Contents/Resources`; its filename
 must match `OSAScriptingDefinition` in `Info.plist` exactly.
 
 **App Intents.** `Metadata.appintents` is not produced by `swift build`; `make appintents`
