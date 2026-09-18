@@ -94,31 +94,31 @@ final class NotificationManager: NSObject {
         guard prefs.notificationsEnabled else { return }
 
         guard let userInfo = notification.userInfo,
-            let hasExternal = userInfo[SmartDockService.hasExternalKey] as? Bool
+            let profile = userInfo[SmartDockService.activeProfileKey] as? DockProfile
         else {
             return
         }
 
         // Announce only a real profile switch (External↔Built-in), not a settings
         // change within the same profile, and not faster than the cooldown.
-        guard announcer.shouldAnnounce(hasExternal: hasExternal, at: Date()) else { return }
+        guard announcer.shouldAnnounce(profile: profile, at: Date()) else { return }
 
-        postNotification(hasExternal: hasExternal)
+        postNotification(profile: profile)
     }
 
     // MARK: - Private
 
-    private func postNotification(hasExternal: Bool) {
+    private func postNotification(profile: DockProfile) {
         // Request authorization lazily on first use
         if !isAuthorized {
-            checkAndPost(hasExternal: hasExternal)
+            checkAndPost(profile: profile)
             return
         }
 
-        deliverNotification(hasExternal: hasExternal)
+        deliverNotification(profile: profile)
     }
 
-    private func checkAndPost(hasExternal: Bool) {
+    private func checkAndPost(profile: DockProfile) {
         Task {
             let settings = await UNUserNotificationCenter.current().notificationSettings()
 
@@ -140,18 +140,15 @@ final class NotificationManager: NSObject {
             }
 
             if isAuthorized {
-                deliverNotification(hasExternal: hasExternal)
+                deliverNotification(profile: profile)
             }
         }
     }
 
-    private func deliverNotification(hasExternal: Bool) {
+    private func deliverNotification(profile: DockProfile) {
         let content = UNMutableNotificationContent()
         content.title = "SmartDock"
-        content.body =
-            hasExternal
-            ? "Switched to External Monitor config"
-            : "Switched to Built-in Only config"
+        content.body = "Switched to \(profile.displayName) profile"
         content.sound = .default
 
         let request = UNNotificationRequest(

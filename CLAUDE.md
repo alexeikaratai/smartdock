@@ -4,645 +4,358 @@ Project instructions for Claude Code. Follow these exactly.
 
 ## Working on a Task
 
-One task at a time, carried through these steps in order. Each ends with the tree
-ready for the **user** to commit and release — see the last step.
+One task at a time, carried through these steps in order. A step is not done because it
+was started; each has a visible output. The tree ends up ready for the **user** to commit
+and release — see the last step.
 
-### 1. Plan before writing code
+### 1. Understand the task
 
-Say what the change is, what it touches, roughly how long, and what could break.
-Where there is a real choice, give the options and a recommendation rather than a
-survey. Wait for a decision on anything that changes behaviour users already rely on.
+Restate it: what changes for a person, what is in scope, what is explicitly not. If two
+readings would lead to different work, ask now. Check what the change does for the people
+who use this — per-monitor profiles was planned twice before reading the user's stored
+profiles showed it would change nothing for them.
 
-A plan built on an assumption is worth nothing here — see the next step.
+### 2. Measure before planning
 
-### 2. Measure, do not assume
-
-macOS is full of settings that look obvious and are not. Everything load-bearing gets
-checked against the running system before it reaches a plan:
-
-- `mineffect` and `launchanim` are **absent** until changed, so `bool(forKey:)` answers
-  `false` for a Dock that animates — found by reading the domain, not by guessing.
-- `vendor + model` does not identify a display: two identical monitors differ only by
-  serial — found by enumerating the real ones.
-- `show recents` was written off as needing `killall Dock` until the scripting
-  dictionary said otherwise.
-- App Intents metadata needs three undocumented compiler details, each failing silently
-  — found by building it and looking at the output.
+Everything load-bearing is checked against the running system before it reaches a plan.
+A plan built on an assumption is worth nothing. Things here that looked obvious and were
+not: `mineffect`/`launchanim` are absent until changed, so `bool(forKey:)` lies; two
+identical monitors differ only by serial; `show recents` needs no `killall`; `autohide
+menu bar` lives in `NSGlobalDomain`; App Intents extraction needs three undocumented
+flags. Each was found by looking, not by recalling.
 
 State plainly which claims are measured and which are knowledge. "I believe" and
 "I checked" are different words; never let one stand in for the other.
 
-### 3. Implement
+### 3. Plan
 
-Match the surrounding code. Prefer a structural fix over a patch: a list of fields
-repeated in two places **will** drift — `toggleAutohide` silently reset every setting
-it had not heard of, a `zip` in a test quietly stopped checking two cases, and the
-settings form reads and writes through two separate lists to this day. When the same
-knowledge has to live twice, make the compiler or a test hold them together.
+What the change is, which files it touches, roughly how long, what could break, what
+stays out of scope. Where there is a real choice, options with a recommendation — not a
+survey.
 
-### 4. Tests
+### 4. Challenge the plan, then get a decision
 
-`SmartDockCore` is covered and stays that way. The `SmartDock` target is an executable
-and is **not** in the test bundle — when a change lands there, say so rather than
-implying coverage that does not exist, and verify it by running the app instead.
+Before writing code, attack the plan: what did it assume, which call sites does it not
+mention, what would a user see that they did not ask for. Revise it. Then wait for a
+decision on anything that changes behaviour users already rely on. The tab split planned
+to move "Sync from System" to General; reading it showed it depends on the mode control
+above it, and the plan changed before a line was written.
 
-A new guard is proven by **mutation**: break it deliberately, watch the intended test
-fail, restore, re-run. A test that cannot fail is decoration. Restore from a copy taken
-before the mutation, and re-run afterwards to prove the tree is clean.
+### 5. Implement — to the plan
 
-### 5. Re-check for regressions
+Match the surrounding code. Prefer a structural fix over a patch — see **A list repeated
+in two places will drift** under Principles. Every deviation from the plan is noted as it
+happens, not reconstructed afterwards.
+
+### 6. Reconcile with the plan
+
+Read the plan against the diff and answer three questions explicitly: planned and done;
+planned and **not** done, and why; done and **not** planned, and why. The third group is
+where unreviewed behaviour hides — the settings-window plan had five items, and this step
+surfaced a sixth that was more serious than the five.
+
+### 7. Regressions and compatibility
 
 Green tests are the floor, not the ceiling. Read every call site the change touches and
-ask what silently behaves differently now. In one session this step found four
-regressions after the suite was already green — all four would have shipped.
+ask what silently behaves differently now; one session found four regressions after the
+suite was green. Compatibility is checked on three axes: **stored data** (profiles from
+earlier versions lack keys added since — seed from the live system, see Principles),
+**toolchains** (CI and the dev machine run different Xcodes, see Gotchas), **frozen
+contracts** (Apple Event codes, `AppEnum` raw values, intent identifiers, `smartdock://`
+verbs — stored in users' scripts and shortcuts, never renamed).
 
-Where tests cannot reach, verify live: build, run the app, read the unified log
-(`/usr/bin/log` with the absolute path — zsh shadows it), compare the Dock's settings
-before and after. Put the machine back afterwards: quit the test build, unregister it
-from LaunchServices, relaunch the installed one, restore any setting that was changed.
+Where tests cannot reach, verify live: build, run the app, read the unified log with
+`/usr/bin/log` (zsh shadows the name), compare the Dock's settings before and after. Then
+put the machine back: quit the test build, `lsregister -u` it, relaunch the installed one,
+restore any setting changed.
 
-### 6. CHANGELOG and commands
+### 8. Tests
 
-The entry goes under `## [Unreleased]` as part of the task, not afterwards — write what
-changed for a person and why it mattered. Everything else goes through `make`; the
-targets and the rules around versioning are in **Version & Release** below.
+In this order: the suite passes; anything broken is fixed, not skipped; new logic in
+`SmartDockCore` gets tests; a new guard is proven by **mutation** — break it, watch the
+intended test fail, restore, re-run. A fixture that leaves a field at its default cannot
+catch that field being dropped. The `SmartDock` target is an executable outside the test
+bundle: say so rather than implying coverage, verify it by running, and move logic into
+Core when it can be.
 
-### 7. Stop at the commit
+### 9. Final consistency pass
+
+Nothing ships while any two of these disagree: the code, this file, `CHANGELOG.md`,
+`README.md`, the diff's comments. Every make target runs — all of them, since
+`make coverage` broke on Xcode 27 while `swift test` passed. No document still describes
+the old behaviour. Every symbol a document names exists. The CHANGELOG entry sits under
+`## [Unreleased]`, says what changed for a person and why, and covers what step 6 found.
+
+### 10. Stop at the commit
 
 **Claude does not commit, push, tag or release.** Leave the working tree ready and say
-what is in it. Bumping the version, committing and `make release` are the user's, one
-task per version, so a release can be traced to a single change.
+what is in it, file by file. Bumping, committing and `make release` are the user's, one
+task per version, so a release traces to a single change.
 
 ## Principles
 
-The rules this codebase actually runs on. Every one was paid for, so each carries the
-case that produced it — the reason has to survive the next refactor, not just the rule.
-A change that breaks one of these is a change to the design, not a detail.
+The rules this codebase runs on. Each carries the case that produced it, so the reason
+survives the next refactor. A change that breaks one is a change to the design.
 
 **One execution path.** Hotkeys, `smartdock://` URLs, AppleScript and Shortcuts are four
-front doors into `AppDelegate.performCommand` — never four implementations. A fifth
-input adds a door, not a behaviour.
+front doors into `AppDelegate.performCommand` — never four implementations. A fifth input
+adds a door, not a behaviour.
 
 **Nothing the system reports is taken on trust.** `NSAppleScript` returns success as soon
-as the script *ran*, which says nothing about whether the Dock honoured it. Every apply
-is read back and the result recorded (`DockApplyOutcome`). Without that, "the app says it
-applied but nothing happened" cannot be diagnosed from a bug report.
+as the script *ran*. Every apply is read back and recorded (`DockApplyOutcome`); without
+that, "the app says it applied but nothing happened" cannot be diagnosed from a report.
 
 **An absent value is not a false one, and our default has to match theirs.** macOS writes
-a preference only once it has been changed, so a key that is missing means *default*, not
-`false` — the mechanics are under **UserDefaults** below. The consequence that is easy to
-miss: a struct default disagreeing with what macOS holds when the key is absent makes
-*every* apply push a redundant script and flash the Dock.
-`aDefaultConfigAsksTheDockForNothing` pins exactly that.
+a preference only once it has been changed, so a missing key means *default*, not `false`.
+A struct default that disagrees with what macOS holds when the key is absent makes every
+apply push a redundant script — `aDefaultConfigAsksTheDockForNothing` pins it.
 
-**A value the user never chose comes from their system, not from our defaults.** A
-setting added today is absent from profiles saved yesterday; seeding it from
-`DockConfiguration`'s defaults would restyle the Dock of someone who had deliberately
-chosen otherwise. `backfillMissingSettings` reads it from the live Dock instead.
+**A value the user never chose comes from their system, not from our defaults.** A setting
+added today is absent from profiles saved yesterday; seeding it from struct defaults would
+restyle a Dock someone had deliberately set. `backfillMissingSettings` reads the live Dock.
+The same rule on a fresh install: both profiles are the Dock verbatim — it used to force
+auto-hide on one and off on the other, and the first thing the app did was move a Dock
+nobody had asked it to. Nothing changes until the person edits a profile.
 
 **Break the build rather than write a note.** Agreement between two places is enforced by
-an exhaustive switch wherever the compiler can reach — `HotkeyAction(URLCommand)`,
-`push(_:of:)`, `ShortcutCoverage.intentType(for:)`. Where it cannot, a test or a make
-target stands in: `.sdef` parity, `appintents-check`, `version-check`.
+an exhaustive switch where the compiler can reach — `HotkeyAction(URLCommand)`,
+`push(_:of:)`, `ShortcutCoverage.intentType(for:)` — and by a test or make target where it
+cannot: `.sdef` parity, `appintents-check`, `sdef-check`, `entitlements-check`, `version-check`.
 
 **A list repeated in two places will drift.** `toggleAutohide` rebuilt the config field by
-field and silently reset every setting it had not heard of; a `zip` against a literal
-list quietly stopped checking two properties; the settings form still reads and writes
-through two separate lists. Prefer a copy helper (`DockConfiguration.with`) or drive the
-test from `allCases`.
+field and silently reset every setting it had not heard of; a `zip` against a literal list
+quietly stopped checking two properties; the settings form still reads and writes through
+two separate lists. Prefer a copy helper (`DockConfiguration.with`) or drive the test from
+`allCases`.
 
-**Report what is, not what was asked.** The menu bar reflects what the Dock actually
-holds, reconciled after verification — not the profile that was requested. But the
-*stored* profile is left alone: the user still wants auto-hide, macOS merely would not do
-it right now, and rewriting their choice over a temporary refusal throws it away.
+**Report what is, not what was asked.** The menu bar reflects what the Dock actually holds,
+reconciled after verification. The *stored* profile is left alone — the user still wants
+auto-hide, macOS merely would not do it right now.
 
 ## Build & Run
 
 ```bash
-make build          # swift build -c release
-make test           # swift test (Swift Testing; suites run in parallel)
-make app            # build + icon + .app bundle (ad-hoc signed)
-make run            # build + bundle + open
-make clean          # remove build artifacts
-```
-
-Code quality:
-```bash
-make format         # rewrite sources with swift-format (rules in .swift-format)
-make lint           # check formatting without writing — CI gates on this
-make coverage       # run tests and print a per-file llvm-cov table
-```
-
-App Intents (rebuilds the build phase SPM does not have — `make app` runs both):
-```bash
-make appintents        # generate Contents/Resources/Metadata.appintents
-make appintents-check  # verify every declared intent reached the bundle
-```
-
-Single test:
-```bash
-swift test --filter startBeginsMonitoring
+make build / test / app / run / clean          # swift build -c release · swift test · bundle (ad-hoc signed) · open · clean
+make format / lint / coverage                  # swift-format apply · check (CI gates) · llvm-cov table
+make appintents / appintents-check             # generate Metadata.appintents · verify every intent reached it
+make entitlements-check / sdef-check           # bundle carries the entitlements file · .sdef classes exist (both in app)
+make bump V=1.2.3 / version-check / release    # version everywhere · verify refs · build + zip + gh release (clean tree)
+make install / fix                             # copy to /Applications · xattr -cr + codesign
+make doctor / outdated / actions-check / logs  # env check · toolchain versions · Actions vs latest · live log
+swift test --filter startBeginsMonitoring      # one test
 ```
 
 ## Version & Release
 
-```bash
-make bump V=1.2.3   # update the version everywhere + increment build number
-make version-check  # verify all version references agree (bump runs this itself)
-make release        # build + zip + gh release create (working tree must be clean)
-make install        # copy .app to /Applications
-make fix            # xattr -cr + codesign (fix Gatekeeper quarantine)
-```
+**Never edit a version by hand — always `make bump`.** The version is written in four
+places — `Makefile` (source of truth), `Info.plist` (`CFBundleShortVersionString`, and
+`CFBundleVersion` +1), README badge URL and alt, `CHANGELOG.md` dated section — and `bump`
+is the only thing that knows all of them. `release.yml` calls `make bump` rather than
+re-implementing it; add a fifth place to `bump` and `version-check` and CI follows.
 
-**Never edit a version by hand — always `make bump`.** The version is written in four places, and `bump` is the only thing that knows all of them:
-
-| Where | What |
-|---|---|
-| `Makefile` | `VERSION := x.y.z` in the `# === Config ===` block — **source of truth** |
-| `Resources/Info.plist` | `CFBundleShortVersionString` |
-| `Resources/Info.plist` | `CFBundleVersion` — build number, incremented by 1 (never set from `V`) |
-| `README.md` | shields.io badge — both the URL and its `alt` text |
-| `CHANGELOG.md` | a dated `## [x.y.z]` section, opened directly under `## [Unreleased]` |
-
-`bump` finishes by running `version-check`, which fails if any reference is stale. `release.yml` calls `make bump` rather than re-implementing it — if you add a fifth place, add it to the `bump` target and to `version-check`, and CI picks it up for free.
-
-**Do not delete the `## [Unreleased]` heading from `CHANGELOG.md`.** It is not decoration:
-`bump` inserts the new version's section immediately below it, so removing the line makes
-bump silently stop recording releases. Entries accumulate under `[Unreleased]` as work
-lands, and `bump` converts them into the dated section. The section was forgotten by hand
-on three consecutive releases, which is why `version-check` now gates on it too.
-
-`version-check` also guards the CHANGELOG itself, not just the version written in it:
-
-| Check | Where it bites |
-|---|---|
-| A version may appear only once | `version-check` fails |
-| The section for `VERSION` is empty | `version-check` **warns**, `make release` **fails** |
-
-The split is deliberate. `bump` opens a dated section before the notes exist, so a hard
-failure there would make every bump fail; but a published release with empty notes cannot
-be taken back. 2.5.0 shipped exactly that way — four sections were opened in one day, three
-left empty, and the real notes ended up under `2.4.3`, a version that was never released.
-Nothing caught it because the reference check only ever compares the **topmost** section,
-and that one happened to be correct.
-
-Examples in docs use `V=1.2.3` on purpose: a placeholder that never collides with a real version, so grepping the current version only finds actual definitions.
-
-Diagnostics:
-```bash
-make doctor         # verify dev environment (swift, xcode, codesign, gh, git)
-make outdated       # print Swift/Xcode/Actions versions in use
-make actions-check  # compare GitHub Actions versions against latest (requires gh)
-make logs           # stream live SmartDock logs (subsystem com.smartdock.app)
-```
+**Never delete `## [Unreleased]`.** `bump` inserts the new section directly under it, so
+whatever accumulated there becomes the release notes. `version-check` also guards the
+CHANGELOG: a version may appear once, and an empty section for `VERSION` **warns** there
+and **fails** `make release`. The split is deliberate — `bump` opens the section before the
+notes exist, but a published release with empty notes cannot be taken back; 2.5.0 shipped
+that way, with its notes under a version that never existed. Docs use `V=1.2.3` as a
+placeholder so grepping the real version finds only definitions.
 
 ## CI/CD
 
-Two GitHub Actions workflows in `.github/workflows/`:
+**`ci.yml`** (push to `main`/`dev`, PRs to `main`): concurrency per branch, SPM cache,
+then `version-check` → `lint` → `coverage` → `swift build -c release` → `make app` +
+`codesign --verify --strict`. Lint runs first so a formatting PR fails in seconds.
+`coverage` replaces a bare `swift test` so the suite is not compiled twice; its step sets
+`shell: bash` because the default runner shell has no `pipefail` and `| tee` would mask a
+failure. `make app` is the only place `appintents-check`, `entitlements-check` and `sdef-check`
+run, so a toolchain that breaks metadata extraction, a dropped entitlement or a scripting
+class the dictionary cannot find fails the PR, not the release. `entitlements-check` reads
+the sealed bundle back with `codesign -d --entitlements :-` and diffs it against
+`Resources/SmartDock.entitlements` — the file is the only list of keys, so a new entitlement
+needs no change to the check.
 
-**`ci.yml`** — runs on push to `main`/`dev` and PRs to `main`:
-- Concurrency group per branch — cancels in-progress runs on new push
-- SPM cache (`actions/cache` on `.build` dir)
-- `make version-check` → `make lint` → `make coverage` → `swift build -c release`
-- `make lint` runs **before** the build so a formatting-only PR fails in seconds
-- `make coverage` replaces a bare `swift test`: same suite, plus instrumentation, so the
-  tests are not compiled and run twice. Its table is written to `$GITHUB_STEP_SUMMARY`
-- The coverage step sets `shell: bash` deliberately — the default runner shell is
-  `bash -e` **without** `pipefail`, so `make coverage | tee` would mask a failing test
-  run behind `tee`'s exit code
-- `make app` + `codesign --verify --strict` — exercises icon generation, App Intents metadata generation, entitlements and ad-hoc signing, which `swift build` never touches. This is also the only place `appintents-check` runs, so a toolchain that breaks metadata extraction fails the PR rather than the release. Without this step those only run at release time, so a break would surface mid-release instead of on the PR. The `codesign --display --entitlements` output also asserts all three entitlements actually made it into the bundle.
+**`release.yml`** (`v*` tag): 🧪 Test → 🔨 Build → 🎉 Release → 🍺 Homebrew (updates Cask +
+Formula in `alexeikaratai/homebrew-tap`).
 
-**`dependabot.yml`** — monthly grouped PR for GitHub Actions bumps. Only the `github-actions` ecosystem is configured: the package has no external SPM dependencies, so a `swift` entry would do nothing.
+**`dependabot.yml`**: monthly grouped Actions bumps; no `swift` entry because there are no
+SPM dependencies.
 
-**`release.yml`** — runs on `v*` tag push. Four jobs in a pipeline:
-```
-🧪 Test  →  🔨 Build  →  🎉 Release  →  🍺 Homebrew
-```
-- **Test**: runs `swift test`
-- **Build**: bumps version in Makefile/Info.plist, runs `make app`, uploads zip as artifact
-- **Release**: downloads artifact, creates GitHub Release with `gh release create`
-- **Homebrew**: computes sha256, updates Cask + Formula in `alexeikaratai/homebrew-tap`
-
-Both workflows set the Xcode version via `env.XCODE_PATH` at workflow level — one place per file, never inline in a step. The runner (`runs-on:`) and `XCODE_PATH` must agree: check the [runner image readme](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md) for which Xcode versions are actually installed before bumping either.
-
-Action versions are pinned by major (`@v7`). Run `make actions-check` to see how they compare to latest — don't hardcode them into this file, it goes stale.
+Both workflows set Xcode via `env.XCODE_PATH` at workflow level, never inline. Runner and
+`XCODE_PATH` must agree — check the
+[runner image readme](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md)
+before bumping either. Actions are pinned by major (except `webfactory/ssh-agent`, a 0.x release pinned exactly);
+`make actions-check` compares to latest — never write the
+numbers into this file, they go stale.
 
 ## Known Build Gotchas
 
-**SPM's output layout moved between toolchains.** Up to Swift 6.3, `swift build` writes
-modules to `.build/release/Modules/SmartDockCore.swiftmodule`. From Swift 6.4 (Xcode 27)
-SPM builds through swift-build: `.build/release` becomes a symlink to
-`out/Products/Release`, and the module is an Xcode-style bundle directory there. Anything
-that reaches into `.build` by path — `make appintents` did — breaks on one side or the
-other, so it now passes both search paths. The day Xcode 27 landed, App Intents
-extraction stopped producing files and the only symptom was the metadata processor
-listing twelve missing inputs; the real cause, `no such module 'SmartDockCore'`, was
-hidden because the recipe chained its steps with `;`. It runs under `set -e` now.
-The same move renamed the test bundle — `SmartDockPackageTests.xctest` after the
-package became `SmartDockTests.xctest` after the target — which broke `make coverage`
-the same day; it now locates `*.xctest` in the bin path instead of naming it. That one
-was missed on the first pass because `swift test` was run and `make coverage` was not:
-when a toolchain changes, run **every** make target, not the ones that seem relevant.
+**SPM's output layout moved.** Swift ≤6.3 writes modules to `.build/release/Modules/`;
+Swift 6.4 (Xcode 27) builds through swift-build, `.build/release` becomes a symlink to
+`out/Products/Release`, the module is a bundle directory there, and the test bundle is
+named after the target (`SmartDockTests.xctest`) not the package. Anything reaching into
+`.build` by path breaks on one side — `make appintents` passes both `-I` paths,
+`make coverage` locates `*.xctest`. The first break hid its real cause behind twelve
+"missing file" errors because the recipe chained steps with `;`; it runs under `set -e`
+now. The second was missed because only `swift test` was run: **when a toolchain changes,
+run every make target.**
 
-**`swift-format` in Xcode 27 rejects the old `.swift-format`.** Its
-`OrderedImportsConfiguration` gained a non-optional `shouldGroupImports` with a
-synthesized `Decodable`, so a config without the key fails to *load* — every file
-reports "Unable to read configuration" and `make lint` fails on all 51 at once. The key
-is set to `true`, which is the value that leaves every existing file untouched (`false`
-would reformat 19). The Xcode 26 formatter has no such property and, as synthesized
-`Decodable` does, ignores the unknown key — so one config serves both toolchains.
-Checked against the formatter's source, not assumed.
+**`swift-format` in Xcode 27 requires `orderedImports.shouldGroupImports`.** Without it the
+config fails to load and lint fails on every file. Set to `true` — the value that changes
+no existing file — and ignored by the Xcode 26 formatter (synthesized `Decodable` skips
+unknown keys, checked against its source), so one config serves both.
 
-**CI cannot follow the dev machine yet.** GitHub ships no `macos-27` runner image, and
-`macos-26` carries Xcode up to 26.6 only — check the
-[runner image readme](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md)
-before bumping `XCODE_PATH`. Until an image exists, CI verifies the old layout and a
-developer on Xcode 27 verifies the new one, which is the one useful thing about the gap.
+**CI cannot follow the dev machine.** No `macos-27` runner image exists and `macos-26` stops
+at Xcode 26.6. Until then CI verifies the old layout and a developer on Xcode 27 the new.
 
-**Stale incremental build after an initialiser change.**
-
-Changing an initialiser in `SmartDockCore` that is used as a **default argument**
-elsewhere — `SmartDockService.init(dockController: any DockControlling = DockController())`
-is the one that bites — leaves the app target's object file referencing the old symbol.
-SPM does not notice, and the build fails at link time with `Undefined symbols` plus an
-unrelated-looking `SwiftUICore.tbd` warning. It is a stale incremental build, not a code
-error:
-
-```bash
-rm -rf .build && swift build
-```
+**Stale build after changing an initialiser used as a default argument** — e.g.
+`SmartDockService.init(dockController: … = DockController())`. Link fails with `Undefined
+symbols` and an unrelated `SwiftUICore.tbd` warning. `rm -rf .build && swift build`.
 
 ## Architecture
 
-Swift Package (swift-tools-version 6.2), two targets: **SmartDockCore** (testable logic) and **SmartDock** (AppKit UI). Platform: macOS 14+, Swift 6 strict concurrency.
+Swift Package (tools 6.2), two targets: **SmartDockCore** (testable logic) and
+**SmartDock** (AppKit UI). macOS 14+, Swift 6 strict concurrency, zero dependencies.
+Bundle inputs live in `Resources/`: `Info.plist`, `SmartDock.sdef`, `SmartDock.entitlements`,
+and `AppIcon.icns`, which is git-ignored and regenerated by `make icon` (a prerequisite of
+`app`) from `scripts/generate-icon.swift`. `make app` copies the plist, `.sdef` and `.icns` in
+and applies the entitlements through `codesign`. README images are in `assets/`.
 
-### Core layer (`Sources/SmartDockCore/`)
-
-| File | Responsibility |
-|---|---|
-| `DockConfiguration.swift` | `DockConfiguration` value type (position, autohide, icon size as 0.0–1.0 scale, magnification, `MinimizeEffect` genie/scale, `animatesLaunch`). The last two are normally **absent** from `com.apple.dock` — macOS writes `mineffect`/`launchanim` only once they are changed — so both the system read and the profile load spell out the missing case; `bool(forKey:)` would answer `false` for `launchanim` and turn launch animation off behind the user's back. `HotkeyBinding` value type (keyCode + modifiers + displayName). `UserPreferences` persists per-mode configs via UserDefaults with migration from old pixel format. Also stores: `notificationsEnabled`, `syncFromSystemEnabled`, `hasSeenOnboarding`, `hasPromptedAccessibility`, `pendingAccessibilityGrant`, hotkey bindings. `DockPosition` enum. First-launch: `initializeDefaultsIfNeeded(from:)` reads system config, sets external=autohide off, builtin=autohide on. |
-| `DisplayMonitor.swift` | Detects external monitor connect/disconnect via `CGDisplayRegisterReconfigurationCallback`. Debounces (1s settle delay). Filters by add/remove/enable/disable CG flags only, via the testable free function `shouldReactToDisplayChange(_:)`. Also observes `didWakeNotification`, `screensDidWakeNotification` (2s delay re-check). No space change observer — AppleScript triggers space notifications causing feedback loops. Conforms to `DisplayMonitoring`. |
-| `DockController.swift` | Applies `DockConfiguration` via `NSAppleScript` → System Events. Diff-based: reads current system config via fresh `UserDefaults(suiteName: "com.apple.dock")` and only applies properties that actually differ. Observes external dock preference changes via KVO on `UserDefaults(suiteName: "com.apple.dock")` using private `DockPrefsObserver` helper (NSObject for KVO). Debounces 0.5s, compares with `lastAppliedConfig` to filter own changes. Conforms to `DockControlling`. |
-| `SmartDockService.swift` | Orchestrator: reads `UserPreferences`, applies appropriate config based on display state. Handles external dock changes (System Settings sync): updates active profile when system config diverges from `lastAppliedConfig`. Has `SmartDockServiceDelegate`. Posts `Notification.Name.smartDockStateDidChange` only when state actually changes. |
-| `URLCommand.swift` | Parses `smartdock://` URLs into commands. Pure — lives in Core so it is covered by the test target. Rejects foreign schemes, unknown verbs and ambiguous input (`smartdock://switch` with no target) rather than guessing. |
-| `AppleScriptCommand.swift` | `DockProfile` — the `dock profile` enumeration from `SmartDock.sdef`, mapping four-character Apple Event codes to `URLCommand`. In Core so the codes are testable; `AppleScriptCommandTests` pins them to literals **and** greps the shipped `.sdef` to catch drift between the two hand-written copies. |
-| `DockApplyOutcome.swift` | What an apply actually achieved, established by reading the Dock back — `NSAppleScript` reports success as soon as the script runs, so a silently-refused setting is otherwise invisible. Only properties that were **requested** can be reported rejected; anything else that differs was changed by something outside the app. |
-| `RateLimiter.swift` | `RateLimiter` (hotkey rate limiting) and `ProfileSwitchAnnouncer` (notification cooldown + duplicate suppression). Both take `now` as an argument so interval edges are testable without sleeping. The announcer records a state **only when a banner actually shows** — recording a suppressed one would swallow the next genuine switch back to it. |
-| `PendingCommandQueue.swift` | Holds `smartdock://` / Apple Event commands that arrive before `applicationDidFinishLaunching` builds the managers. In Core because leaving it in `AppDelegate` put the fix for a launch-time crash in the one target with no tests. |
-| `DiagnosticReport.swift` | Value type + Markdown formatting for the About tab's **Copy Diagnostic Info**. Holds versions, permission flags, display counts and dock profiles — never anything identifying, since the output is pasted into public issues. |
-| `LogExport.swift` | Builds the `log show` invocation behind **Export Logs**, and redacts the home directory from what it returns. Absolute `/usr/bin/log` on purpose — `zsh` has a builtin of the same name that silently shadows it. |
-| `Log.swift` | Centralized `Logger` API. Subsystem `com.smartdock.app`. Categories: `general`, `display`. Records at **notice** or above — never `.info` or `.debug`, which macOS keeps in memory and never persists, making them unreadable by `log show` or **Export Logs** afterwards. |
-
-### App layer (`Sources/SmartDock/`)
+### Core (`Sources/SmartDockCore/`)
 
 | File | Responsibility |
 |---|---|
-| `AppIntentsSupport.swift` | App Intents backing Shortcuts.app and Spotlight. Four intents plus `ShortcutDockProfile`, the `AppEnum` that gives **Switch Dock Profile** a real parameter. `perform()` is `@MainActor` and routes into `AppDelegate.performCommand`, so Shortcuts is a fourth front door, not a fourth implementation. `ShortcutCoverage` is a build-time tripwire: a new `URLCommand` case fails to compile until an intent carries it. The metadata that makes any of this visible is generated by `make appintents` — see below. |
-| `ScriptingSupport.swift` | `NSScriptCommand` subclasses backing `SmartDock.sdef`. Each is `@objc(SD…Command)` because the dictionary binds by Objective-C runtime name. `performDefaultImplementation` is inherited `nonisolated`, so it reaches `@MainActor` state via `MainActor.assumeIsolated` — sound because Apple Events are delivered on the main thread, and hopping off it would lose event ordering. Bad input sets `scriptErrorNumber`/`scriptErrorString` rather than guessing a profile. |
-| `App.swift` | `@main` AppDelegate with manual `NSApplication` run loop (no storyboards). Prompts Accessibility on first launch only (avoids re-prompting after Homebrew updates). Creates `NotificationManager`, `HotkeyManager`, `AppUpdateWatcher`, shows `OnboardingWindow` on first launch. After "Reset Permission" relaunch: opens Shortcuts tab + System Settings, polls `AXIsProcessTrusted` (1s, max 5min), auto-relaunches when granted. `applicationShouldHandleReopen` opens Settings when re-launched from /Applications. |
-| `StatusBarController.swift` | Menu bar icon (`dock.rectangle` SF Symbol) + dropdown menu with SF Symbol icons per item. Implements `NSMenuDelegate`, `SmartDockServiceDelegate`. Exposes `showSettings()` for re-open handling. Passes `HotkeyManager` to `SettingsWindow`. Menu items: Settings, Shortcuts, About open SettingsWindow on the corresponding tab. |
-| `SettingsWindow.swift` | Tabbed glass NSWindow (`NSVisualEffectView`) with 4 tabs: **Dock** (config card with mode control, Sync from System, and the active-profile status), **General** (`GeneralTabView`), **Shortcuts** (5 hotkey rows), **About** (`AboutTabView`). Tab switching keeps a dirty Dock tab's draft and cancels hotkey recording; `windowShouldClose` and `modeChanged` ask before a draft would be lost. Only the Dock tab scrolls — its height is defined from the inside, while the others end in `lessThanOrEqualTo` and rely on the window stretching them. Resizable (380×500 to 600×900) with ⌘0 to reset to the default size. Observes `smartDockStateDidChange` to refresh UI. Delegates self-contained pieces to `Views/` and `HotkeyRecorder`. |
-| `HotkeyRecorder.swift` | Captures a keystroke and stores it as a `HotkeyBinding`. Pauses `HotkeyManager` while recording so the key being bound doesn't fire its own action. Escape clears the binding; a Cmd/Ctrl/Opt modifier is required. `onFinish` tells the host to refresh its buttons. |
-| `NotificationManager.swift` | Posts macOS banner notifications (`UNUserNotificationCenter`) on profile switch. Observes `.smartDockStateDidChange`. Cooldown 3s. Lazy authorization request. `UNUserNotificationCenterDelegate` for foreground banners. |
-| `HotkeyManager.swift` | Global keyboard shortcuts via `NSEvent.addGlobalMonitorForEvents` + `addLocalMonitorForEvents`. `HotkeyAction` enum: `.toggleAutohide`, `.refreshNow`, `.switchToExternal`, `.switchToBuiltin`, `.openSettings`. Cached bindings, rate limiting 0.3s, `isRecording` flag pauses dispatch during recording. |
-| `OnboardingWindow.swift` | Welcome screen shown once on first launch. Glass window with app description, feature list, "Get Started" button. Sets `hasSeenOnboarding` on close. |
-| `AppRelauncher.swift` | Spawns shell that waits for current PID to exit (max 5s), then opens new instance via `open -n`. Bundle path passed via env var (no shell injection). Used by Reset Permission and update prompt. |
-| `AppUpdateWatcher.swift` | Watches `Bundle.main.executablePath` via `DispatchSource.makeFileSystemObjectSource` for delete/write/rename events. On Homebrew upgrade: debounce 2s, prompt user "SmartDock was updated. Relaunch?". Uses `AppRelauncher` for safe relaunch. |
-| `LaunchAtLogin.swift` | `SMAppService.mainApp` wrapper. |
-| `AccessibilityChecker.swift` | `AXIsProcessTrusted()` check. Prompts system dialog only on first launch (`hasPromptedAccessibility` flag). Accessibility needed only for global hotkeys — core dock switching works without it. |
+| `DockConfiguration.swift` | `DockConfiguration` value type: position, autohide, icon size (0.0–1.0 scale, `pixelsToScale`/`scaleToPixels`, 0.01 tolerance), magnification, `MinimizeEffect` genie/scale, `animatesLaunch`, `showsRecents`. `with(...)` copies with fields replaced — the guard against field-by-field rebuilds. `differences(from:)` is the apply diff, pure and tested. `UserPreferences` persists per-mode profiles plus flags and hotkeys, `prefs[profile]` by `DockProfile` — never `if external { externalConfig } else …` at a call site; `migrateIfNeeded` converts the pre-scale pixel keys and is called once from `applicationDidFinishLaunching`, not by `load`; `initializeDefaultsIfNeeded` makes both profiles the Dock as it is on a fresh install, so the first apply is a no-op; `backfillMissingSettings` fills keys an old profile predates from the live Dock. `DockPosition`, `HotkeyBinding`. |
+| `DisplayMonitor.swift` | `CGDisplayRegisterReconfigurationCallback`, event-driven. Reacts only to add/remove/enable/disable — mode, move, mirror and shape changes fire during Mission Control and fullscreen — via the tested free function `shouldReactToDisplayChange(_:)`, using the named `CGDisplayChangeSummaryFlags` constants, never raw hex; `.beginConfigurationFlag` is skipped since completion follows. 1s settle debounce; fires only when the external count actually changes. `externalDisplayCount()` filters `CGDisplayIsBuiltin`, `CGDisplayIsActive`, `!CGDisplayIsAsleep` — clamshell, standby, phantom hubs. Wake: `didWakeNotification`/`screensDidWakeNotification` re-check after 2s on a separate work item (`pendingWakeCheck`) so a CG callback cannot cancel it; like every other check it fires only when the external count changed — a wake with the same displays never touches the Dock (`wakeWithTheSameDisplaysChangesNothing`). **`activeSpaceDidChangeNotification` is not observed** — AppleScript Dock changes trigger it and loop. |
+| `DockController.swift` | Applies via `NSAppleScript` → System Events, **one `tell` block per property** so one refusal cannot take the others down; never `killall Dock`. Diff-based: reads a fresh `UserDefaults(suiteName: "com.apple.dock")` and pushes only what differs, so frequent re-applies cost nothing. Reads back after 1s and records `DockApplyOutcome`. KVO on the same domain (`DockPrefsObserver`) reports System Settings edits via `onExternalConfigChanged`, debounced 0.5s; own changes are filtered by comparing to `lastAppliedConfig` with `approximatelyEquals`. Injectable `openDefaults`, `runScript`, delays. |
+| `SmartDockService.swift` | Orchestrator: display state → profile → apply. Guards every path on `isEnabled`. **`activeProfile` is the profile in force** — the displays select it, `applyProfile(_:)` overrides it until the next display change, wake or refresh. Everything that edits "the current profile" in place goes through `updateActiveProfile(_:)` (auto-hide toggle, position menu, System Settings edits via `handleExternalDockChange`, gated by `syncFromSystemEnabled`) — writing by `hasExternalDisplay` put built-in values into the external profile. `activeProfileDescription` is the one wording for every UI, including the override state. Reconciles `currentConfig` to the verified outcome on refusal, leaving the stored profile alone. Posts `smartDockStateDidChange` with `activeProfileKey` only on real change. |
+| `URLCommand.swift` | Parses `smartdock://`. Rejects foreign schemes, unknown verbs and `switch` with no target rather than guessing. |
+| `AppleScriptCommand.swift` | `DockProfile` — the two profiles, with `displayName` and `init(hasExternalDisplay:)`; also the `.sdef` enumeration, mapping four-character codes to `URLCommand`. `AppleScriptCommandTests` pins the codes to literals **and** greps the shipped `.sdef`. |
+| `DockApplyOutcome.swift` | What an apply actually achieved. Only **requested** properties can be reported rejected. `refusalNotice` is the user-facing line; `summary` the log line. |
+| `RateLimiter.swift` | Hotkey rate limit — a blocked attempt does not push the deadline out — and `ProfileSwitchAnnouncer` (notification cooldown, keyed on `DockProfile`, not the hardware); both take `now` so edges are testable. The announcer records a state only when a banner actually shows. |
+| `PendingCommandQueue.swift` | Holds commands that arrive before launch finishes — a URL or Apple Event can *launch* the app. In Core so the launch-crash fix is tested. |
+| `DiagnosticReport.swift` | Markdown snapshot for **Copy Diagnostic Info** — never anything identifying; a test fails if it appears. Prints the active profile and the displays as two lines, since an override makes them disagree. |
+| `LogExport.swift` | `log show` invocation for **Export Logs**, home directory redacted. Absolute `/usr/bin/log` — zsh shadows it. |
+| `Log.swift` | `Logger`, subsystem `com.smartdock.app`, categories `general`/`display`. Records at **notice** or above — `.info`/`.debug` are never persisted and invisible to `log show`. |
 
-### View layer (`Sources/SmartDock/Views/`)
-
-Self-contained UI pieces extracted out of `SettingsWindow`. Each owns its own layout and actions; the host only wires callbacks.
+### App (`Sources/SmartDock/`)
 
 | File | Responsibility |
 |---|---|
-| `UI.swift` | Static factories shared by all windows: `label`, `smallButton`, `checkbox`, `scaleSlider`, `glassCard`, `glassWindow`. `glassWindow` returns the window plus the content view to build into — the window's own `contentView` is the `NSVisualEffectView` behind it. |
-| `PositionIcon.swift` | Draws the monitor thumbnails for the position picker and Settings header. Pure drawing, so each (position, selected) pair is rendered once and cached. |
-| `PositionPicker.swift` | `NSStackView` subclass — one icon+label button per `DockPosition`. Owns its highlighting; `selectedPosition` repaints via `didSet`, `onSelectionChange` fires only on user taps (not on programmatic loads). |
-| `AboutTabView.swift` | `NSView` subclass with the About tab contents: icon, version, description, GitHub/Changelog links. |
-| `GeneralTabView.swift` | The General tab: how the **app** behaves — Launch at Login, notifications, System sync, Refresh Now, Quit. Split out from the Dock tab because none of it is a property of a Dock profile. Owns the notification-permission observer, since the checkbox has to follow a refused authorisation. |
-| `AccessibilityWarningView.swift` | `NSView` subclass — yellow banner shown on the Shortcuts tab while Accessibility is missing. Owns "Open System Settings" and the `tccutil reset` + relaunch flow. Hidden when `AccessibilityChecker.isGranted`. |
+| `App.swift` | `@main`, manual `NSApplication` run loop, no nibs. `performCommand` is the single entry for every external input, queueing until managers exist. First-launch-only Accessibility prompt; "Reset Permission" flow polls `AXIsProcessTrusted` and relaunches. `applicationShouldHandleReopen` opens Settings when the app is launched again from `/Applications`. |
+| `StatusBarController.swift` | Menu bar icon + menu: profile items (checkmark on `activeProfile`), **Dock Position** submenu, Hide/Show Dock, Refresh. Every item that moves the Dock goes through `hotkeyManager.perform`; position edits the profile in force via `service.updateActiveProfile` since it has no command. `autoenablesItems = false` so `updateActionAvailability` can grey them while disabled. `updateMenuState` is the one list of state-driven items, called on state change and on every open. Shows `refusalNotice` under the status line. |
+| `SettingsWindow.swift` | Four tabs: **Dock** (profile card, Sync from System, status), **General** (`GeneralTabView`), **Shortcuts**, **About** (`AboutTabView`). Only the Dock tab scrolls — its height is defined from the inside, the others end in `lessThanOrEqualTo`. Default 420×680, measured; resizable 380×500–600×900, ⌘0 resets. Leaving the Shortcuts tab cancels a recording in progress. |
+| `HotkeyManager.swift` | Global + local `NSEvent` monitors; `HotkeyAction` enum; 0.3s rate limit; `isRecording` pauses dispatch. `toggleAutohide` uses `with(...)`. |
+| `HotkeyRecorder.swift` | Captures a keystroke into a `HotkeyBinding`; pauses the manager while recording; Escape clears; a ⌘/⌥/⌃ modifier is required — Shift alone is rejected (`HotkeyBinding.hasRequiredModifier`). Display names come from `charactersIgnoringModifiers`, so any keyboard layout works. |
+| `AppIntentsSupport.swift` | Four intents + `ShortcutDockProfile` (`AppEnum`), all routing into `performCommand`. `ShortcutCoverage` is a build-time tripwire on `URLCommand`. |
+| `ScriptingSupport.swift` | `NSScriptCommand` subclasses bound by `@objc(SD…Command)` name. Reach `@MainActor` via `MainActor.assumeIsolated` — sound because Apple Events arrive on the main thread. Bad input sets `scriptErrorNumber`/`scriptErrorString` rather than guessing a profile. |
+| `NotificationManager.swift` | `UNUserNotificationCenter` banners on a change of `activeProfile` (from `activeProfileKey`), 3s cooldown; `willPresent` returns `[.banner, .sound]` (required for LSUIElement apps); lazy authorisation, flag cleared on denial. |
+| `AppUpdateWatcher.swift` / `AppRelauncher.swift` | FS watcher on the executable prompts a relaunch after a Homebrew upgrade; relauncher waits for PID exit (max 5s) then `open -n`, bundle path via env var so nothing is interpolated into the shell. |
+| `OnboardingWindow.swift`, `LaunchAtLogin.swift`, `AccessibilityChecker.swift` | First-launch welcome; `SMAppService` wrapper; `AXIsProcessTrusted` with a first-launch-only prompt (ad-hoc signing resets the grant on every update). |
+
+### Views (`Sources/SmartDock/Views/`)
+
+Self-contained pieces; each owns its layout and actions, the host wires callbacks.
+`UI.swift` (shared factories, `glassWindow` returns the view to build into),
+`PositionIcon`/`PositionPicker` (cached thumbnails, `onSelectionChange` fires only on taps),
+`AboutTabView`, `GeneralTabView` (app behaviour, owns the notification-permission observer),
+`AccessibilityWarningView` (Shortcuts-tab banner + `tccutil reset` flow).
 
 ### Tests (`Tests/SmartDockTests/`)
 
-- `Mocks.swift` — `MockDisplayMonitor`, `MockDockController`, `MockServiceDelegate`
-- `AppleScriptCommandTests.swift` — Apple Event code stability, decoding, `.sdef` parity
-- `DockApplyOutcomeTests.swift` — silent refusal detection, tolerance, blame scoping
-- `RateLimiterTests.swift` — interval edges, and that blocked attempts don't push the deadline out
-- `PendingCommandQueueTests.swift` — launch-time queueing, ordering, drain-once
-- `LogExportTests.swift` — export scoping, absolute tool path, home-path redaction
-- Protocol-based DI: inject mocks via `DisplayMonitoring` / `DockControlling` protocols
-- All tests are `@MainActor`-compatible
+Swift Testing, suites in parallel. `Mocks.swift` has `MockDisplayMonitor`
+(`simulateDisplayChange`), `MockDockController`, `MockServiceDelegate`; `TestSupport.swift`
+has `ScratchPreferences` (in-memory defaults — a real suite domain belongs to `cfprefsd` and
+leaks) and `expectClose(_:_:within:)`. Never touch `UserPreferences.shared` in a test. `DockController`
+is tested as the real type with `openDefaults`/`runScript`/delays injected; `SmartDockService`
+takes the mocks. A bare `DisplayMonitor()` or `DockController()` appears only in a few smoke
+tests that assert ranges safe on any machine — do not add more. Anchor size assertions to
+`pixelsToScale()`, not knife-edge floats. `#expect` wraps its argument in a
+closure, so a `mutating` call goes into a named `let` first.
 
-## Swift Code Style
+## Code Style
 
-### Naming
-- **Types**: `UpperCamelCase` — `DockConfiguration`, `DisplayMonitor`, `SmartDockService`
-- **Functions, properties, variables**: `lowerCamelCase` — `externalDisplayCount()`, `hasExternalDisplay`, `lastExternalCount`
-- **Constants**: `lowerCamelCase` (not `SCREAMING_SNAKE`) — `let settleDelay: TimeInterval = 1.0`
-- **Protocols**: noun or adjective, suffix `-ing` / `-able` / `-ible` for capabilities — `DisplayMonitoring`, `DockControlling`, `Sendable`
-- **Enums**: type `UpperCamelCase`, cases `lowerCamelCase` — `case bottom`, `case left`
-- **Bool naming**: read as assertions — `isEnabled`, `isRunning`, `hasExternalDisplay` (not `enabled`, `external`)
-- **Abbreviations**: treat as words — `iconId` not `iconID`, `urlString` not `URLString`. Exception: two-letter (`ID`, `UI`) stay uppercased when alone.
+`swift-format` is authoritative (`.swift-format`, `make format`/`lint`); reach it via
+`xcrun swift-format`. Do not hand-align columns. Disabled rules and their reasons are in
+`CONTRIBUTING.md`. Beyond the formatter:
 
-### Code Organization
-- Use `// MARK: -` sections in every file: `Protocol`, `Implementation`, `Public`, `Private`, `Actions`, `Helpers`
-- One type per file. Small related types (e.g. `DockPosition` enum in `DockConfiguration.swift`) are okay in the same file.
-- Order within a type: properties → init → public methods → private methods
-- Group related constraints/setup in dedicated `private func` — e.g. `buildUI(in:)`, `setupStatusItem()`
-- Extensions for protocol conformance go at the bottom of the file with their own `// MARK: -`
+- Names: `UpperCamelCase` types, `lowerCamelCase` everything else including constants;
+  protocols `-ing`/`-able`; Bools read as assertions (`isEnabled`, `hasExternalDisplay`);
+  abbreviations keep Apple's casing (`bundleID`, `displayIDs`, `repoURL`, `URLCommand`; `UI` alone).
+  Delegate methods are prefixed with the subject (`serviceDidUpdateState`).
+- `// MARK: -` sections; properties → init → public → private; protocol conformances in
+  extensions at the bottom; related constraints and setup grouped in a dedicated
+  `private func` (`buildUI`, `setupStatusItem`). One type per file, small related types allowed.
+- `private` by default, `internal` never written out; `public` only for what the app target
+  consumes; `final` on every class (only `NSObject` subclasses inherit). Helper extensions
+  stay next to their use, `private` when single-file.
+- `struct` and `let` unless there is a reason; caseless `enum` for namespaces; force
+  unwraps only for AppKit objects set immediately after init; no `Any`/`AnyObject` outside
+  Objective-C interop.
+- `guard` + early return over nested `if let`; trailing closure for the last parameter;
+  `[weak self]` + `guard let self` in escaping closures; `@discardableResult` over `_ =`;
+  default parameters over overloads; `lazy var` for expensive one-time setup; functions
+  under ~40 lines.
+- `Bool` return for fire-and-forget success; `Log.error` at the point of failure.
+- Protocol-first DI (`DockControlling` then `DockController`); `weak var delegate`;
+  singletons only for app-wide state, never for testable services.
+- Interpolation over concatenation, except long multi-part log messages.
 
-### Access Control
-- Default to most restrictive: `private` for implementation details, `fileprivate` only when needed by extensions in the same file
-- `public` only on API that SmartDock target consumes from SmartDockCore
-- `internal` (default) is fine within a single target — don't write it explicitly
-- `final` on all classes — this project has no inheritance (except `NSObject` for AppKit interop)
+## Conventions
 
-### Types & Data
-- Prefer `struct` over `class`. Use `class` only when: reference semantics needed, `NSObject` subclass required, or actor isolation requires it.
-- Prefer `let` over `var`. Use `var` only when mutation is required.
-- Use `enum` with no cases for namespaces (e.g. `Log`, `AccessibilityChecker` if static-only)
-- No force unwraps (`!`) except `IBOutlet`-style patterns with `NSStatusItem` / `NSMenuItem` where the object is set immediately after init
-- No `Any` / `AnyObject` unless interfacing with Objective-C APIs
-- Use `guard` for early returns, `if let` for optional binding in the middle of flow
+**Concurrency.** Every core and UI type is `@MainActor`; value types are `Sendable`;
+`nonisolated(unsafe)` only for state `deinit` must read to tear down (a running flag, an event
+monitor, a dispatch source, the observed `UserDefaults`), each with a comment saying so; no `Task.detached`
+to escape isolation; closures crossing isolation are `@Sendable`.
 
-### Functions & Closures
-- Prefer trailing closure syntax for the last closure parameter
-- Use `[weak self]` in escaping closures. Use `guard let self else { return }` pattern inside.
-- Prefer `@discardableResult` over ignoring return values with `_ =`
-- Keep functions short — if a function is over ~40 lines, extract helpers
-- Use default parameter values instead of overloads — `init(autohide: Bool = false, ...)`
+**Profile in force vs. hardware.** `service.activeProfile`, never `hasExternalDisplay`,
+is what the menu, the Settings picker, the banner and the diagnostic report mean by "the
+current profile". `hasExternalDisplay` is only for saying what is plugged in.
 
-### Error Handling
-- Prefer `Bool` return for simple success/fail (e.g. `runAppleScript`) — no need for `throws` on fire-and-forget operations
-- Use `guard` + early return over nested `if let`
-- Log errors via `Log.error()` at the point of failure, don't propagate error messages up
+**AppKit.** Programmatic Auto Layout, `NSLayoutConstraint.activate([...])`, no nibs.
+`LSUIElement = true`; never call `setActivationPolicy(.accessory)` — it can drop the
+status item at launch. Glass via `NSVisualEffectView` (`.hudWindow` / `.popover`).
+The menu bar icon is drawn programmatically (`makeIcon`, cached per position and visibility)
+with `isTemplate = true`; menu items and windows use SF Symbols directly, no fallback. Sliders show
+the value in pixels — the unit System Settings uses. **Nothing in the Dock tab is applied
+without Apply**: a draft survives a tab switch and a display change; switching profiles or
+closing the window with a draft asks Apply / Discard / Cancel (`askAboutDraft`). Until
+2.6.2 three paths applied silently and one discarded silently.
 
-### Formatting
+**Global hotkeys.** Recording and matching go through `HotkeyBinding` in Core —
+`normalize` when storing, `matches(keyCode:modifiers:)` when dispatching, `displayString`
+when showing — because
+CapsLock/Fn ride along on key events and a binding recorded under one flag state would
+silently stop firing under another. `HotkeyBindingTests` guards it.
 
-**`swift-format` is authoritative — do not hand-format.** Rules live in `.swift-format`
-at the repo root; `make format` applies them and `make lint` fails CI on any deviation.
-The tool ships inside the Xcode toolchain, so this adds no external dependency. Reach it
-via `xcrun swift-format` — a bare `swift-format` is not on `PATH`.
+**External commands.** Adding one touches four places: `URLCommand`, the `.sdef` plus its
+`NSScriptCommand`, and an intent. Each is a tripwire: the exhaustive switches in
+`HotkeyAction(URLCommand)`, `ShortcutCoverage` and `AppleScriptCommandTests` fail the build
+until the hotkey, the intent and the `.sdef` command name are named; the test then checks
+the dictionary declares it, and `sdef-check` that its `cocoa class` exists in
+`ScriptingSupport.swift`. `show settings`, not `open settings` — `open` collides with the
+Standard Suite. `make app` copies the `.sdef` into `Contents/Resources`; its filename
+must match `OSAScriptingDefinition` in `Info.plist` exactly.
 
-What the config enforces: 4-space indentation, 120-column lines, no semicolons, trailing
-commas in multi-line collections, sorted imports, at most one consecutive blank line.
+**App Intents.** `Metadata.appintents` is not produced by `swift build`; `make appintents`
+rebuilds Xcode's phase from `swiftc -typecheck -emit-const-values` (undocumented driver
+flag; output-file-map keys must be absolute) and `appintentsmetadataprocessor`
+(`-const-gather-protocols-file` wants a bare array, hence `plutil -extract`). Extraction is
+`-typecheck` only — a `-c` pass with an ignored file map drops object files into the repo root. **The
+metadata ships only in a Developer ID build** — `linkd` refuses an ad-hoc bundle with
+`Rejecting invalid client due to requiresValidatedBundle` (hardened runtime does not help),
+so shipping it would list actions that always fail. `make app` builds and verifies it; only `make sign` copies it in.
+Do not "fix" this in `app`. Point `release` at `sign` once a certificate exists.
 
-Do **not** align code into columns by hand — the formatter strips it, and realigning a
-block on every rename is exactly the diff noise the tool exists to remove:
-```swift
-case refresh          = "refresh"   // ✗ formatter collapses this
-case refresh = "refresh"            // ✓
-```
+**UserDefaults.** App keys under `com.smartdock.`. Read `com.apple.dock` through a fresh
+`UserDefaults(suiteName:)` each time — the Dock process writes it and a cached instance
+goes stale. `object(forKey:) != nil` to test presence.
 
-Several rules are disabled on purpose (implicitly unwrapped optionals in `AppDelegate`,
-force-unwraps in AppKit setup, `public extension`, the hand-written `DockConfiguration`
-init). Each exclusion and its reason is tabulated in `CONTRIBUTING.md` — if you find
-yourself wanting to re-enable one, read that first.
-
-Still a judgement call, since no rule covers it: use string interpolation `"\(value)"`
-rather than concatenation, except in long multi-part log messages where `+` reads better.
-
-### Swift Patterns Used in This Project
-- **Protocol + concrete class** — define protocol first (`DockControlling`), then implementation (`DockController`). All external dependencies consumed via protocol.
-- **Delegate pattern** — `SmartDockServiceDelegate` with `weak var delegate`. Delegate methods prefixed with subject: `serviceDidUpdateState(_:hasExternal:)`.
-- **Value types for configuration** — `DockConfiguration` is a `struct`, immutable after init. Create new instance to change values.
-- **Singleton via static let** — `UserPreferences.shared` with `private init()`. Only for app-wide state, never for testable services.
-- **Extensions for helpers** — `private extension Int { func clamped(to:) }`, `extension Bundle { var shortVersion }` (internal, shared across SmartDock target). Keep helpers close to usage, private when single-file.
-- **`lazy var`** for expensive one-time setup — `lazy var settingsWindow`, `lazy var cachedIcon`
-
-## Swift & macOS Conventions
-
-### Swift 6 Strict Concurrency
-- **All** core and UI types must be `@MainActor`-isolated. This is a hard requirement, not a suggestion.
-- Value types (`DockConfiguration`, `DockPosition`) must be `Sendable`.
-- Use `nonisolated(unsafe)` only for flags accessed from both `deinit` (nonisolated) and `@MainActor` methods — document why.
-- Never use `Task.detached` or `nonisolated` to escape actor isolation without a clear reason.
-- Closures passed across isolation boundaries must be `@Sendable`. Watch for implicit captures.
-
-### AppKit Patterns
-- **No storyboards/nibs.** All UI is programmatic with Auto Layout (`translatesAutoresizingMaskIntoConstraints = false`).
-- Menu bar app: `LSUIElement = true` in Info.plist. No Dock icon. Do NOT call `NSApp.setActivationPolicy(.accessory)` — it's redundant with LSUIElement and can cause status items to disappear during launch.
-- Glass/vibrancy: `NSVisualEffectView` with `.hudWindow` (window) or `.popover` (cards) material.
-- Use `NSLayoutConstraint.activate([...])` for batch constraint activation — never `constraint.isActive = true` one by one.
-- Size sliders are `isContinuous = true` and mark dirty state on drag. The label beside each shows the value in **pixels** (`updateSizeLabels`), the unit System Settings uses — it was a static "Small ◀─▶ Large" hint until 2.6.2, which left no way to match a size seen in System Settings or make two profiles agree. Changes apply only when the user clicks Apply.
-- **Nothing in the Dock tab is applied without Apply.** A draft survives a tab switch and a display change untouched; switching profiles or closing the window with a draft asks Apply / Discard / Cancel (`askAboutDraft`). Until 2.6.2 three of those paths applied the draft silently and the fourth discarded it silently.
-- SF Symbols: always provide programmatic fallback for icons. Set `isTemplate = true` for menu bar icons.
-
-### AppleScript / System Events
-- Each Dock property (`autohide`, `position`, `dock size`, `magnification`, `magnification size`) is set in its **own** `tell application "System Events" / tell dock preferences` block. Never combine them — if one fails, others still apply.
-- No `killall Dock`. AppleScript via System Events updates the Dock gracefully.
-- Sizes use 0.0–1.0 scale internally (same as macOS System Events). Convert via `DockConfiguration.pixelsToScale()` / `scaleToPixels()`. Diff-based apply uses 0.01 tolerance to avoid rounding noise.
-
-### CoreGraphics Display Callbacks
-- Use `CGDisplayRegisterReconfigurationCallback` — event-driven, no polling/timers.
-- Filter the C callback through `shouldReactToDisplayChange(_:)` — an internal free function in `DisplayMonitor.swift`, extracted so the filtering rules are unit-testable without a real display.
-- Only react to **add/remove/enable/disable** (`.addFlag`, `.removeFlag`, `.enabledFlag`, `.disabledFlag`). Ignore mode changes, moves, mirroring and desktop shape changes — these fire during Mission Control and fullscreen transitions.
-- Ignore `.beginConfigurationFlag` — react only to completion. It is skipped even when bundled with topology flags, since the completion callback follows.
-- Use the named `CGDisplayChangeSummaryFlags` constants, never raw hex.
-- Debounce with 1-second settle delay before checking display count. CG fires multiple callbacks during transitions.
-- Track `lastExternalCount` — only fire `onConfigurationChanged` when the external display count **actually** changes.
-- `CGDisplayIsBuiltin()` distinguishes built-in from external displays.
-- `externalDisplayCount()` additionally filters by `CGDisplayIsActive` + `!CGDisplayIsAsleep` — skips sleeping monitors, clamshell mode, phantom USB-C hub connections.
-
-### Wake & Space Change Observers
-- `NSWorkspace.didWakeNotification` + `screensDidWakeNotification` — after macOS sleep/wake, force re-check with 2-second delay (longer than CG debounce). Uses separate `pendingWakeCheck` work item so CG callbacks can't cancel it. Always re-applies config regardless of count change.
-- `NSWorkspace.activeSpaceDidChangeNotification` — **NOT observed**. AppleScript dock changes (especially autohide) trigger space change notifications, causing infinite feedback loops. Mission Control and fullscreen dock behavior is left to macOS. If dock gets stuck, user can use "Refresh Now" from the menu bar.
-
-### Diff-Based Dock Application
-- `DockController.apply()` reads current system config via fresh `UserDefaults(suiteName: "com.apple.dock")` before applying.
-- Only runs AppleScript for properties that actually differ from system state.
-- If nothing changed → no AppleScript runs → no dock flash/appearance.
-- This makes frequent re-apply calls (wake, space change) safe — they're no-ops when config matches.
-- After apply, `lastAppliedConfig` is updated for system sync loop prevention.
-
-### System Dock Sync (KVO)
-- `DockPrefsObserver` (private NSObject helper in `DockController.swift`) observes 5 keys on `UserDefaults(suiteName: "com.apple.dock")` via KVO: `autohide`, `orientation`, `tilesize`, `magnification`, `largesize`.
-- When any process (System Settings, `defaults write`) changes dock preferences, `cfprefsd` delivers KVO callbacks.
-- Debounce 0.5s — System Settings may change multiple keys at once; batch into single check.
-- Loop prevention: compare `readSystemConfig()` with `lastAppliedConfig` using `approximatelyEquals()` (0.01 tolerance for sizes). If matches → our own change → skip. If differs → external change → callback.
-- `SmartDockService.handleExternalDockChange()` updates the active profile (`externalConfig` or `builtinConfig`) and notifies UI.
-- Gated by `prefs.syncFromSystemEnabled` (default: true).
-
-### Notifications
-- `NotificationManager` posts macOS banners via `UNUserNotificationCenter` on profile switch.
-- Observes `.smartDockStateDidChange` (same pattern as `SettingsWindow`).
-- Cooldown: minimum 3s between notifications to prevent spam on rapid connect/disconnect.
-- Authorization requested lazily on first notification attempt. If denied, `notificationsEnabled` is set to false.
-- `UNUserNotificationCenterDelegate.willPresent` returns `[.banner, .sound]` — required for LSUIElement apps to show banners.
-- No entitlements needed for non-sandboxed apps.
-
-### Global Hotkeys
-- `HotkeyManager` uses `NSEvent.addGlobalMonitorForEvents(matching: .keyDown)` (background) + `addLocalMonitorForEvents` (foreground).
-- Requires Accessibility permission (already checked by `AccessibilityChecker`).
-- `isRecording` flag pauses dispatch during hotkey recording in Settings.
-- Bindings stored in `UserPreferences` as `HotkeyBinding` (keyCode + modifiers + displayName).
-- Display names captured via `event.charactersIgnoringModifiers` — works with any keyboard layout.
-- **Recording and matching must go through `HotkeyBinding` in Core**, never raw flags:
-  `HotkeyBinding.normalize(_:)` when storing, `binding.matches(keyCode:modifiers:)` when
-  dispatching, `binding.displayString` when showing. The mask lives in one place because
-  CapsLock/Fn ride along on ordinary key events — a binding recorded under one flag state
-  would silently stop firing under another. `HotkeyBindingTests` guards this.
-
-### External Commands (URL scheme + AppleScript + App Intents)
-
-All four input paths — global hotkeys, `smartdock://` URLs, AppleScript and Shortcuts —
-converge on `AppDelegate.performCommand(_:)` → `HotkeyAction(command)` → `HotkeyManager.perform(_:)`.
-One execution path, no duplicated behaviour. Keep it that way when adding a command.
-
-- `performCommand` **queues** into `pendingCommands` when `hotkeyManager` is still nil.
-  Both a URL and an Apple Event can *launch* the app, and that event can arrive before
-  `applicationDidFinishLaunching` has built the managers — unwrapping there would crash.
-  `drainPendingCommands()` runs at the end of launch.
-- The `HotkeyAction(URLCommand)` switch is exhaustive on purpose: adding a case to
-  either enum breaks the build until both agree.
-
-**URL scheme** — `smartdock://` registered via `CFBundleURLTypes`; `URLCommand` (Core)
-parses. Parsing rejects rather than guesses: unknown verbs, foreign schemes and
-`smartdock://switch` with no target all return `nil`.
-
-**AppleScript** — `NSAppleScriptEnabled` + `OSAScriptingDefinition` in `Info.plist`,
-dictionary at `Resources/SmartDock.sdef`, commands in `ScriptingSupport.swift`.
-
-- `make app` copies the `.sdef` into `Contents/Resources`. The filename must match
-  `OSAScriptingDefinition` exactly — the path is resolved relative to that directory.
-- Adding a command means touching **three** files: the `.sdef`, an `NSScriptCommand`
-  subclass, and `URLCommand`. Nothing forces them to agree at build time, which is why
-  `AppleScriptCommandTests` checks command/class counts and enumerator codes against the
-  shipped dictionary.
-- **Four-character codes are public API.** Scripts bind by code, not by name, so changing
-  one silently breaks every script already written against it. Treat them as frozen.
-- `show settings`, not `open settings` — `open` collides with the Standard Suite.
-
-**App Intents** — intents in `AppIntentsSupport.swift`, exposed to Shortcuts.app and
-Spotlight. `perform()` is `@MainActor` and calls `AppDelegate.performCommand`, so an
-intent that launched the app is queued by `PendingCommandQueue` like any other early
-command.
-
-- **The metadata ships only in a Developer ID build, and that is deliberate.**
-  macOS opens the intent connection only to a bundle it can validate. An ad-hoc
-  signed app has no Team ID and Gatekeeper rejects it, so `linkd` refuses the
-  connection the moment the app launches — `Rejecting invalid client due to
-  requiresValidatedBundle` — and every action fails with "Shortcuts couldn't
-  communicate with the app". Measured, not assumed: the actions are listed in
-  Spotlight and instantiated by Shortcuts, `Metadata.appintents` is indexed
-  (`Registering "com.smartdock.app" in the metadata store`), ordinary Apple Events
-  still reach the app, and hardened runtime does not help. So `make app` builds and
-  verifies the metadata but leaves it out of the bundle; `make sign` copies it in.
-  **Do not "fix" this by copying it in `app`** — that ships visible actions that can
-  never run. `release` depends on `app`, so point it at `sign` once a certificate
-  exists.
-- **The metadata is not produced by `swift build`.** Xcode generates
-  `Contents/Resources/Metadata.appintents` in an `ExtractAppIntentsMetadata` build
-  phase; SPM has no equivalent. Without that bundle the intents compile, link, and are
-  completely invisible — Shortcuts reads the metadata, never the binary. `make appintents`
-  rebuilds the phase and `make app` depends on it.
-- The pipeline is two Xcode-internal tools: `swiftc -typecheck -emit-const-values`
-  writes one `.swiftconstvalues` per source, then `appintentsmetadataprocessor` turns
-  those into the bundle. Three details are load-bearing and each fails **silently**:
-  `-emit-const-values` is an undocumented driver flag and without it the output file map
-  is ignored; the map's keys must be absolute paths matching exactly what `swiftc` is
-  handed; and `-const-gather-protocols-file` wants a bare JSON array, while the toolchain
-  ships the list as an object (hence `plutil -extract`).
-- Extraction is `-typecheck` only. A `-c` pass writes object files, and if the output
-  file map is not honoured they land in the repo root.
-- `make appintents-check` compares the generated bundle against the intents declared in
-  `AppIntentsSupport.swift` and fails if any is missing. It is the only thing standing
-  between a toolchain change and a release whose Shortcuts actions quietly disappeared —
-  do not remove it, and do not let `make app` skip it.
-- Adding a command means touching **four** places now: `URLCommand`, the `.sdef` plus its
-  `NSScriptCommand`, and an intent. `ShortcutCoverage.intentType(for:)` fails the build
-  if the last one is forgotten.
-- Intent identifiers and `AppEnum` raw values are **stored inside saved shortcuts**, the
-  same way four-character codes are stored in scripts. Renaming a type breaks every
-  shortcut a user has already built — treat them as frozen.
-
-### UserDefaults
-- App preferences: `UserDefaults.standard` with `com.smartdock.` prefix.
-- Reading system Dock config: create fresh `UserDefaults(suiteName: "com.apple.dock")` each time — do not cache the instance, as AppleScript changes are made by the Dock process and cached instances may return stale data.
-- Use `defaults.object(forKey:) != nil` to check if a key exists (`.bool(forKey:)` returns `false` for missing keys).
-- First launch: `UserPreferences.initializeDefaultsIfNeeded(from:)` reads current system config, saves external mode (autohide=off) and builtin mode (autohide=on). Only runs once (`isConfigured` check).
-
-### Testing
-- Always use protocol-based dependency injection — never instantiate `DisplayMonitor` or `DockController` directly in tests.
-- Mock classes live in `Tests/SmartDockTests/Mocks.swift`.
-- `MockDisplayMonitor.simulateDisplayChange(externalCount:)` triggers the callback chain.
-- Tests use **Swift Testing** (`@Suite` / `@Test` / `#expect`), not XCTest. Suites run
-  in parallel — there is no shared state left to serialize around.
-- Anything touching stored settings takes a `ScratchPreferences` (see `TestSupport.swift`):
-  a `UserPreferences` on its own throwaway defaults domain, torn down with the test.
-  Never reach for `UserPreferences.shared` in a test — that was what forced the whole
-  suite to run sequentially, and what `UserPreferences.init(defaults:)` exists to avoid.
-- `#expect` evaluates its argument inside a closure, so a `mutating` call cannot be
-  written inline. Name the result first: `let allowed = limiter.allow(at: t0)`.
-- There is no accuracy form of `#expect`. Use `expectClose(_:_:within:)` rather than
-  hand-writing `abs(a - b) <= t` — one definition, no chance of inverting the comparison.
-- Pure logic that the system would otherwise hide (CG flag filtering, `approximatelyEquals`) is extracted into free functions/methods and tested directly — prefer that over leaving it untested inside a C callback.
-- Don't assert on floating-point knife edges. `approximatelyEquals` uses a 0.01 tolerance, but `abs(0.30 - 0.31) == 0.010000000000000009` — anchor size assertions to `pixelsToScale()` values instead, which is what the tolerance actually exists for.
-
-### Logging
-- Use `Log.info()`, `Log.error()`, `Log.displayChange()` — never `print()`. Categories: `general`, `display`.
-- All log output goes through `Logger` API (visible in Console.app, filter by `com.smartdock.app`).
+**Logging.** `Log.info` / `Log.error` / `Log.displayChange`, never `print()`.
 
 ## Entitlements & Permissions
 
-- `com.apple.security.automation.apple-events` — required for NSAppleScript -> System Events
-- `com.apple.security.scripting-targets` scoped to `com.apple.systemevents.dock.preferences`
-- Sandbox: **off** (`com.apple.security.app-sandbox = false`)
-- `LSUIElement = true` in Info.plist (no Dock icon)
-- Accessibility: `AXIsProcessTrusted()` — prompt only on first launch (`hasPromptedAccessibility` flag). Ad-hoc signing resets macOS Accessibility permission on each rebuild/Homebrew update, so re-prompting would annoy users. Accessibility is needed only for global hotkeys — core dock switching (AppleScript) works without it.
-
-## File Structure
-
-```
-Sources/
-├── SmartDockCore/
-│   ├── DockConfiguration.swift   # DockConfiguration + HotkeyBinding + UserPreferences + DockPosition
-│   ├── DisplayMonitor.swift      # CG callback + debounce + flag filtering
-│   ├── DockController.swift      # AppleScript Dock control + DockPrefsObserver (KVO sync)
-│   ├── SmartDockService.swift    # Orchestrator: display state -> dock config + external sync
-│   ├── URLCommand.swift          # smartdock:// URL parsing
-│   ├── AppleScriptCommand.swift  # DockProfile ↔ Apple Event four-char codes
-│   ├── DockApplyOutcome.swift    # Did the Dock actually take it? (read-back check)
-│   ├── RateLimiter.swift         # Hotkey rate limit + notification announcer
-│   ├── PendingCommandQueue.swift # Commands arriving before launch finishes
-│   ├── LogExport.swift           # `log show` invocation + home-path redaction
-│   ├── DiagnosticReport.swift    # Bug-report snapshot + Markdown formatting
-│   └── Log.swift                 # Logger wrapper
-└── SmartDock/
-    ├── App.swift                 # @main, manual NSApplication run loop
-    ├── ScriptingSupport.swift    # NSScriptCommand subclasses bound by the sdef
-    ├── AppIntentsSupport.swift   # App Intents for Shortcuts.app + Spotlight
-    ├── StatusBarController.swift # Menu bar icon + dropdown with SF Symbol icons
-    ├── SettingsWindow.swift      # Tabbed glass window (Settings / Shortcuts / About)
-    ├── OnboardingWindow.swift    # First-launch welcome screen
-    ├── NotificationManager.swift # macOS banner notifications on profile switch
-    ├── HotkeyManager.swift       # Global keyboard shortcuts (5 actions)
-    ├── HotkeyRecorder.swift      # Captures a keystroke and stores it as a binding
-    ├── AppRelauncher.swift       # Safe relaunch — waits for PID exit before spawning new instance
-    ├── AppUpdateWatcher.swift    # FS watcher on executable — detects Homebrew upgrade, prompts relaunch
-    ├── LaunchAtLogin.swift       # SMAppService wrapper
-    ├── AccessibilityChecker.swift # First-launch-only Accessibility prompt
-    └── Views/
-        ├── UI.swift                        # Shared control + glass window factories
-        ├── PositionIcon.swift              # Cached monitor thumbnails per dock position
-        ├── PositionPicker.swift            # NSStackView of position buttons
-        ├── AboutTabView.swift              # About tab contents
-        ├── GeneralTabView.swift            # General tab — app behaviour, not profile
-        └── AccessibilityWarningView.swift  # Permission banner + tccutil reset flow
-Tests/SmartDockTests/
-    ├── Mocks.swift               # MockDisplayMonitor, MockDockController, MockServiceDelegate
-    ├── SmartDockServiceTests.swift
-    ├── DisplayMonitorTests.swift
-    ├── DockControllerTests.swift
-    ├── HotkeyBindingTests.swift  # Modifier normalisation, matching, display formatting
-    ├── URLCommandTests.swift     # smartdock:// parsing + rejection
-    ├── AppleScriptCommandTests.swift  # Apple Event codes + .sdef parity
-    └── DiagnosticReportTests.swift
-Resources/
-    ├── Info.plist                # Version, LSUIElement, URL types, sdef reference
-    ├── SmartDock.sdef            # AppleScript dictionary (copied in by `make app`)
-    └── SmartDock.entitlements    # Apple Events + scripting targets
-.swift-format                     # Formatting rules — enforced by `make lint` in CI
-```
+`com.apple.security.automation.apple-events` (System Events) and
+`com.apple.security.scripting-targets` scoped to `com.apple.systemevents.dock.preferences`;
+sandbox **off**; `LSUIElement = true`. Accessibility is needed only for global hotkeys —
+Dock switching works without it.

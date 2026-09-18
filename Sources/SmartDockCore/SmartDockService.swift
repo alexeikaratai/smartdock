@@ -10,6 +10,8 @@ public extension Notification.Name {
 
 public extension SmartDockService {
     static let hasExternalKey = "hasExternal"
+    /// `userInfo` key for the `DockProfile` in force — what a banner should name.
+    static let activeProfileKey = "activeProfile"
 }
 
 // MARK: - Delegate
@@ -41,15 +43,34 @@ public final class SmartDockService {
     /// `hasExternalDisplay` is the cached state the profile decision was made on.
     public var externalDisplayCount: Int { displayMonitor.externalDisplayCount() }
 
-    /// Names the display setup in force, for anything that shows it to a person.
+    /// The profile whose configuration the Dock is holding right now.
+    ///
+    /// Usually the one the displays select, but `applyProfile(_:)` can put the
+    /// other one in force until the next display change, wake or refresh. Anything
+    /// that acts on "the active profile" — the auto-hide toggle, the position menu,
+    /// an edit imported from System Settings — reads this, not `hasExternalDisplay`:
+    /// writing by hardware while the other profile was applied put built-in values
+    /// into the external profile.
+    public private(set) var activeProfile: DockProfile = .builtin
+
+    /// Names the state in force, for anything that shows it to a person.
     ///
     /// Defined once because it was written twice — the menu bar said "Status: External
     /// monitor connected" and the settings window "Current: External monitor
     /// connected". The same fact, phrased separately, in two files that would have to
     /// be found and edited together the moment a third state exists. Each caller adds
     /// its own prefix; only the wording of the state itself lives here.
+    ///
+    /// The third state did arrive: a profile applied on request while the displays
+    /// would have chosen the other. What is *applied* comes first — that is what the
+    /// person is looking at.
     public var activeProfileDescription: String {
-        hasExternalDisplay ? "External monitor connected" : "Built-in display only"
+        switch (activeProfile, hasExternalDisplay) {
+        case (.external, true): "External monitor connected"
+        case (.builtin, false): "Built-in display only"
+        case (.builtin, true): "Built-in profile · external monitor connected"
+        case (.external, false): "External profile · built-in display only"
+        }
     }
 
     /// The dock configuration we last applied (not the transient system state).
@@ -124,20 +145,34 @@ public final class SmartDockService {
     ///
     /// The override holds until the next display change, wake or refresh, at which
     /// point automatic behaviour resumes.
-    public func applyProfile(external: Bool) {
+    public func applyProfile(_ profile: DockProfile) {
         guard isEnabled, !isApplying else { return }
         isApplying = true
         defer { isApplying = false }
 
-        let config = external ? prefs.externalConfig : prefs.builtinConfig
-        let changed = config != currentConfig
-
-        currentConfig = config
-        dockController.apply(config)
-        Log.info("Applied \(external ? "external" : "built-in") profile on request")
-
         // `hasExternalDisplay` keeps reporting the hardware, which has not changed —
         // only the profile in force has.
+        let changed = profile != activeProfile || prefs[profile] != currentConfig
+        activeProfile = profile
+        apply(prefs[profile])
+        Log.info("Applied \(profile.rawValue) profile on request")
+
+        if changed { notifyStateChanged() }
+    }
+
+    /// Changes the profile in force and applies it — the one path for every
+    /// control that edits "the current profile" in place: the auto-hide toggle,
+    /// the position menu, an edit picked up from System Settings.
+    public func updateActiveProfile(_ config: DockConfiguration) {
+        guard isEnabled, !isApplying else { return }
+        isApplying = true
+        defer { isApplying = false }
+
+        let changed = config != currentConfig
+        prefs[activeProfile] = config
+        apply(config)
+        Log.info("Updated \(activeProfile.rawValue) profile in place")
+
         if changed { notifyStateChanged() }
     }
 
@@ -172,18 +207,14 @@ public final class SmartDockService {
     }
 
     /// System dock settings changed externally (e.g. via System Settings).
-    /// Update the currently active profile to match.
+    /// Update the profile in force to match — the Dock already holds the values,
+    /// so nothing is applied back.
     private func handleExternalDockChange(_ config: DockConfiguration) {
         guard isEnabled, !isApplying else { return }
         guard prefs.syncFromSystemEnabled else { return }
 
-        if hasExternalDisplay {
-            prefs.externalConfig = config
-            Log.info("External dock change detected — updated external profile")
-        } else {
-            prefs.builtinConfig = config
-            Log.info("External dock change detected — updated built-in profile")
-        }
+        prefs[activeProfile] = config
+        Log.info("External dock change detected — updated \(activeProfile.rawValue) profile")
 
         currentConfig = config
         notifyStateChanged()
@@ -205,18 +236,14 @@ public final class SmartDockService {
 
         let external = displayMonitor.hasExternalDisplay()
         hasExternalDisplay = external
+        activeProfile = DockProfile(hasExternalDisplay: external)
 
-        let config: DockConfiguration
-        if external {
-            config = prefs.externalConfig
-            Log.displayChange("External display detected — applying external config")
-        } else {
-            config = prefs.builtinConfig
-            Log.displayChange("No external displays — applying built-in config")
-        }
-
-        currentConfig = config
-        dockController.apply(config)
+        let config = prefs[activeProfile]
+        Log.displayChange(
+            external
+                ? "External display detected — applying external config"
+                : "No external displays — applying built-in config")
+        apply(config)
 
         // Only notify observers when state actually changed.
         if config != previousConfig || external != previousExternal {
@@ -224,12 +251,21 @@ public final class SmartDockService {
         }
     }
 
+    /// Records the configuration as ours and hands it to the Dock.
+    private func apply(_ config: DockConfiguration) {
+        currentConfig = config
+        dockController.apply(config)
+    }
+
     private func notifyStateChanged() {
         delegate?.serviceDidUpdateState(self, hasExternal: hasExternalDisplay)
         NotificationCenter.default.post(
             name: .smartDockStateDidChange,
             object: self,
-            userInfo: [SmartDockService.hasExternalKey: hasExternalDisplay]
+            userInfo: [
+                SmartDockService.hasExternalKey: hasExternalDisplay,
+                SmartDockService.activeProfileKey: activeProfile,
+            ]
         )
     }
 }

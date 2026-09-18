@@ -12,6 +12,7 @@ struct DiagnosticReportTests {
         isAccessibilityGranted: Bool = true,
         externalDisplayCount: Int = 1,
         hasExternalDisplay: Bool = true,
+        activeProfile: DockProfile = .external,
         externalConfig: DockConfiguration = DockConfiguration(autohide: false, position: .bottom),
         builtinConfig: DockConfiguration = DockConfiguration(autohide: true, position: .left),
         notificationsEnabled: Bool = true,
@@ -26,6 +27,7 @@ struct DiagnosticReportTests {
             isAccessibilityGranted: isAccessibilityGranted,
             externalDisplayCount: externalDisplayCount,
             hasExternalDisplay: hasExternalDisplay,
+            activeProfile: activeProfile,
             externalConfig: externalConfig,
             builtinConfig: builtinConfig,
             notificationsEnabled: notificationsEnabled,
@@ -94,9 +96,29 @@ struct DiagnosticReportTests {
 
     // MARK: - Display State
 
-    @Test(arguments: [(true, "External Monitor"), (false, "Built-in Only")])
-    func activeProfileReflectsExternalDisplay(hasExternal: Bool, label: String) {
-        #expect(makeReport(hasExternalDisplay: hasExternal).formatted.contains("Active profile: \(label)"))
+    @Test(arguments: DockProfile.allCases)
+    func theActiveProfileIsNamed(profile: DockProfile) {
+        #expect(makeReport(activeProfile: profile).formatted.contains("Active profile: \(profile.displayName)"))
+    }
+
+    @Test func builtInOnlyDisplaysAreReported() {
+        #expect(makeReport(hasExternalDisplay: false).formatted.contains("Displays: built-in only"))
+    }
+
+    @Test func settingsSwitchedOffAreReportedOff() {
+        let report = makeReport(notificationsEnabled: false, syncFromSystemEnabled: false).formatted
+
+        #expect(report.contains("Notify on switch: off"))
+        #expect(report.contains("Auto-import system changes: off"))
+    }
+
+    /// A profile applied on request is exactly what a bug report has to show, so
+    /// the profile and the hardware are two lines, not one derived from the other.
+    @Test func anOverrideShowsBothTheProfileAndTheDisplays() {
+        let report = makeReport(hasExternalDisplay: true, activeProfile: .builtin).formatted
+
+        #expect(report.contains("Active profile: Built-in Display"))
+        #expect(report.contains("Displays: external monitor connected"))
     }
 
     @Test(arguments: [0, 1, 2])

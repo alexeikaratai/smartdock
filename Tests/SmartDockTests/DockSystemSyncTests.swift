@@ -40,6 +40,16 @@ struct DockSystemSyncTests {
 
     // MARK: - Observing
 
+    /// A store that cannot be opened is observed by nobody — and stopping an
+    /// observer that never started must not touch a `nil` domain either.
+    @Test func anUnopenableStoreIsNeverObserved() {
+        let controller = DockController(openDefaults: { nil }, runScript: { _ in true })
+
+        controller.startObservingSystemChanges()
+        controller.stopObservingSystemChanges()
+        controller.stopObservingSystemChanges()
+    }
+
     @Test func anEditMadeOutsideTheAppIsReported() async throws {
         let (store, controller, log) = makeSubject()
         controller.startObservingSystemChanges()

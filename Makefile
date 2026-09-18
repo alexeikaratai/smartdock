@@ -1,11 +1,11 @@
-.PHONY: help build test clean icon app run sign notarize fix install release bump version-check deps outdated doctor actions-check logs format lint coverage appintents appintents-check
+.PHONY: help build test clean icon app run sign notarize fix install release bump version-check deps outdated doctor actions-check logs format lint coverage appintents appintents-check entitlements-check sdef-check
 
 .DEFAULT_GOAL := help
 
 # === Config ===
 APP_NAME     := SmartDock
 BUNDLE_ID    := com.smartdock.app
-VERSION      := 2.6.2
+VERSION      := 2.7.0
 BUILD_DIR    := .build/release
 APP_DIR      := build/$(APP_NAME).app
 CONTENTS     := $(APP_DIR)/Contents
@@ -119,6 +119,9 @@ APPINTENTS_DIR  := .build/appintents
 APPINTENTS_CV   := $(APPINTENTS_DIR)/const-values
 APPINTENTS_META := $(APPINTENTS_DIR)/Metadata.appintents
 APPINTENTS_SRC  := Sources/$(APP_NAME)/AppIntentsSupport.swift
+ENTITLEMENTS    := Resources/$(APP_NAME).entitlements
+SDEF            := Resources/$(APP_NAME).sdef
+SCRIPTING_SRC   := Sources/$(APP_NAME)/ScriptingSupport.swift
 DEPLOY_TARGET   := 14.0
 
 appintents: build
@@ -198,6 +201,53 @@ appintents-check:
 		exit 1; \
 	fi
 
+# === Bundle checks ===
+
+# Read the entitlements back out of the sealed bundle and compare them with the
+# file they were signed from. `codesign` accepts any key it is given, so a typo
+# or a dropped key is invisible until System Events refuses the app — and
+# without `automation.apple-events` the app cannot change the Dock at all.
+# Comparing against the file rather than a list of keys means the target never
+# has to learn a new entitlement; the one key asserted by name is the one the
+# app cannot work without, so an empty file on both sides cannot pass.
+entitlements-check:
+	@echo "🔎 Entitlements in $(APP_DIR):"
+	@actual=build/entitlements.actual; expected=build/entitlements.expected; \
+	codesign -d --entitlements :- $(APP_DIR) 2>/dev/null | plutil -p - > $$actual 2>/dev/null; \
+	plutil -p $(ENTITLEMENTS) > $$expected; \
+	if [ ! -s $$actual ]; then \
+		echo "  ❌ codesign returned no entitlements — is the bundle signed?"; exit 1; \
+	fi; \
+	if ! diff $$expected $$actual > build/entitlements.diff; then \
+		echo "  ❌ Bundle entitlements differ from $(ENTITLEMENTS) (< file, > bundle):"; \
+		sed 's/^/     /' build/entitlements.diff; \
+		exit 1; \
+	fi; \
+	if ! grep -q '"com.apple.security.automation.apple-events" => true' $$actual; then \
+		echo "  ❌ com.apple.security.automation.apple-events is not granted — System Events would refuse the app"; \
+		exit 1; \
+	fi; \
+	echo "  ✅ match $(ENTITLEMENTS)"
+
+# Every <cocoa class> the scripting dictionary names must be an @objc class in
+# ScriptingSupport.swift, and every such class must be in the dictionary. The
+# two are hand-written in different languages and the compiler sees neither
+# side; a mismatch fails at runtime with "unrecognised command". The Core test
+# suite covers the enumerator codes and the URLCommand ↔ command mapping; the
+# class names live in the app target, which is why this is a make target.
+sdef-check:
+	@echo "🔎 Scripting dictionary classes:"
+	@mkdir -p build; declared=build/sdef.declared; defined=build/sdef.defined; \
+	grep -oE 'cocoa class="[A-Za-z]+"' $(SDEF) | sed -E 's/.*"(.*)"/\1/' | sort > $$declared; \
+	grep -oE '@objc\(SD[A-Za-z]+Command\)' $(SCRIPTING_SRC) | sed -E 's/@objc\((.*)\)/\1/' | sort > $$defined; \
+	if [ ! -s $$declared ]; then echo "  ❌ $(SDEF) declares no <cocoa class>"; exit 1; fi; \
+	if ! diff $$declared $$defined > build/sdef.diff; then \
+		echo "  ❌ $(SDEF) and $(SCRIPTING_SRC) disagree:"; \
+		sed -n 's/^< /     only in .sdef:  /p; s/^> /     only in Swift:  /p' build/sdef.diff; \
+		exit 1; \
+	fi; \
+	sed 's/^/  ✅ /' $$declared
+
 # === App Bundle ===
 
 icon:
@@ -232,9 +282,11 @@ app: build icon appintents
 	@# Ad-hoc sign (free, no Developer ID needed)
 	@# Required for macOS to allow opening the app
 	codesign --force --deep \
-		--entitlements Resources/SmartDock.entitlements \
+		--entitlements $(ENTITLEMENTS) \
 		--sign - \
 		$(APP_DIR)
+	@$(MAKE) --no-print-directory entitlements-check
+	@$(MAKE) --no-print-directory sdef-check
 
 	@echo "✅ $(APP_DIR) created (ad-hoc signed)"
 	@echo "   Run: open $(APP_DIR)"
@@ -257,11 +309,12 @@ sign: app
 	cp -R $(APPINTENTS_META) $(RESOURCES)/Metadata.appintents
 	codesign --force --deep --timestamp \
 		--options runtime \
-		--entitlements Resources/SmartDock.entitlements \
+		--entitlements $(ENTITLEMENTS) \
 		--sign "$(SIGN_ID)" \
 		$(APP_DIR)
 	@echo "✅ Signed. Verify:"
 	codesign --verify --verbose $(APP_DIR)
+	@$(MAKE) --no-print-directory entitlements-check
 	@# A signed build that Gatekeeper still rejects would list the actions and fail
 	@# every one of them, so say so plainly rather than let it ship quietly.
 	@if spctl -a -vv $(APP_DIR) >/dev/null 2>&1; then \
@@ -449,6 +502,10 @@ help:
 	@echo "  Shortcuts & Spotlight:"
 	@echo "    make appintents       Generate App Intents metadata (part of make app)"
 	@echo "    make appintents-check Verify every declared intent reached the bundle"
+	@echo ""
+	@echo "  Bundle checks (both part of make app):"
+	@echo "    make entitlements-check Verify the sealed bundle carries the entitlements file"
+	@echo "    make sdef-check         Verify .sdef classes match ScriptingSupport.swift"
 	@echo ""
 	@echo "  Install:"
 	@echo "    make install       Copy .app to /Applications"

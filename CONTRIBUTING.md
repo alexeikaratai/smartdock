@@ -125,6 +125,12 @@ Some things are genuinely untestable and that is fine: AppleScript execution aga
 System Events, CoreGraphics display callbacks, `AXIsProcessTrusted`, `SMAppService`,
 and NSView layout. Don't write tests that only assert a mock was called.
 
+A handful of "missed regions" in the table are not misses at all. A ternary inside a
+string interpolation — `"\(flag ? "on" : "off")"` — gets a counter from `llvm-cov` that
+Swift never increments, so the `else` branch reads as unexecuted even with a passing test
+that asserts on `"off"`. `DiagnosticReport.formatted` carries four of these. Check the
+region marker against the test before chasing it; every reachable branch in Core has one.
+
 ## Versioning
 
 **Never edit a version by hand.**

@@ -87,7 +87,47 @@ struct AppleScriptCommandTests {
             "Every <command> needs a <cocoa class=...> or AppleScript cannot dispatch it")
     }
 
+    /// Every command a URL can express must be reachable from AppleScript too.
+    /// The switch in `dictionaryCommandName(for:)` is exhaustive on purpose: a new
+    /// `URLCommand` case does not compile until it names its dictionary command,
+    /// and this test then checks the shipped `.sdef` actually declares it.
+    @Test(arguments: URLCommand.allCases)
+    func everyURLCommandHasADictionaryCommand(command: URLCommand) throws {
+        let sdef = try #require(Self.scriptingDictionary(), "SmartDock.sdef not found")
+        let name = Self.dictionaryCommandName(for: command)
+
+        #expect(
+            sdef.contains("<command name=\"\(name)\""),
+            "SmartDock.sdef has no <command name=\"\(name)\"> for URLCommand.\(command)")
+    }
+
+    /// The other direction: a command left in the dictionary after its
+    /// `URLCommand` was removed would still be offered to scripts and fail.
+    @Test func everyDictionaryCommandBacksAURLCommand() throws {
+        let sdef = try #require(Self.scriptingDictionary(), "SmartDock.sdef not found")
+        let declared = Set(Self.commandNames(in: sdef))
+        let backed = Set(URLCommand.allCases.map(Self.dictionaryCommandName(for:)))
+
+        #expect(declared == backed, "In .sdef but no URLCommand: \(declared.subtracting(backed))")
+    }
+
     // MARK: - Helpers
+
+    /// The `<command name>` in `SmartDock.sdef` that carries each URL command.
+    /// Two URL commands share `switch to` — the profile is its parameter.
+    private static func dictionaryCommandName(for command: URLCommand) -> String {
+        switch command {
+        case .refresh: "refresh"
+        case .switchToExternal, .switchToBuiltin: "switch to"
+        case .toggleAutohide: "toggle autohide"
+        case .openSettings: "show settings"
+        }
+    }
+
+    private static func commandNames(in sdef: String) -> [String] {
+        sdef.components(separatedBy: "<command name=\"").dropFirst()
+            .compactMap { $0.components(separatedBy: "\"").first }
+    }
 
     /// Locates the dictionary relative to this source file — it is a bundle
     /// resource of the app target, which the test target does not link.

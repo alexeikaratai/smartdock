@@ -38,6 +38,14 @@ struct SmartDockServiceTests {
         }
     }
 
+    /// Main-actor box for the notification observer — a `@Sendable` closure cannot
+    /// mutate a captured `var`, and the service only ever posts from the main actor.
+    @MainActor
+    private final class ProfileLog {
+        private(set) var profiles: [DockProfile] = []
+        func record(_ profile: DockProfile) { profiles.append(profile) }
+    }
+
     // MARK: - Forcing a Profile
 
     /// The regression this method exists for.
@@ -52,7 +60,7 @@ struct SmartDockServiceTests {
         f.service.start()
         #expect(!(try #require(f.dock.lastAppliedConfig).autohide), "external profile applies on start")
 
-        f.service.applyProfile(external: false)
+        f.service.applyProfile(.builtin)
 
         #expect(
             try #require(f.dock.lastAppliedConfig).autohide,
@@ -65,7 +73,7 @@ struct SmartDockServiceTests {
         f.service.start()
         #expect(try #require(f.dock.lastAppliedConfig).autohide, "built-in profile applies on start")
 
-        f.service.applyProfile(external: true)
+        f.service.applyProfile(.external)
 
         #expect(!(try #require(f.dock.lastAppliedConfig).autohide))
         #expect(!f.service.currentConfig.autohide)
@@ -77,7 +85,7 @@ struct SmartDockServiceTests {
         let f = Fixture(externalCount: 1)
         f.service.start()
 
-        f.service.applyProfile(external: false)
+        f.service.applyProfile(.builtin)
 
         #expect(f.service.hasExternalDisplay, "A forced profile does not unplug the monitor")
     }
@@ -87,7 +95,7 @@ struct SmartDockServiceTests {
     @Test func theNextDisplayChangeEndsTheOverride() throws {
         let f = Fixture(externalCount: 1)
         f.service.start()
-        f.service.applyProfile(external: false)
+        f.service.applyProfile(.builtin)
         #expect(try #require(f.dock.lastAppliedConfig).autohide)
 
         f.monitor.simulateDisplayChange(externalCount: 2)
@@ -101,7 +109,7 @@ struct SmartDockServiceTests {
         let f = Fixture(externalCount: 1)
         let callsBefore = f.dock.applyCallCount
 
-        f.service.applyProfile(external: false)
+        f.service.applyProfile(.builtin)
 
         #expect(f.dock.applyCallCount == callsBefore, "A stopped service must not touch the Dock")
     }
@@ -205,6 +213,23 @@ struct SmartDockServiceTests {
         #expect(f.dock.applyCallCount > afterRestart)
     }
 
+    /// End to end for a fresh install: the person's Dock is hidden, on the left,
+    /// and the first apply must ask the Dock for nothing — no diff, no script.
+    @Test func aFreshInstallAsksTheDockForNothing() {
+        let f = Fixture(externalCount: 1)
+        // Undo the fixture's seeding: with neither auto-hide key present the
+        // store looks exactly like a machine SmartDock has never run on.
+        f.scratch.defaults.removeObject(forKey: "com.smartdock.external.autohide")
+        f.scratch.defaults.removeObject(forKey: "com.smartdock.builtin.autohide")
+        #expect(!f.prefs.isConfigured)
+        f.dock.mockSystemConfig = DockConfiguration(autohide: true, position: .left)
+
+        f.service.start()
+
+        #expect(f.service.currentConfig == f.dock.mockSystemConfig, "their Dock, not our default")
+        #expect(f.dock.lastApplyOutcome?.requested.isEmpty == true, "Nothing to push on first launch")
+    }
+
     /// End to end for the upgrade path: a profile saved before `minimizeEffect` and
     /// `animatesLaunch` existed must not make the first apply restyle the Dock.
     @Test func upgradingDoesNotPushSettingsTheProfileNeverRecorded() {
@@ -246,6 +271,141 @@ struct SmartDockServiceTests {
         f.monitor.simulateDisplayChange(externalCount: 1)
 
         #expect(f.service.activeProfileDescription == "External monitor connected")
+    }
+
+    /// The third state: a profile applied on request while the displays would have
+    /// chosen the other. What is applied comes first — that is what the person sees.
+    @Test func anOverrideIsNamedByWhatIsAppliedThenWhatIsConnected() {
+        let f = Fixture(externalCount: 1)
+        f.service.start()
+
+        f.service.applyProfile(.builtin)
+
+        #expect(f.service.activeProfileDescription == "Built-in profile · external monitor connected")
+    }
+
+    @Test func theOtherOverrideIsNamedTheSameWay() {
+        let f = Fixture(externalCount: 0)
+        f.service.start()
+
+        f.service.applyProfile(.external)
+
+        #expect(f.service.activeProfileDescription == "External profile · built-in display only")
+    }
+
+    // MARK: - The Profile in Force
+
+    /// Asking for the profile that is already applied is a no-op for observers —
+    /// the menu, the banner and the settings window have nothing new to show.
+    @Test func applyingTheProfileAlreadyInForceChangesNothing() {
+        let f = Fixture(externalCount: 1)
+        f.service.start()
+        let updates = f.delegate.stateUpdates.count
+
+        f.service.applyProfile(.external)
+
+        #expect(f.service.activeProfile == .external)
+        #expect(f.delegate.stateUpdates.count == updates, "Nothing changed, so nothing to announce")
+    }
+
+    @Test func theDisplaysSelectTheActiveProfile() {
+        let f = Fixture(externalCount: 1)
+        f.service.start()
+        #expect(f.service.activeProfile == .external)
+
+        f.monitor.simulateDisplayChange(externalCount: 0)
+
+        #expect(f.service.activeProfile == .builtin)
+    }
+
+    @Test func anOverrideChangesTheActiveProfileUntilTheNextDisplayChange() {
+        let f = Fixture(externalCount: 1)
+        f.service.start()
+
+        f.service.applyProfile(.builtin)
+        #expect(f.service.activeProfile == .builtin)
+
+        f.monitor.simulateDisplayChange(externalCount: 2)
+        #expect(f.service.activeProfile == .external, "A display change resumes automatic selection")
+    }
+
+    /// The regression `updateActiveProfile` exists for. The auto-hide toggle used to
+    /// pick the profile to write by `hasExternalDisplay`; with the built-in profile
+    /// applied on request, it took built-in values, flipped auto-hide, and stored the
+    /// lot as the *external* profile.
+    @Test func anEditInPlaceGoesToTheProfileInForceNotTheHardware() {
+        let f = Fixture(externalCount: 1)
+        f.prefs.externalConfig = DockConfiguration(autohide: false, position: .bottom)
+        f.prefs.builtinConfig = DockConfiguration(autohide: true, position: .left)
+        f.service.start()
+        f.service.applyProfile(.builtin)
+
+        f.service.updateActiveProfile(f.service.currentConfig.with(autohide: false))
+
+        #expect(f.prefs.builtinConfig == DockConfiguration(autohide: false, position: .left))
+        #expect(
+            f.prefs.externalConfig == DockConfiguration(autohide: false, position: .bottom),
+            "The external profile must be left exactly as it was")
+    }
+
+    @Test func anEditInPlaceIsStoredAndApplied() throws {
+        let f = Fixture(externalCount: 0)
+        f.service.start()
+
+        f.service.updateActiveProfile(f.service.currentConfig.with(position: .right))
+
+        #expect(f.prefs.builtinConfig.position == .right)
+        #expect(try #require(f.dock.lastAppliedConfig).position == .right)
+        #expect(f.service.currentConfig.position == .right)
+        #expect(f.delegate.stateUpdates.count == 2, "Start, then one edit — nothing extra")
+    }
+
+    @Test func anEditInPlaceDoesNothingWhileStopped() {
+        let f = Fixture(externalCount: 0)
+        let before = (f.dock.applyCallCount, f.prefs.builtinConfig)
+
+        f.service.updateActiveProfile(DockConfiguration(autohide: false, position: .right))
+
+        #expect(f.dock.applyCallCount == before.0)
+        #expect(f.prefs.builtinConfig == before.1, "A stopped service must not rewrite a profile")
+    }
+
+    /// The banner names what is applied. It used to read the hardware flag, so a
+    /// display change after an override could announce a switch that never
+    /// happened — or stay silent about one that did.
+    @Test func theStateNotificationCarriesTheProfileInForce() {
+        let f = Fixture(externalCount: 1)
+        f.service.start()
+        let received = ProfileLog()
+        let key = SmartDockService.activeProfileKey
+        let token = NotificationCenter.default.addObserver(
+            forName: .smartDockStateDidChange, object: f.service, queue: .main
+        ) { note in
+            // The service posts synchronously from the main actor and the queue is
+            // main, so the closure is on the main thread — the same reasoning
+            // `ScriptingSupport` uses for Apple Events.
+            guard let profile = note.userInfo?[key] as? DockProfile else { return }
+            MainActor.assumeIsolated { received.record(profile) }
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        f.service.applyProfile(.builtin)
+
+        #expect(received.profiles == [.builtin], "hasExternalDisplay is still true; the profile is what changed")
+    }
+
+    /// System Settings edits follow the same rule: they belong to the profile that
+    /// is applied, which is the one the person was looking at when they edited.
+    @Test func aSystemSettingsEditLandsInTheProfileInForce() {
+        let f = Fixture(externalCount: 1)
+        f.service.start()
+        f.service.applyProfile(.builtin)
+        let externalBefore = f.prefs.externalConfig
+
+        f.dock.simulateExternalDockChange(DockConfiguration(autohide: true, position: .right))
+
+        #expect(f.prefs.builtinConfig.position == .right)
+        #expect(f.prefs.externalConfig == externalBefore)
     }
 
     // MARK: - Display Change → Dock Config Applied

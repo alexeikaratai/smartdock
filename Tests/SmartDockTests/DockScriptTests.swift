@@ -77,13 +77,38 @@ struct DockScriptTests {
 
     // MARK: - One Property, One Script
 
-    @Test func positionScriptSetsScreenEdge() {
+    /// Every edge, not just one: the AppleScript enumerator is spelled per case,
+    /// and a case that stopped matching would fail at run time only.
+    @Test(arguments: DockPosition.allCases.filter { $0 != .bottom })
+    func positionScriptSetsScreenEdge(position: DockPosition) {
         let (scripts, controller) = makeRecorder()
 
-        controller.apply(DockConfiguration(position: .left))
+        controller.apply(DockConfiguration(position: position))
 
         #expect(scripts().count == 1)
-        #expect(scripts()[0].contains("set screen edge to left"))
+        #expect(scripts()[0].contains("set screen edge to \(position.rawValue)"))
+    }
+
+    /// `bottom` is the Dock's own default, so it is only ever *sent* when the
+    /// Dock is somewhere else — seed the domain to make that so.
+    @Test func bottomIsSentWhenTheDockIsElsewhere() {
+        let (scripts, controller) = makeRecorder(seed: ["orientation": "left"])
+
+        controller.apply(DockConfiguration(position: .bottom))
+
+        #expect(scripts().count == 1)
+        #expect(scripts()[0].contains("set screen edge to bottom"))
+    }
+
+    /// A refused script is reported, not swallowed. `NSAppleScript` says nothing
+    /// about whether the Dock honoured it, but a script that would not even run
+    /// is a failure `apply` can and does report.
+    @Test func aFailedScriptMakesApplyReportFailure() {
+        let store = InMemoryDefaults()
+        let controller = DockController(
+            openDefaults: { store }, verificationDelay: 0.01, runScript: { _ in false })
+
+        #expect(!controller.apply(DockConfiguration(autohide: true)))
     }
 
     @Test func autohideScriptSetsAutohide() {

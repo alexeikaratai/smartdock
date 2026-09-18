@@ -30,6 +30,20 @@ final class SettingsWindow: NSObject {
             case .builtin: return "Built-in Only"
             }
         }
+
+        var profile: DockProfile {
+            switch self {
+            case .external: .external
+            case .builtin: .builtin
+            }
+        }
+
+        init(_ profile: DockProfile) {
+            switch profile {
+            case .external: self = .external
+            case .builtin: self = .builtin
+            }
+        }
     }
 
     // MARK: - Properties
@@ -116,7 +130,7 @@ final class SettingsWindow: NSObject {
 
         installKeyMonitor()
 
-        selectedMode = service.hasExternalDisplay ? .external : .builtin
+        selectedMode = Mode(service.activeProfile)
         modeControl.selectedSegment = selectedMode.rawValue
         loadCurrentMode()
         selectTab(tab)
@@ -663,12 +677,7 @@ final class SettingsWindow: NSObject {
         Log.info("Settings: seeded the form from the live Dock")
     }
     @objc private func syncFromSystem(_ sender: NSButton) {
-        let systemConfig = service.dockController.readSystemConfig()
-        if selectedMode == .external {
-            prefs.externalConfig = systemConfig
-        } else {
-            prefs.builtinConfig = systemConfig
-        }
+        prefs[selectedMode.profile] = service.dockController.readSystemConfig()
         loadCurrentMode()
         markClean()
     }
@@ -765,25 +774,17 @@ final class SettingsWindow: NSObject {
             showsRecents: recentsCheckbox.state == .on
         )
 
-        if selectedMode == .external {
-            prefs.externalConfig = config
-        } else {
-            prefs.builtinConfig = config
-        }
-
-        let editingActiveMode =
-            (selectedMode == .external && service.hasExternalDisplay)
-            || (selectedMode == .builtin && !service.hasExternalDisplay)
+        prefs[selectedMode.profile] = config
 
         markClean()
-        if editingActiveMode { service.refresh() }
+        // Re-applying the profile by name keeps an on-request override in force;
+        // `refresh()` would re-derive it from the displays and silently drop it.
+        if selectedMode.profile == service.activeProfile { service.applyProfile(selectedMode.profile) }
         updateStatus()
     }
 
     /// Stored config for the mode currently shown in the Settings tab.
-    private var activeConfig: DockConfiguration {
-        selectedMode == .external ? prefs.externalConfig : prefs.builtinConfig
-    }
+    private var activeConfig: DockConfiguration { prefs[selectedMode.profile] }
 
     // MARK: - Helpers
 
@@ -808,11 +809,11 @@ final class SettingsWindow: NSObject {
         magSizeValueLabel.stringValue = "\(DockConfiguration.scaleToPixels(magSizeSlider.doubleValue)) px"
     }
 
-    /// Marks the profile the displays currently call for. The status line at the
-    /// bottom said the same thing, but a person editing a profile looks at the picker,
-    /// and the picker gave no hint which of the two was live.
+    /// Marks the profile in force. The status line at the bottom said the same
+    /// thing, but a person editing a profile looks at the picker, and the picker
+    /// gave no hint which of the two was live.
     private func updateModeTitles() {
-        let active: Mode = service.hasExternalDisplay ? .external : .builtin
+        let active = Mode(service.activeProfile)
         for mode in [Mode.external, .builtin] {
             let marker = mode == active ? "\u{25CF} " : ""
             modeControl.setLabel(marker + mode.title, forSegment: mode.rawValue)

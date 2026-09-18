@@ -51,18 +51,21 @@ public struct RateLimiter: Sendable {
 public struct ProfileSwitchAnnouncer: Sendable {
 
     private var limiter: RateLimiter
-    private var lastAnnounced: Bool?
+    private var lastAnnounced: DockProfile?
 
     public init(cooldown: TimeInterval) {
         limiter = RateLimiter(interval: cooldown)
     }
 
-    /// Whether to announce that the active profile is now external / built-in.
-    public mutating func shouldAnnounce(hasExternal: Bool, at now: Date) -> Bool {
-        guard lastAnnounced != hasExternal else { return false }
+    /// Whether to announce that `profile` is now the one in force. Keyed on the
+    /// profile rather than the hardware: after a profile applied on request, a
+    /// display change can leave the Dock exactly where it was, and a banner
+    /// saying "switched" would be announcing something that did not happen.
+    public mutating func shouldAnnounce(profile: DockProfile, at now: Date) -> Bool {
+        guard lastAnnounced != profile else { return false }
         guard limiter.allow(at: now) else { return false }
 
-        lastAnnounced = hasExternal
+        lastAnnounced = profile
         return true
     }
 }
