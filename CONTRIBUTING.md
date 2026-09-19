@@ -125,11 +125,19 @@ Some things are genuinely untestable and that is fine: AppleScript execution aga
 System Events, CoreGraphics display callbacks, `AXIsProcessTrusted`, `SMAppService`,
 and NSView layout. Don't write tests that only assert a mock was called.
 
-A handful of "missed regions" in the table are not misses at all. A ternary inside a
-string interpolation — `"\(flag ? "on" : "off")"` — gets a counter from `llvm-cov` that
-Swift never increments, so the `else` branch reads as unexecuted even with a passing test
-that asserts on `"off"`. `DiagnosticReport.formatted` carries four of these. Check the
-region marker against the test before chasing it; every reachable branch in Core has one.
+A handful of "missed regions" in the table are not misses at all. A ternary or a `??`
+inside a string interpolation — `"\(flag ? "on" : "off")"`, `"\(dict[key] ?? "unknown")"`
+— gets a counter from `llvm-cov` that Swift never increments, so the fallback reads as
+unexecuted even with a passing test that asserts on it. `DiagnosticReport.formatted`
+carries four of these and `DockController.executeAppleScript` one. Check the region
+marker against the test before chasing it.
+
+What is left after that is deliberate: the three guards in `DisplayMonitor` for a
+CoreGraphics call failing (`CGGetActiveDisplayList`, an inactive or asleep display,
+`CGDisplayRegisterReconfigurationCallback`). Covering them would mean wrapping three
+more system calls in injectable closures for tests that assert "on failure, return 0".
+Every other branch in Core has a test, including the `guard let self` in each deferred
+work item — there is a test per class that releases the object mid-debounce.
 
 ## Versioning
 

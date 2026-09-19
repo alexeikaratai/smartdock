@@ -160,7 +160,8 @@ struct DockApplyOutcomeTests {
         .minimizeEffect: "minimize effect",
         .animatesLaunch: "launch animation",
         .showsRecents: "recent applications",
-
+        .showsIndicators: "app indicators",
+        .minimizesToApplication: "minimize into application",
     ]
 
     @Test(arguments: DockProperty.allCases)

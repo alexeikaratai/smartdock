@@ -50,7 +50,9 @@ struct UserPreferencesTests {
             magnificationSize: DockConfiguration.pixelsToScale(96),
             minimizeEffect: .scale,
             animatesLaunch: false,
-            showsRecents: false)
+            showsRecents: false,
+            showsIndicators: false,
+            minimizesToApplication: true)
 
         scratch.prefs.initializeDefaultsIfNeeded(from: system)
 
@@ -90,11 +92,14 @@ struct UserPreferencesTests {
         let scratch = ScratchPreferences()
 
         scratch.prefs.externalConfig = DockConfiguration(
-            minimizeEffect: .scale, animatesLaunch: false, showsRecents: false)
+            minimizeEffect: .scale, animatesLaunch: false, showsRecents: false,
+            showsIndicators: false, minimizesToApplication: true)
 
         #expect(scratch.prefs.externalConfig.minimizeEffect == .scale)
         #expect(!scratch.prefs.externalConfig.animatesLaunch)
         #expect(!scratch.prefs.externalConfig.showsRecents)
+        #expect(!scratch.prefs.externalConfig.showsIndicators)
+        #expect(scratch.prefs.externalConfig.minimizesToApplication)
     }
 
     /// A profile written before these two settings existed has neither key. Reading
@@ -116,6 +121,8 @@ struct UserPreferencesTests {
         #expect(loaded.position == .left, "the old keys still load")
         #expect(loaded.animatesLaunch, "launch animation must not be switched off by upgrading")
         #expect(loaded.showsRecents, "recents must not be switched off by upgrading")
+        #expect(loaded.showsIndicators, "indicators must not be switched off by upgrading")
+        #expect(!loaded.minimizesToApplication, "minimize-into-app must not be switched on by upgrading")
         #expect(loaded.minimizeEffect == .genie)
     }
 
@@ -130,10 +137,14 @@ struct UserPreferencesTests {
         scratch.defaults.set("left", forKey: "com.smartdock.builtin.position")
 
         scratch.prefs.backfillMissingSettings(
-            from: DockConfiguration(minimizeEffect: .scale, animatesLaunch: false))
+            from: DockConfiguration(
+                minimizeEffect: .scale, animatesLaunch: false,
+                showsIndicators: false, minimizesToApplication: true))
 
         #expect(scratch.prefs.builtinConfig.minimizeEffect == .scale)
         #expect(!scratch.prefs.builtinConfig.animatesLaunch)
+        #expect(!scratch.prefs.builtinConfig.showsIndicators, "their Dock, not our default")
+        #expect(scratch.prefs.builtinConfig.minimizesToApplication, "their Dock, not our default")
         #expect(scratch.prefs.builtinConfig.position == .left, "existing settings untouched")
     }
 
@@ -219,7 +230,9 @@ struct UserPreferencesTests {
             magnificationSize: DockConfiguration.pixelsToScale(100),
             minimizeEffect: .scale,
             animatesLaunch: false,
-            showsRecents: false)
+            showsRecents: false,
+            showsIndicators: false,
+            minimizesToApplication: true)
 
         #expect(original.with() == original)
     }

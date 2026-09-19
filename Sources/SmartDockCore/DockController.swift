@@ -123,6 +123,12 @@ public final class DockController: DockControlling {
         let animates = d.object(forKey: "launchanim") != nil ? d.bool(forKey: "launchanim") : true
         let recents =
             d.object(forKey: "show-recents") != nil ? d.bool(forKey: "show-recents") : true
+        let indicators =
+            d.object(forKey: "show-process-indicators") != nil
+            ? d.bool(forKey: "show-process-indicators") : true
+        let minimizes =
+            d.object(forKey: "minimize-to-application") != nil
+            ? d.bool(forKey: "minimize-to-application") : false
 
         return DockConfiguration(
             autohide: d.bool(forKey: "autohide"),
@@ -132,7 +138,9 @@ public final class DockController: DockControlling {
             magnificationSize: largesize > 0 ? DockConfiguration.pixelsToScale(largesize) : 0.4286,
             minimizeEffect: MinimizeEffect(rawValue: effectRaw) ?? .genie,
             animatesLaunch: animates,
-            showsRecents: recents
+            showsRecents: recents,
+            showsIndicators: indicators,
+            minimizesToApplication: minimizes
         )
     }
 
@@ -218,6 +226,8 @@ public final class DockController: DockControlling {
         case .minimizeEffect: return applyMinimizeEffect(config.minimizeEffect)
         case .animatesLaunch: return applyLaunchAnimation(config.animatesLaunch)
         case .showsRecents: return applyShowRecents(config.showsRecents)
+        case .showsIndicators: return applyShowIndicators(config.showsIndicators)
+        case .minimizesToApplication: return applyMinimizeToApplication(config.minimizesToApplication)
         }
     }
 
@@ -310,6 +320,28 @@ public final class DockController: DockControlling {
             """)
     }
 
+    private func applyShowIndicators(_ shows: Bool) -> Bool {
+        runAppleScript(
+            """
+            tell application "System Events"
+                tell dock preferences
+                    set show indicators to \(shows)
+                end tell
+            end tell
+            """)
+    }
+
+    private func applyMinimizeToApplication(_ minimizes: Bool) -> Bool {
+        runAppleScript(
+            """
+            tell application "System Events"
+                tell dock preferences
+                    set minimize into application to \(minimizes)
+                end tell
+            end tell
+            """)
+    }
+
     private func applyLaunchAnimation(_ animates: Bool) -> Bool {
         runAppleScript(
             """
@@ -375,7 +407,10 @@ public final class DockController: DockControlling {
     /// The real System Events call. Note what it can and cannot tell you: a `false`
     /// here means the script itself failed, never that the Dock declined to honour
     /// a script that ran fine. That second case is what `scheduleVerification` is for.
-    private static func executeAppleScript(_ source: String) -> Bool {
+    ///
+    /// Internal rather than private so a test can run it with a script that touches
+    /// nothing — every other path through the controller injects `runScript`.
+    static func executeAppleScript(_ source: String) -> Bool {
         let script = NSAppleScript(source: source)
         var error: NSDictionary?
         script?.executeAndReturnError(&error)
@@ -404,6 +439,7 @@ private final class DockPrefsObserver: NSObject {
         "autohide", "orientation", "tilesize",
         "magnification", "largesize",
         "mineffect", "launchanim", "show-recents",
+        "show-process-indicators", "minimize-to-application",
     ]
 
     /// Thread-safe flag — accessed from deinit (nonisolated) and @MainActor methods.

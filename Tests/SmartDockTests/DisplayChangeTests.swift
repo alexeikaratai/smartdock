@@ -20,6 +20,23 @@ struct DisplayChangeTests {
         try await Task.sleep(nanoseconds: UInt64(settle * multiplier * 1_000_000_000))
     }
 
+    /// A settle or wake check can be in flight when the service stops and the
+    /// monitor is released. Both must fire into nothing rather than crash.
+    @Test func pendingChecksThatOutliveTheMonitorDoNothing() async throws {
+        let counter = DisplayCount(0)
+        var monitor: DisplayMonitor? = DisplayMonitor(
+            settleDelay: settle, wakeDelay: settle, countExternalDisplays: { 1 })
+        monitor?.onConfigurationChanged = { counter.value += 1 }
+        monitor?.start()
+
+        monitor?.handleReconfiguration()
+        monitor?.forceRecheck()
+        monitor = nil
+        try await waitPastSettle()
+
+        #expect(counter.value == 0)
+    }
+
     /// Lets a test change what the "hardware" reports between callbacks.
     private final class DisplayCount {
         var value: Int
