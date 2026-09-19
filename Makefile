@@ -5,7 +5,7 @@
 # === Config ===
 APP_NAME     := SmartDock
 BUNDLE_ID    := com.smartdock.app
-VERSION      := 2.7.0
+VERSION      := 2.7.2
 BUILD_DIR    := .build/release
 APP_DIR      := build/$(APP_NAME).app
 CONTENTS     := $(APP_DIR)/Contents

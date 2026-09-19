@@ -57,6 +57,14 @@ public struct DockConfiguration: Equatable, Sendable {
     /// `show-recents` in `com.apple.dock`. macOS ships with it **on**, so an absent
     /// key means `true`.
     public let showsRecents: Bool
+    /// "Show indicators for open applications" — `show indicators` in System Events,
+    /// `show-process-indicators` in `com.apple.dock`. On by default; an absent key
+    /// means `true` (measured: with the key deleted, System Events reports `true`).
+    public let showsIndicators: Bool
+    /// "Minimize windows into application icon" — `minimize into application` in
+    /// System Events, `minimize-to-application` in `com.apple.dock`. Off by default;
+    /// an absent key means `false`.
+    public let minimizesToApplication: Bool
 
     public init(
         autohide: Bool = false,
@@ -66,7 +74,9 @@ public struct DockConfiguration: Equatable, Sendable {
         magnificationSize: Double = 0.4286,
         minimizeEffect: MinimizeEffect = .genie,
         animatesLaunch: Bool = true,
-        showsRecents: Bool = true
+        showsRecents: Bool = true,
+        showsIndicators: Bool = true,
+        minimizesToApplication: Bool = false
     ) {
         self.autohide = autohide
         self.position = position
@@ -76,6 +86,8 @@ public struct DockConfiguration: Equatable, Sendable {
         self.minimizeEffect = minimizeEffect
         self.animatesLaunch = animatesLaunch
         self.showsRecents = showsRecents
+        self.showsIndicators = showsIndicators
+        self.minimizesToApplication = minimizesToApplication
     }
 
     /// A copy with some properties replaced and the rest carried over.
@@ -94,7 +106,9 @@ public struct DockConfiguration: Equatable, Sendable {
         magnificationSize: Double? = nil,
         minimizeEffect: MinimizeEffect? = nil,
         animatesLaunch: Bool? = nil,
-        showsRecents: Bool? = nil
+        showsRecents: Bool? = nil,
+        showsIndicators: Bool? = nil,
+        minimizesToApplication: Bool? = nil
     ) -> DockConfiguration {
         DockConfiguration(
             autohide: autohide ?? self.autohide,
@@ -104,7 +118,9 @@ public struct DockConfiguration: Equatable, Sendable {
             magnificationSize: magnificationSize ?? self.magnificationSize,
             minimizeEffect: minimizeEffect ?? self.minimizeEffect,
             animatesLaunch: animatesLaunch ?? self.animatesLaunch,
-            showsRecents: showsRecents ?? self.showsRecents
+            showsRecents: showsRecents ?? self.showsRecents,
+            showsIndicators: showsIndicators ?? self.showsIndicators,
+            minimizesToApplication: minimizesToApplication ?? self.minimizesToApplication
         )
     }
 
@@ -138,6 +154,8 @@ public struct DockConfiguration: Equatable, Sendable {
             minimizeEffect == other.minimizeEffect,
             animatesLaunch == other.animatesLaunch,
             showsRecents == other.showsRecents,
+            showsIndicators == other.showsIndicators,
+            minimizesToApplication == other.minimizesToApplication,
             abs(iconSize - other.iconSize) <= Self.sizeTolerance
         else { return false }
 
@@ -166,6 +184,8 @@ public enum DockProperty: String, CaseIterable, Sendable {
     case minimizeEffect
     case animatesLaunch
     case showsRecents
+    case showsIndicators
+    case minimizesToApplication
 
     /// How to name this setting to a person. The raw values are camelCase keys
     /// meant for logs and diagnostics; `iconSize` in a menu would read as a typo.
@@ -179,6 +199,8 @@ public enum DockProperty: String, CaseIterable, Sendable {
         case .minimizeEffect: return "minimize effect"
         case .animatesLaunch: return "launch animation"
         case .showsRecents: return "recent applications"
+        case .showsIndicators: return "app indicators"
+        case .minimizesToApplication: return "minimize into application"
         }
     }
 }
@@ -214,6 +236,10 @@ public extension DockConfiguration {
         if minimizeEffect != current.minimizeEffect { changed.append(.minimizeEffect) }
         if animatesLaunch != current.animatesLaunch { changed.append(.animatesLaunch) }
         if showsRecents != current.showsRecents { changed.append(.showsRecents) }
+        if showsIndicators != current.showsIndicators { changed.append(.showsIndicators) }
+        if minimizesToApplication != current.minimizesToApplication {
+            changed.append(.minimizesToApplication)
+        }
 
         return changed
     }
@@ -229,6 +255,8 @@ public extension DockConfiguration {
         case .minimizeEffect: return "minimizeEffect=\(minimizeEffect.rawValue)"
         case .animatesLaunch: return "animatesLaunch=\(animatesLaunch)"
         case .showsRecents: return "showsRecents=\(showsRecents)"
+        case .showsIndicators: return "showsIndicators=\(showsIndicators)"
+        case .minimizesToApplication: return "minimizesToApplication=\(minimizesToApplication)"
         }
     }
 }
@@ -341,6 +369,14 @@ public final class UserPreferences {
             }
             if defaults.object(forKey: "\(prefix).\(key).showsRecents") == nil {
                 defaults.set(systemConfig.showsRecents, forKey: "\(prefix).\(key).showsRecents")
+            }
+            if defaults.object(forKey: "\(prefix).\(key).showsIndicators") == nil {
+                defaults.set(systemConfig.showsIndicators, forKey: "\(prefix).\(key).showsIndicators")
+            }
+            if defaults.object(forKey: "\(prefix).\(key).minimizesToApplication") == nil {
+                defaults.set(
+                    systemConfig.minimizesToApplication,
+                    forKey: "\(prefix).\(key).minimizesToApplication")
             }
         }
     }
@@ -509,6 +545,9 @@ public final class UserPreferences {
         defaults.set(config.minimizeEffect.rawValue, forKey: "\(prefix).\(key).minimizeEffect")
         defaults.set(config.animatesLaunch, forKey: "\(prefix).\(key).animatesLaunch")
         defaults.set(config.showsRecents, forKey: "\(prefix).\(key).showsRecents")
+        defaults.set(config.showsIndicators, forKey: "\(prefix).\(key).showsIndicators")
+        defaults.set(
+            config.minimizesToApplication, forKey: "\(prefix).\(key).minimizesToApplication")
     }
 
     private func load(key: String) -> DockConfiguration? {
@@ -531,6 +570,16 @@ public final class UserPreferences {
         let recents =
             defaults.object(forKey: recentsKey) != nil
             ? defaults.bool(forKey: recentsKey) : true
+        let indicatorsKey = "\(prefix).\(key).showsIndicators"
+        let indicators =
+            defaults.object(forKey: indicatorsKey) != nil
+            ? defaults.bool(forKey: indicatorsKey) : true
+        // Off by default, so `bool(forKey:)`'s false-when-absent happens to be right;
+        // spelled out anyway so the rule reads the same for every key.
+        let minimizeKey = "\(prefix).\(key).minimizesToApplication"
+        let minimizes =
+            defaults.object(forKey: minimizeKey) != nil
+            ? defaults.bool(forKey: minimizeKey) : false
 
         return DockConfiguration(
             autohide: defaults.bool(forKey: autohideKey),
@@ -540,7 +589,9 @@ public final class UserPreferences {
             magnificationSize: magSize > 0 ? magSize : 0.4286,
             minimizeEffect: MinimizeEffect(rawValue: effectRaw) ?? .genie,
             animatesLaunch: animates,
-            showsRecents: recents
+            showsRecents: recents,
+            showsIndicators: indicators,
+            minimizesToApplication: minimizes
         )
     }
 }

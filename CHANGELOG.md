@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.2] — 2026-09-19
+
+### Added
+
+- Two more Dock settings per profile: **Show indicators for open applications** and
+  **Minimize windows into application icon**. Both apply the way the others do — one
+  System Events call each, no Dock restart (measured) — and both are read from the
+  live Dock for profiles saved before they existed, so updating changes nothing until
+  you edit a profile. The Settings window opens at 720pt so the taller form still
+  does not scroll.
+
+### Fixed
+
+- **Copy Diagnostic Info** left "Show recent applications" out of the profile lines
+  since 2.6.0 while claiming to list every setting. The line is now generated from the
+  same property list the apply uses, so a setting cannot be left out again.
+
+## [2.7.1] — 2026-09-19
+
+### Changed
+
+- The Dock tab of Settings is its own view, and the profile form reads and writes
+  every field through one binding table instead of two hand-kept lists. Nothing
+  looks or behaves differently — the tab measures the same 552pt as before — but a
+  Dock property added in Core now fails to compile until the form has a control
+  for it, the same way a forgotten hotkey mapping or Shortcuts intent already did.
+
 ## [2.7.0] — 2026-09-18
 
 ### Added

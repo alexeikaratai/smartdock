@@ -100,6 +100,19 @@ struct DockScriptTests {
         #expect(scripts()[0].contains("set screen edge to bottom"))
     }
 
+    // MARK: - The Real Executor
+
+    /// The one path that is not injected. A script that touches nothing proves the
+    /// call works; a script that cannot compile proves an error comes back as
+    /// `false` rather than a crash or a silent `true`.
+    @Test func theRealExecutorRunsAScript() {
+        #expect(DockController.executeAppleScript("return 1"))
+    }
+
+    @Test func theRealExecutorReportsAScriptError() {
+        #expect(!DockController.executeAppleScript("this is not AppleScript"))
+    }
+
     /// A refused script is reported, not swallowed. `NSAppleScript` says nothing
     /// about whether the Dock honoured it, but a script that would not even run
     /// is a failure `apply` can and does report.
@@ -153,6 +166,43 @@ struct DockScriptTests {
         let (_, controller) = makeRecorder(seed: ["show-recents": stored])
 
         #expect(controller.readSystemConfig().showsRecents == stored)
+    }
+
+    @Test func showIndicatorsScriptSetsShowIndicators() {
+        let (scripts, controller) = makeRecorder()
+
+        controller.apply(DockConfiguration(showsIndicators: false))
+
+        #expect(scripts().count == 1)
+        #expect(scripts()[0].contains("set show indicators to false"), "\(scripts())")
+    }
+
+    @Test func minimizeToApplicationScriptSetsMinimizeIntoApplication() {
+        let (scripts, controller) = makeRecorder()
+
+        controller.apply(DockConfiguration(minimizesToApplication: true))
+
+        #expect(scripts().count == 1)
+        #expect(scripts()[0].contains("set minimize into application to true"), "\(scripts())")
+    }
+
+    /// Measured with the keys deleted: System Events reports indicators on and
+    /// minimize-into-application off. A missing key must read the same way, or every
+    /// apply would push a script for a setting nobody changed.
+    @Test func absentIndicatorAndMinimizeKeysReadAsTheMacOSDefaults() {
+        let (_, controller) = makeRecorder()
+
+        #expect(controller.readSystemConfig().showsIndicators)
+        #expect(!controller.readSystemConfig().minimizesToApplication)
+    }
+
+    @Test(arguments: [true, false])
+    func storedIndicatorAndMinimizeKeysAreReadBack(stored: Bool) {
+        let (_, controller) = makeRecorder(
+            seed: ["show-process-indicators": stored, "minimize-to-application": stored])
+
+        #expect(controller.readSystemConfig().showsIndicators == stored)
+        #expect(controller.readSystemConfig().minimizesToApplication == stored)
     }
 
     @Test func launchAnimationScriptSetsAnimate() {

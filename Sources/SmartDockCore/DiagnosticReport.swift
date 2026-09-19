@@ -112,19 +112,33 @@ public struct DiagnosticReport: Sendable {
         return lines.joined(separator: "\n")
     }
 
+    /// Every property a profile carries is listed. A setting the profile applies but
+    /// the report omits is the worst case for a bug report: the Dock does something
+    /// the reader cannot account for from what they were sent. The switch is
+    /// exhaustive so a new `DockProperty` cannot be left out — `showsRecents` was,
+    /// for two releases, while the comment above promised otherwise.
     private static func describe(_ config: DockConfiguration) -> String {
-        let size = DockConfiguration.scaleToPixels(config.iconSize)
-        let magnification =
+        DockProperty.allCases.compactMap { phrase(for: $0, in: config) }.joined(separator: ", ")
+    }
+
+    /// `nil` folds a property into its neighbour: the magnification size is only
+    /// meaningful while magnification is on, and reads best next to it.
+    private static func phrase(for property: DockProperty, in config: DockConfiguration) -> String? {
+        switch property {
+        case .position: config.position.displayName.lowercased()
+        case .autohide: config.autohide ? "auto-hide" : "always visible"
+        case .iconSize: "\(DockConfiguration.scaleToPixels(config.iconSize))px"
+        case .magnification:
             config.magnification
-            ? "magnify \(DockConfiguration.scaleToPixels(config.magnificationSize))px"
-            : "no magnification"
-        // Every property a profile carries is listed. A setting the profile applies
-        // but the report omits is the worst case for a bug report: the Dock does
-        // something the reader cannot account for from what they were sent.
-        let animation = config.animatesLaunch ? "launch animation" : "no launch animation"
-        return "\(config.position.displayName.lowercased()), "
-            + "\(config.autohide ? "auto-hide" : "always visible"), "
-            + "\(size)px, \(magnification), "
-            + "\(config.minimizeEffect.displayName.lowercased()), \(animation)"
+                ? "magnify \(DockConfiguration.scaleToPixels(config.magnificationSize))px"
+                : "no magnification"
+        case .magnificationSize: nil
+        case .minimizeEffect: config.minimizeEffect.displayName.lowercased()
+        case .animatesLaunch: config.animatesLaunch ? "launch animation" : "no launch animation"
+        case .showsRecents: config.showsRecents ? "recents" : "no recents"
+        case .showsIndicators: config.showsIndicators ? "indicators" : "no indicators"
+        case .minimizesToApplication:
+            config.minimizesToApplication ? "minimize into app" : "minimize to Dock"
+        }
     }
 }

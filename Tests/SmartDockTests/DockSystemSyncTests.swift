@@ -50,6 +50,27 @@ struct DockSystemSyncTests {
         controller.stopObservingSystemChanges()
     }
 
+    /// The service can stop and drop the controller during the debounce window.
+    /// The pending check then fires with no controller behind it and must do nothing.
+    @Test func aPendingCheckThatOutlivesItsControllerDoesNothing() async throws {
+        let store = InMemoryDefaults()
+        let log = ChangeLog()
+        var controller: DockController? = DockController(
+            openDefaults: { store }, verificationDelay: 0.01,
+            externalChangeDebounce: debounce, runScript: { _ in true })
+        controller?.onExternalConfigChanged = { log.record($0) }
+        controller?.startObservingSystemChanges()
+
+        store.set(true, forKey: "autohide")
+        // KVO hands the change to the main queue; let it schedule the debounced
+        // check *before* the controller goes away, so the check itself outlives it.
+        try await Task.sleep(nanoseconds: UInt64(debounce / 5 * 1_000_000_000))
+        controller = nil
+        try await waitForDebounce()
+
+        #expect(log.configs.isEmpty, "Nothing is left to report to")
+    }
+
     @Test func anEditMadeOutsideTheAppIsReported() async throws {
         let (store, controller, log) = makeSubject()
         controller.startObservingSystemChanges()
@@ -60,6 +81,40 @@ struct DockSystemSyncTests {
 
         #expect(log.configs.count == 1, "An external edit should be reported exactly once")
         #expect(log.configs.first?.position == .right)
+    }
+
+    /// Every property has a key the observer must watch. A key missing from the
+    /// list would make System Settings edits to that property vanish silently — no
+    /// error, no log — which is exactly what happened to nothing only because the
+    /// list was extended by hand each time. The switch is exhaustive: a new property
+    /// does not compile here until it names its key.
+    @Test(arguments: DockProperty.allCases)
+    func anEditToEveryPropertyIsReported(property: DockProperty) async throws {
+        let (store, controller, log) = makeSubject()
+        // The magnified size is invisible — and deliberately not compared — while
+        // magnification is off, just as its slider is disabled in System Settings.
+        store.set(true, forKey: "magnification")
+        controller.startObservingSystemChanges()
+
+        // Each value differs from what the domain reads as, so the change is not
+        // filtered out as SmartDock's own echo.
+        let edit: (key: String, value: Any) =
+            switch property {
+            case .position: ("orientation", "left")
+            case .autohide: ("autohide", true)
+            case .iconSize: ("tilesize", 80)
+            case .magnification: ("magnification", false)
+            case .magnificationSize: ("largesize", 100)
+            case .minimizeEffect: ("mineffect", "scale")
+            case .animatesLaunch: ("launchanim", false)
+            case .showsRecents: ("show-recents", false)
+            case .showsIndicators: ("show-process-indicators", false)
+            case .minimizesToApplication: ("minimize-to-application", true)
+            }
+        store.set(edit.value, forKey: edit.key)
+        try await waitForDebounce()
+
+        #expect(log.configs.count == 1, "`\(edit.key)` is not observed")
     }
 
     /// The loop guard. SmartDock's own writes echo back through KVO; reporting

@@ -136,7 +136,10 @@ struct DiagnosticReportTests {
             magnification: true,
             magnificationSize: DockConfiguration.pixelsToScale(96),
             minimizeEffect: .scale,
-            animatesLaunch: false
+            animatesLaunch: false,
+            showsRecents: false,
+            showsIndicators: false,
+            minimizesToApplication: true
         )
 
         let output = makeReport(externalConfig: config).formatted
@@ -149,6 +152,35 @@ struct DiagnosticReportTests {
         // bug report unable to account for what the Dock is doing.
         #expect(output.contains("scale"), "\(output)")
         #expect(output.contains("no launch animation"), "\(output)")
+        #expect(output.contains("no recents"), "\(output)")
+        #expect(output.contains("no indicators"), "\(output)")
+        #expect(output.contains("minimize into app"), "\(output)")
+    }
+
+    /// Driven by `DockProperty.allCases`: a property the report does not describe
+    /// would be missing from a bug report, and this used to be exactly the case for
+    /// `showsRecents`.
+    @Test(arguments: DockProperty.allCases)
+    func everyPropertyChangesTheProfileLine(property: DockProperty) {
+        let base = DockConfiguration()
+        let flipped: DockConfiguration =
+            switch property {
+            case .position: base.with(position: .left)
+            case .autohide: base.with(autohide: true)
+            case .iconSize: base.with(iconSize: DockConfiguration.pixelsToScale(96))
+            case .magnification: base.with(magnification: true)
+            case .magnificationSize:
+                base.with(magnification: true, magnificationSize: DockConfiguration.pixelsToScale(120))
+            case .minimizeEffect: base.with(minimizeEffect: .scale)
+            case .animatesLaunch: base.with(animatesLaunch: false)
+            case .showsRecents: base.with(showsRecents: false)
+            case .showsIndicators: base.with(showsIndicators: false)
+            case .minimizesToApplication: base.with(minimizesToApplication: true)
+            }
+
+        #expect(
+            makeReport(externalConfig: base).formatted != makeReport(externalConfig: flipped).formatted,
+            "\(property) does not show up in the profile line")
     }
 
     @Test func magnificationOffIsStated() {

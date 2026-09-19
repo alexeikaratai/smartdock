@@ -122,6 +122,7 @@ struct DisplayMonitorTests {
         let monitor = DisplayMonitor()
 
         monitor.start()
+        monitor.start()  // A second start must not register a second callback.
         monitor.stop()
         monitor.stop()  // Double stop must also be safe.
     }

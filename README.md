@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.7.0-blue?style=flat-square" alt="Version 2.7.0"/>
+  <img src="https://img.shields.io/badge/version-2.7.2-blue?style=flat-square" alt="Version 2.7.2"/>
   <img src="https://img.shields.io/badge/macOS-14.0%2B-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS 14+"/>
   <img src="https://img.shields.io/badge/Swift-6.2-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 6.2"/>
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License"/>
@@ -29,7 +29,8 @@ On first launch both profiles are your Dock exactly as it is. Nothing changes un
 | 🎛️ | **Menu bar control panel** | Switch profile, move the Dock, hide it — from the menu, with a checkmark on what is applied |
 | 📍 | **Position control** | Bottom, Left, or Right — per mode |
 | 📐 | **Icon size & magnification** | Independent size sliders for each mode |
-| ✨ | **Minimize effect & animation** | Genie or Scale, and app-launch animation — per mode |
+| ✨ | **Minimize effect & animation** | Genie or Scale, app-launch animation, minimize into app icon — per mode |
+| 🔘 | **Recents & indicators** | Recent apps section and open-app indicators — per mode |
 | 👁️ | **Autohide toggle** | Show/hide Dock per mode — [except while an app is fullscreen](#-known-limitations) |
 | ⚡ | **Instant detection** | Event-driven via `CGDisplayRegisterReconfigurationCallback` — no polling |
 | 🔄 | **System sync** | Auto-imports Dock changes from System Settings via KVO |
@@ -189,6 +190,8 @@ Sources/
         ├── PositionPicker.swift      # Position button row
         ├── AboutTabView.swift        # About tab contents
         ├── GeneralTabView.swift      # General tab — app behaviour
+        ├── DockTabView.swift         # Dock tab — picker, form, buttons, status
+        ├── DockProfileForm.swift     # The eight profile controls, one binding table
         └── AccessibilityWarningView.swift  # Permission banner & reset flow
 ```
 
