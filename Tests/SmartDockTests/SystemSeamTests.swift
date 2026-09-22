@@ -472,14 +472,14 @@ struct AboutTabLinkTests {
     @Test func exportingCollectsThenOffersToSave() async throws {
         let recorder = Recorder()
         let view = makeView(recorder)
-        let button = try #require(button("Export", in: view))
+        let exportButton = try #require(button("Export", in: view))
 
-        button.performClick(nil)
+        exportButton.performClick(nil)
         try await waitUntil { !recorder.saved.isEmpty }
 
         #expect(recorder.saved == ["collected log"])
-        #expect(button.isEnabled)
-        #expect(button.title.hasPrefix("Export Logs"))
+        #expect(exportButton.isEnabled)
+        #expect(exportButton.title.hasPrefix("Export Logs"))
     }
 
     /// Nothing to export: the button still comes back, and no empty file is offered.
@@ -487,23 +487,23 @@ struct AboutTabLinkTests {
         let recorder = Recorder()
         recorder.log = ""
         let view = makeView(recorder)
-        let button = try #require(button("Export", in: view))
+        let exportButton = try #require(button("Export", in: view))
 
-        button.performClick(nil)
-        try await waitUntil { button.isEnabled }
+        exportButton.performClick(nil)
+        try await waitUntil { exportButton.isEnabled }
 
         #expect(recorder.saved.isEmpty)
-        #expect(button.title.hasPrefix("Export Logs"))
+        #expect(exportButton.title.hasPrefix("Export Logs"))
     }
 
     @Test func afailedCollectionIsNotOfferedEither() async throws {
         let recorder = Recorder()
         recorder.log = nil
         let view = makeView(recorder)
-        let button = try #require(button("Export", in: view))
+        let exportButton = try #require(button("Export", in: view))
 
-        button.performClick(nil)
-        try await waitUntil { button.isEnabled }
+        exportButton.performClick(nil)
+        try await waitUntil { exportButton.isEnabled }
 
         #expect(recorder.saved.isEmpty)
     }

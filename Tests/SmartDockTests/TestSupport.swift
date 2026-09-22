@@ -40,7 +40,11 @@ func expectClose(
 ///
 /// Only the three primitives need overriding — `bool`, `integer`, `double` and
 /// `string` are all defined in terms of `object(forKey:)`.
-final class InMemoryDefaults: UserDefaults, @unchecked Sendable {
+///
+/// Deliberately not declared `@unchecked Sendable`: `UserDefaults` already carries a
+/// conformance that the SDK marks *unavailable*, so restating it is redundant — Xcode
+/// 26.6 warns about exactly that — and nothing here is ever required to be `Sendable`.
+final class InMemoryDefaults: UserDefaults {
 
     private var storage: [String: Any] = [:]
 

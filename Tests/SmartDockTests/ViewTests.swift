@@ -297,11 +297,11 @@ struct OnboardingWindowTests {
         onboarding.onComplete = { completed += 1 }
 
         onboarding.show()
-        let button = try #require(
+        let startButton = try #require(
             onboarding.window?.contentView?.descendants.compactMap { $0 as? NSButton }.first {
                 $0.title == "Get Started"
             })
-        button.performClick(nil)
+        startButton.performClick(nil)
 
         #expect(completed == 1)
         #expect(scratch.prefs.hasSeenOnboarding)

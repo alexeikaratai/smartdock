@@ -209,7 +209,13 @@ no existing file — and ignored by the Xcode 26 formatter (synthesized `Decodab
 unknown keys, checked against its source), so one config serves both.
 
 **CI cannot follow the dev machine.** No `macos-27` runner image exists and `macos-26` stops
-at Xcode 26.6. Until then CI verifies the old layout and a developer on Xcode 27 the new.
+at Xcode 26.6. Until then CI verifies the old layout and a developer on Xcode 27 the new —
+and a green local suite is not proof. `make coverage` passed on Xcode 27 and failed to
+compile on 26.6 over `let button = try #require(button("Export", in: view))`: inside a
+`#require` expansion the older compiler resolves the call to the variable being declared
+("cannot call value of non-function type"). **Never give a local the name of a function in
+scope**, least of all inside a macro. Anything a test does that the compiler has opinions
+about — macros, shadowing, inference — is verified by the next CI run, not by the local one.
 
 **Stale build after changing an initialiser used as a default argument** — e.g.
 `SmartDockService.init(dockController: … = DockController())`. Link fails with `Undefined
