@@ -113,8 +113,13 @@ final class ScratchPreferences {
 /// and other suites (the view tests especially) keep the main thread busy for
 /// longer than any sleep allows for. A test that expects *nothing* keeps its fixed
 /// window; it cannot fail from waiting too little.
+///
+/// The cap is a deadlock guard, not a deadline: a passing test returns the moment the
+/// condition holds. It is set at twice the longest suite a loaded CI runner has taken
+/// (14s, against 3s on a developer machine) — at five seconds three tests failed there
+/// and none here, which is the whole reason it is not a fixed sleep.
 @MainActor
-func waitUntil(_ condition: () -> Bool, timeout: Duration = .seconds(5)) async throws {
+func waitUntil(_ condition: () -> Bool, timeout: Duration = .seconds(30)) async throws {
     let deadline = ContinuousClock.now + timeout
     while !condition(), ContinuousClock.now < deadline {
         try await Task.sleep(nanoseconds: 10_000_000)

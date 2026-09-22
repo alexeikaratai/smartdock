@@ -165,13 +165,14 @@ struct AboutTabViewTests {
 @MainActor
 struct AccessibilityWarningViewTests {
 
-    /// The test process is never trusted, so the banner shows — the view follows
-    /// `AccessibilityChecker.isGranted` rather than assuming either way.
-    @Test func theBannerFollowsTheGrant() {
-        let view = AccessibilityWarningView(prefs: ScratchPreferences().prefs)
+    /// Both branches, chosen by the test rather than by the machine: this process is
+    /// untrusted here and trusted on a CI runner, so asserting the environment is
+    /// asserting nothing.
+    @Test(arguments: [true, false])
+    func theBannerIsHiddenExactlyWhenAccessibilityIsGranted(granted: Bool) {
+        let view = AccessibilityWarningView(prefs: ScratchPreferences().prefs, isGranted: granted)
 
-        #expect(view.isHidden == AccessibilityChecker.isGranted)
-        #expect(!AccessibilityChecker.isGranted, "a test bundle has no Accessibility grant")
+        #expect(view.isHidden == granted)
     }
 }
 
