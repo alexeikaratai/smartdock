@@ -7,7 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.8.0] — 2026-09-22
+### Added
+
+- A release can no longer be published without notes. The check that refuses an
+  empty `CHANGELOG` section is its own `make changelog-check` target, called both
+  by `make release` and by the tag-triggered workflow — it used to live inside
+  `make release` only, which is why 2.8.1 went out with an empty body.
+
+## [2.8.1] — 2026-09-22
 
 ### Changed
 

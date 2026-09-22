@@ -1,11 +1,11 @@
-.PHONY: help build test clean icon app run sign notarize fix install release bump version-check deps outdated doctor actions-check logs format lint coverage appintents appintents-check entitlements-check sdef-check
+.PHONY: help build test clean icon app run sign notarize fix install release bump version-check changelog-check deps outdated doctor actions-check logs format lint coverage appintents appintents-check entitlements-check sdef-check
 
 .DEFAULT_GOAL := help
 
 # === Config ===
 APP_NAME     := SmartDock
 BUNDLE_ID    := com.smartdock.app
-VERSION      := 2.8.0
+VERSION      := 2.8.1
 BUILD_DIR    := .build/release
 APP_DIR      := build/$(APP_NAME).app
 CONTENTS     := $(APP_DIR)/Contents
@@ -432,19 +432,27 @@ version-check:
 
 # === Release ===
 
-release: version-check app
-	@echo "🚀 Releasing v$(VERSION)..."
-	@# Ensure working tree is clean — commit changes before releasing
-	@# `version-check` only warns about an empty section, because `bump` legitimately
-	@# opens one before the notes are written. Here it is fatal: a published release
-	@# with no notes cannot be taken back, and that is exactly how 2.5.0 went out.
-	@# Checked before the clean-tree gate below on purpose — otherwise you commit
-	@# first and only then learn the notes are missing, which needs a second commit.
+# Refuses a release whose notes were never written.
+#
+# `version-check` only *warns* about an empty section, because `bump` legitimately
+# opens one before the notes exist. Here it is fatal: a published release with no
+# notes cannot be taken back — 2.5.0 went out that way, and 2.8.1 again, because
+# this check lived inside the `release` target and the tag-triggered workflow never
+# reached it. It is its own target now, called from both paths.
+changelog-check:
 	@if [ -z "$$(awk -v v='## [$(VERSION)]' 'index($$0, v) == 1 { f = 1; next } /^## \[/ { f = 0 } f' \
 		CHANGELOG.md | tr -d '[:space:]')" ]; then \
 		echo "❌ CHANGELOG section [$(VERSION)] is empty — write the release notes first"; \
 		exit 1; \
 	fi
+	@echo "✅ CHANGELOG section [$(VERSION)] has notes"
+
+release: version-check app
+	@echo "🚀 Releasing v$(VERSION)..."
+	@# Checked before the clean-tree gate below on purpose — otherwise you commit
+	@# first and only then learn the notes are missing, which needs a second commit.
+	@$(MAKE) --no-print-directory changelog-check
+	@# Ensure working tree is clean — commit changes before releasing
 	@if [ -n "$$(git status --porcelain)" ]; then \
 		echo "❌ Uncommitted changes. Run: /commit then make release"; \
 		exit 1; \
@@ -514,6 +522,7 @@ help:
 	@echo "  Version & Release:"
 	@echo "    make bump V=1.2.3  Bump version everywhere (Makefile, Info.plist, README badge)"
 	@echo "    make version-check Verify all version references agree"
+	@echo "    make changelog-check Verify this version's notes were written (gates releasing)"
 	@echo "    make release       Build + zip + create GitHub release"
 	@echo ""
 	@echo "  Distribution (requires Developer ID):"

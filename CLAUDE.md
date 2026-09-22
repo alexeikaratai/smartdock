@@ -159,10 +159,14 @@ re-implementing it; add a fifth place to `bump` and `version-check` and CI follo
 **Never delete `## [Unreleased]`.** `bump` inserts the new section directly under it, so
 whatever accumulated there becomes the release notes. `version-check` also guards the
 CHANGELOG: a version may appear once, and an empty section for `VERSION` **warns** there
-and **fails** `make release`. The split is deliberate — `bump` opens the section before the
-notes exist, but a published release with empty notes cannot be taken back; 2.5.0 shipped
-that way, with its notes under a version that never existed. Docs use `V=1.2.3` as a
-placeholder so grepping the real version finds only definitions.
+while `changelog-check` **fails**. The split is deliberate — `bump` opens the section
+before the notes exist, but a published release with empty notes cannot be taken back.
+2.5.0 shipped that way, with its notes under a version that never existed, and 2.8.1
+repeated it exactly: the fatal check lived inside the `release` target, so the
+tag-triggered workflow — which is the path an actual release takes — never reached it.
+`changelog-check` is its own target now, called by `make release` and by `release.yml`
+right after its `bump`. Docs use `V=1.2.3` as a placeholder so grepping the real version
+finds only definitions.
 
 ## CI/CD
 
@@ -179,7 +183,9 @@ the sealed bundle back with `codesign -d --entitlements :-` and diffs it against
 needs no change to the check.
 
 **`release.yml`** (`v*` tag): 🧪 Test → 🔨 Build → 🎉 Release → 🍺 Homebrew (updates Cask +
-Formula in `alexeikaratai/homebrew-tap`).
+Formula in `alexeikaratai/homebrew-tap`). Build runs `make bump` for the tag and then
+`make changelog-check`, so a tag whose notes were never written stops before anything is
+published.
 
 **`dependabot.yml`**: monthly grouped Actions bumps; no `swift` entry because there are no
 SPM dependencies.

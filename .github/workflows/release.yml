@@ -67,6 +67,13 @@ jobs:
         # the build if any reference is left stale.
         run: make bump V=${{ steps.version.outputs.VERSION }}
 
+      - name: 📝 Verify release notes
+        # The same target `make release` uses. Run after `bump`, which is what puts
+        # the CHANGELOG into the shape that ships: before it the section for this
+        # tag does not exist yet. 2.8.1 was published with an empty body because
+        # nothing on this path checked.
+        run: make changelog-check
+
       - name: 🔨 Build app bundle
         run: make app
 
