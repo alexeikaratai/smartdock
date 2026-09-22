@@ -9,17 +9,37 @@ import UniformTypeIdentifiers
 @MainActor
 final class AboutTabView: NSView {
 
+    private let prefs: UserPreferences
     private static let repoURL = "https://github.com/alexeikaratai/smartdock"
     private static let releasesURL = "https://github.com/alexeikaratai/smartdock/releases"
 
     private let service: SmartDockService
-    private var copyButton: NSButton!
-    private var exportButton: NSButton!
+    // Internal rather than private so a test can click them and read the title back.
+    /// Opens a link — `NSWorkspace` in the app, a recorder in a test, which must
+    /// not launch a browser.
+    private let openURL: @MainActor (URL) -> Void
+    /// Reading the system log and asking where to put it: one spawns `log show`,
+    /// the other needs a person at a save panel. Neither belongs in a test, while
+    /// everything between them — the button state, the empty result — does.
+    private let collectLog: @Sendable () async -> String?
+    private let saveLog: @MainActor (String) -> Void
+    var copyButton: NSButton!
+    var exportButton: NSButton!
     private var copyResetWork: DispatchWorkItem?
 
     // MARK: - Init
 
-    init(service: SmartDockService) {
+    init(
+        service: SmartDockService,
+        prefs: UserPreferences = .shared,
+        openURL: @escaping @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) },
+        collectLog: @escaping @Sendable () async -> String? = AboutTabView.runLogShow,
+        saveLog: @escaping @MainActor (String) -> Void = AboutTabView.presentSavePanel
+    ) {
+        self.collectLog = collectLog
+        self.saveLog = saveLog
+        self.prefs = prefs
+        self.openURL = openURL
         self.service = service
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
@@ -118,12 +138,12 @@ final class AboutTabView: NSView {
 
     @objc private func openGitHub() {
         guard let url = URL(string: Self.repoURL) else { return }
-        NSWorkspace.shared.open(url)
+        openURL(url)
     }
 
     @objc private func openChangelog() {
         guard let url = URL(string: Self.releasesURL) else { return }
-        NSWorkspace.shared.open(url)
+        openURL(url)
     }
 
     @objc private func copyDiagnostics() {
@@ -154,7 +174,8 @@ final class AboutTabView: NSView {
         exportButton.title = "Collecting\u{2026}"
 
         Task { [weak self] in
-            let text = await Self.collectLog()
+            guard let collect = self?.collectLog else { return }
+            let text = await collect()
 
             guard let self else { return }
             self.exportButton.isEnabled = true
@@ -165,7 +186,7 @@ final class AboutTabView: NSView {
                 NSSound.beep()
                 return
             }
-            self.presentSavePanel(for: text)
+            self.saveLog(text)
         }
     }
 
@@ -173,7 +194,7 @@ final class AboutTabView: NSView {
 
     /// Runs `log show` off the main thread — it reads a system store and can take
     /// a few seconds, which would freeze the window if done inline.
-    private static func collectLog() async -> String? {
+    private static func runLogShow() async -> String? {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let process = Process()
@@ -201,7 +222,9 @@ final class AboutTabView: NSView {
         }
     }
 
-    private func presentSavePanel(for text: String) {
+    /// Asks where to write, then writes. Static because it needs nothing from the
+    /// view, and a parameter because a save panel waits for a person.
+    static func presentSavePanel(for text: String) {
         let panel = NSSavePanel()
         panel.nameFieldStringValue = LogExport.defaultFileName(at: Date())
         panel.allowedContentTypes = [.plainText]
@@ -209,18 +232,23 @@ final class AboutTabView: NSView {
 
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
-            do {
-                try text.write(to: url, atomically: true, encoding: .utf8)
-                Log.info("Exported log to \(url.lastPathComponent)")
-            } catch {
-                Log.error("Failed to write exported log: \(error)")
-                NSSound.beep()
-            }
+            MainActor.assumeIsolated { Self.write(text, to: url) }
+        }
+    }
+
+    /// The write itself, separate from the panel that chooses where — the panel
+    /// needs a person, the write does not.
+    static func write(_ text: String, to url: URL) {
+        do {
+            try text.write(to: url, atomically: true, encoding: .utf8)
+            Log.info("Exported log to \(url.lastPathComponent)")
+        } catch {
+            Log.error("Failed to write exported log: \(error)")
+            NSSound.beep()
         }
     }
 
     private func makeReport() -> DiagnosticReport {
-        let prefs = UserPreferences.shared
         let info = Bundle.main.infoDictionary
 
         return DiagnosticReport(

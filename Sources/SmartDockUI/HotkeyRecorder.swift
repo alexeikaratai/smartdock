@@ -17,7 +17,7 @@ final class HotkeyRecorder {
     var isRecording: Bool { action != nil }
 
     private let hotkeyManager: HotkeyManager
-    private let prefs = UserPreferences.shared
+    private let prefs: UserPreferences
 
     private var monitor: Any?
     private var action: HotkeyAction?
@@ -27,15 +27,16 @@ final class HotkeyRecorder {
 
     // MARK: - Init
 
-    init(hotkeyManager: HotkeyManager) {
+    init(hotkeyManager: HotkeyManager, prefs: UserPreferences = .shared) {
+        self.prefs = prefs
         self.hotkeyManager = hotkeyManager
     }
 
     // MARK: - Public
 
     /// Title to show on the button for the given action.
-    static func displayTitle(for action: HotkeyAction) -> String {
-        guard let binding = UserPreferences.shared.hotkey(for: action.rawValue) else {
+    static func displayTitle(for action: HotkeyAction, in prefs: UserPreferences) -> String {
+        guard let binding = prefs.hotkey(for: action.rawValue) else {
             return "Click to set"
         }
         return binding.displayString
@@ -66,7 +67,9 @@ final class HotkeyRecorder {
 
     // MARK: - Private
 
-    private func handleRecordedKey(_ event: NSEvent) {
+    /// Internal rather than private so a test can feed it a synthetic `NSEvent` the
+    /// way the local monitor would.
+    func handleRecordedKey(_ event: NSEvent) {
         guard let action else { return }
 
         if event.keyCode == Self.escapeKeyCode {

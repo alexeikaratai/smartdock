@@ -99,3 +99,20 @@ final class ScratchPreferences {
         prefs = UserPreferences(defaults: store)
     }
 }
+
+// MARK: - Waiting for the Main Queue
+
+/// Waits until `condition` holds, polling every 10ms, for at most `timeout`.
+///
+/// For a test that expects something to *arrive* — a debounced report, a settled
+/// display check — a fixed sleep is a race: the work item sits on the main queue,
+/// and other suites (the view tests especially) keep the main thread busy for
+/// longer than any sleep allows for. A test that expects *nothing* keeps its fixed
+/// window; it cannot fail from waiting too little.
+@MainActor
+func waitUntil(_ condition: () -> Bool, timeout: Duration = .seconds(5)) async throws {
+    let deadline = ContinuousClock.now + timeout
+    while !condition(), ContinuousClock.now < deadline {
+        try await Task.sleep(nanoseconds: 10_000_000)
+    }
+}

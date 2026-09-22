@@ -4,16 +4,24 @@ import SmartDockCore
 /// Welcome screen shown once on first launch.
 /// Explains what SmartDock does, then opens Settings.
 @MainActor
-final class OnboardingWindow: NSObject {
+public final class OnboardingWindow: NSObject {
 
-    private var window: NSWindow?
+    private let prefs: UserPreferences
+    var window: NSWindow?  // internal so a test can reach the button
 
     /// Callback fired when user clicks "Get Started".
-    var onComplete: (() -> Void)?
+    public var onComplete: (() -> Void)?
 
     // MARK: - Public
 
-    func show() {
+    // MARK: - Init
+
+    public init(prefs: UserPreferences = .shared) {
+        self.prefs = prefs
+        super.init()
+    }
+
+    public func show() {
         if let existing = window, existing.isVisible {
             existing.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
@@ -142,9 +150,9 @@ final class OnboardingWindow: NSObject {
 // MARK: - NSWindowDelegate
 
 extension OnboardingWindow: NSWindowDelegate {
-    func windowWillClose(_ notification: Notification) {
+    public func windowWillClose(_ notification: Notification) {
         // Mark as seen even if user closes via X button
-        UserPreferences.shared.hasSeenOnboarding = true
+        prefs.hasSeenOnboarding = true
         window = nil
     }
 }

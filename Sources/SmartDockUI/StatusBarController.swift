@@ -4,15 +4,16 @@ import SmartDockCore
 /// Menu bar icon controller.
 /// Shows current state and allows service management.
 @MainActor
-final class StatusBarController: NSObject {
+public final class StatusBarController: NSObject {
 
-    private var statusItem: NSStatusItem!
+    var statusItem: NSStatusItem!  // internal so a test can read the icon and tooltip
     private let service: SmartDockService
     private let hotkeyManager: HotkeyManager
-    private lazy var settingsWindow = SettingsWindow(service: service, hotkeyManager: hotkeyManager)
+    lazy var settingsWindow = SettingsWindow(service: service, hotkeyManager: hotkeyManager, prefs: prefs)
+    private let prefs: UserPreferences
 
     // Cached icons: [position][visible/hidden]
-    private lazy var iconCache: [DockPosition: [Bool: NSImage]] = {
+    lazy var iconCache: [DockPosition: [Bool: NSImage]] = {
         var cache: [DockPosition: [Bool: NSImage]] = [:]
         for position in DockPosition.allCases {
             cache[position] = [
@@ -24,20 +25,23 @@ final class StatusBarController: NSObject {
     }()
 
     // Menu items that are updated dynamically
-    private var statusMenuItem: NSMenuItem!
-    private var toggleMenuItem: NSMenuItem!
-    private var dockVisibilityMenuItem: NSMenuItem!
-    private var refusalMenuItem: NSMenuItem!
-    private var refreshMenuItem: NSMenuItem!
-    private var profileMenuItems: [DockProfile: NSMenuItem] = [:]
-    private var positionMenuItem: NSMenuItem!
-    private var positionMenuItems: [DockPosition: NSMenuItem] = [:]
+    // Internal rather than private so a test can read the menu back — titles,
+    // checkmarks, enabled state — and fire an item's action.
+    var statusMenuItem: NSMenuItem!
+    var toggleMenuItem: NSMenuItem!
+    var dockVisibilityMenuItem: NSMenuItem!
+    var refusalMenuItem: NSMenuItem!
+    var refreshMenuItem: NSMenuItem!
+    var profileMenuItems: [DockProfile: NSMenuItem] = [:]
+    var positionMenuItem: NSMenuItem!
+    var positionMenuItems: [DockPosition: NSMenuItem] = [:]
 
     // MARK: - Init
 
-    init(service: SmartDockService, hotkeyManager: HotkeyManager) {
+    public init(service: SmartDockService, hotkeyManager: HotkeyManager, prefs: UserPreferences = .shared) {
         self.service = service
         self.hotkeyManager = hotkeyManager
+        self.prefs = prefs
         super.init()
         setupStatusItem()
         service.delegate = self
@@ -213,6 +217,9 @@ final class StatusBarController: NSObject {
         menu.addItem(quitItem)
 
         statusItem.menu = menu
+        // The items above are built with placeholder state; reflect the service now
+        // rather than only on the first open, so the menu is right from the start.
+        updateMenuState()
     }
 
     // MARK: - Actions
@@ -245,7 +252,7 @@ final class StatusBarController: NSObject {
         service.updateActiveProfile(service.currentConfig.with(position: position))
     }
 
-    func showSettings(tab: SettingsWindow.Tab = .dock) {
+    public func showSettings(tab: SettingsWindow.Tab = .dock) {
         settingsWindow.show(tab: tab)
     }
 
@@ -415,7 +422,7 @@ final class StatusBarController: NSObject {
 
 extension StatusBarController: NSMenuDelegate {
     /// Update menu item state each time the menu is opened.
-    func menuNeedsUpdate(_ menu: NSMenu) {
+    public func menuNeedsUpdate(_ menu: NSMenu) {
         updateMenuState()
     }
 }
@@ -423,7 +430,7 @@ extension StatusBarController: NSMenuDelegate {
 // MARK: - SmartDockServiceDelegate
 
 extension StatusBarController: SmartDockServiceDelegate {
-    func serviceDidUpdateState(_ service: SmartDockService, hasExternal: Bool) {
+    public func serviceDidUpdateState(_ service: SmartDockService, hasExternal: Bool) {
         updateUI()
     }
 }

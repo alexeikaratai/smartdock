@@ -7,13 +7,13 @@ import SmartDockCore
 /// The self-contained pieces live in their own types: `PositionPicker`,
 /// `AccessibilityWarningView`, `AboutTabView`, `HotkeyRecorder`.
 @MainActor
-final class SettingsWindow: NSObject {
+public final class SettingsWindow: NSObject {
 
     // MARK: - Types
 
     /// Raw values are the segment indices of `tabControl` — the two are read off each
     /// other in `selectTab` and `tabChanged`, so they have to stay in the same order.
-    enum Tab: Int {
+    public enum Tab: Int, Sendable {
         case dock = 0
         case general = 1
         case shortcuts = 2
@@ -24,34 +24,45 @@ final class SettingsWindow: NSObject {
 
     // MARK: - Properties
 
-    private var window: NSWindow?
+    // Internal rather than private so a test can reach the window and its tabs.
+    var window: NSWindow?
     private var keyMonitor: Any?
     private let service: SmartDockService
-    private let hotkeyRecorder: HotkeyRecorder
-    private let prefs = UserPreferences.shared
+    let hotkeyRecorder: HotkeyRecorder
+    private let prefs: UserPreferences
+    /// Apply / Discard / Cancel for a draft about to be lost — an `NSAlert` in the app,
+    /// injectable because a modal alert cannot be answered from a test.
+    private let decideDraft: @MainActor (Mode) -> DraftDecision
 
-    private var currentTab: Tab = .dock
-    private var selectedMode: Mode = .external
+    private(set) var currentTab: Tab = .dock
+    private(set) var selectedMode: Mode = .external
 
     // Controls — Top-level
     private var headerIconView: NSImageView!
-    private var tabControl: NSSegmentedControl!
-    private var dockTab: DockTabView!
-    private var settingsScroll: NSScrollView!
-    private var generalContainer: GeneralTabView!
-    private var shortcutsContainer: NSView!
-    private var aboutContainer: NSView!
+    var tabControl: NSSegmentedControl!
+    var dockTab: DockTabView!
+    var settingsScroll: NSScrollView!
+    var generalContainer: GeneralTabView!
+    var shortcutsContainer: NSView!
+    var aboutContainer: NSView!
 
     // Controls — Settings tab
 
     // Controls — Shortcuts tab
-    private var hotkeyButtons: [HotkeyAction: NSButton] = [:]
+    var hotkeyButtons: [HotkeyAction: NSButton] = [:]
 
     // MARK: - Init
 
-    init(service: SmartDockService, hotkeyManager: HotkeyManager) {
+    init(
+        service: SmartDockService,
+        hotkeyManager: HotkeyManager,
+        prefs: UserPreferences = .shared,
+        decideDraft: @escaping @MainActor (Mode) -> DraftDecision = SettingsWindow.askWithAlert
+    ) {
         self.service = service
-        self.hotkeyRecorder = HotkeyRecorder(hotkeyManager: hotkeyManager)
+        self.prefs = prefs
+        self.decideDraft = decideDraft
+        self.hotkeyRecorder = HotkeyRecorder(hotkeyManager: hotkeyManager, prefs: prefs)
         super.init()
 
         hotkeyRecorder.onFinish = { [weak self] in
@@ -99,22 +110,27 @@ final class SettingsWindow: NSObject {
     private func installKeyMonitor() {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
-
-            // ⌘0 — reset window to default size
-            if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "0" {
-                self.window?.setContentSize(Self.defaultContentSize)
-                self.window?.center()
-                return nil
-            }
-
-            // Escape — close window (but skip while recording a hotkey; that flow owns Escape)
-            if event.keyCode == 53, !self.hotkeyRecorder.isRecording {
-                self.window?.performClose(nil)
-                return nil
-            }
-
-            return event
+            return self.handleKey(event)
         }
+    }
+
+    /// The window's two keys. Returns `nil` when the event was consumed. Internal
+    /// so a test can send it a synthetic event the way the monitor would.
+    func handleKey(_ event: NSEvent) -> NSEvent? {
+        // ⌘0 — reset window to default size
+        if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "0" {
+            window?.setContentSize(Self.defaultContentSize)
+            window?.center()
+            return nil
+        }
+
+        // Escape — close window (but skip while recording a hotkey; that flow owns Escape)
+        if event.keyCode == 53, !hotkeyRecorder.isRecording {
+            window?.performClose(nil)
+            return nil
+        }
+
+        return event
     }
 
     // MARK: - Window Construction
@@ -124,7 +140,7 @@ final class SettingsWindow: NSObject {
     /// General 116, with the header and tab control above them taking another 118.
     /// The scroll view on the Dock tab stays as the safety net for a shrunk window —
     /// it is not a substitute for a size that fits.
-    private static let defaultContentSize = NSSize(width: 420, height: 720)
+    static let defaultContentSize = NSSize(width: 420, height: 720)
 
     private func makeWindow() -> NSWindow {
         let (w, contentView) = UI.glassWindow(
@@ -216,7 +232,7 @@ final class SettingsWindow: NSObject {
         shortcutsContainer.isHidden = true
         container.addSubview(shortcutsContainer)
 
-        aboutContainer = AboutTabView(service: service)
+        aboutContainer = AboutTabView(service: service, prefs: prefs)
         aboutContainer.isHidden = true
         container.addSubview(aboutContainer)
 
@@ -281,7 +297,7 @@ final class SettingsWindow: NSObject {
         container.addSubview(header)
 
         // Only shown when Accessibility permission is missing
-        let accessibilityWarning = AccessibilityWarningView()
+        let accessibilityWarning = AccessibilityWarningView(prefs: prefs)
         container.addSubview(accessibilityWarning)
 
         var hotkeyLabels: [NSTextField] = []
@@ -377,14 +393,17 @@ final class SettingsWindow: NSObject {
         markClean()
     }
 
-    private enum DraftDecision { case apply, discard, cancel }
+    enum DraftDecision { case apply, discard, cancel }
 
     /// Apply / Discard / Cancel for a draft that is about to be lost. Only two paths
     /// reach it — switching profiles and closing the window. Everything else keeps
     /// the draft where it is.
-    private func askAboutDraft() -> DraftDecision {
+    private func askAboutDraft() -> DraftDecision { decideDraft(selectedMode) }
+
+    /// The app's answer to `askAboutDraft`: a modal alert.
+    static func askWithAlert(for mode: Mode) -> DraftDecision {
         let alert = NSAlert()
-        alert.messageText = "Apply changes to the \(selectedMode.title) profile?"
+        alert.messageText = "Apply changes to the \(mode.title) profile?"
         alert.informativeText = "The Dock settings you changed have not been applied."
         alert.addButton(withTitle: "Apply")
         alert.addButton(withTitle: "Discard")
@@ -492,7 +511,7 @@ final class SettingsWindow: NSObject {
 
     private func makeHotkeyButton(for action: HotkeyAction) -> NSButton {
         let button = UI.smallButton(
-            HotkeyRecorder.displayTitle(for: action),
+            HotkeyRecorder.displayTitle(for: action, in: prefs),
             target: self,
             action: #selector(hotkeyButtonClicked)
         )
@@ -502,7 +521,7 @@ final class SettingsWindow: NSObject {
 
     private func updateHotkeyButtons() {
         for action in HotkeyAction.allCases {
-            hotkeyButtons[action]?.title = HotkeyRecorder.displayTitle(for: action)
+            hotkeyButtons[action]?.title = HotkeyRecorder.displayTitle(for: action, in: prefs)
         }
     }
 }
@@ -512,7 +531,7 @@ final class SettingsWindow: NSObject {
 extension SettingsWindow: NSWindowDelegate {
     /// Closing used to drop a draft without a word, while every other exit applied
     /// it — inconsistent in both directions. Now it asks, and Cancel keeps the window.
-    func windowShouldClose(_ sender: NSWindow) -> Bool {
+    public func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard isDirty else { return true }
         switch askAboutDraft() {
         case .apply:
@@ -523,7 +542,7 @@ extension SettingsWindow: NSWindowDelegate {
         }
     }
 
-    func windowWillClose(_ notification: Notification) {
+    public func windowWillClose(_ notification: Notification) {
         if hotkeyRecorder.isRecording { hotkeyRecorder.stop() }
         if let monitor = keyMonitor {
             NSEvent.removeMonitor(monitor)

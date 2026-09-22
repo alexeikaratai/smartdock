@@ -97,3 +97,11 @@ enum UI {
         return (window, content)
     }
 }
+
+// MARK: - Bundle Helpers
+
+extension Bundle {
+    public var shortVersion: String {
+        infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
+    }
+}

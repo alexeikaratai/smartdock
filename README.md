@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.7.2-blue?style=flat-square" alt="Version 2.7.2"/>
+  <img src="https://img.shields.io/badge/version-2.8.0-blue?style=flat-square" alt="Version 2.8.0"/>
   <img src="https://img.shields.io/badge/macOS-14.0%2B-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS 14+"/>
   <img src="https://img.shields.io/badge/Swift-6.2-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 6.2"/>
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License"/>
@@ -170,10 +170,11 @@ Sources/
 │   ├── LogExport.swift               # log show invocation + redaction
 │   ├── DiagnosticReport.swift        # Bug-report snapshot formatting
 │   └── Log.swift                     # Logger API (macOS 14+)
-└── SmartDock/                        # AppKit UI layer
-    ├── App.swift                     # @main entry, manual NSApplication run loop
-    ├── ScriptingSupport.swift        # NSScriptCommand subclasses for the sdef
-    ├── AppIntentsSupport.swift       # App Intents for Shortcuts.app and Spotlight
+├── SmartDock/                        # Executable — only what needs the app's module name
+│   ├── App.swift                     # @main entry, manual NSApplication run loop
+│   ├── ScriptingSupport.swift        # NSScriptCommand subclasses for the sdef
+│   └── AppIntentsSupport.swift       # App Intents for Shortcuts.app and Spotlight
+└── SmartDockUI/                      # AppKit layer as a library, so it can be tested
     ├── StatusBarController.swift     # Menu bar icon & dropdown with SF Symbol icons
     ├── SettingsWindow.swift          # Tabbed glass window (Settings / Shortcuts / About)
     ├── OnboardingWindow.swift        # First-launch welcome screen
