@@ -32,7 +32,8 @@ final class AccessibilityWarningView: NSView {
         relaunch: @escaping @MainActor () -> Void = {
             AppRelauncher.relaunch(bundlePath: Bundle.main.bundlePath)
         },
-        reportFailure: @escaping @MainActor (String) -> Void = AccessibilityWarningView.reportWithAlert
+        reportFailure: @escaping @MainActor (String) -> Void = AccessibilityWarningView.reportWithAlert,
+        isGranted: @autoclosure () -> Bool = AccessibilityChecker.isGranted
     ) {
         self.prefs = prefs
         self.openURL = openURL
@@ -42,7 +43,7 @@ final class AccessibilityWarningView: NSView {
         self.reportFailure = reportFailure
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
-        isHidden = AccessibilityChecker.isGranted
+        isHidden = isGranted()
         buildUI()
     }
 
