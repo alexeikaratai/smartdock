@@ -3,7 +3,7 @@ import SmartDockCore
 
 // MARK: - Hotkey Action
 
-enum HotkeyAction: String, CaseIterable, Sendable {
+public enum HotkeyAction: String, CaseIterable, Sendable {
     case toggleAutohide
     case refreshNow
     case switchToExternal
@@ -23,7 +23,7 @@ enum HotkeyAction: String, CaseIterable, Sendable {
     /// The action a `smartdock://` URL maps to, so URLs and hotkeys run through
     /// one execution path. Exhaustive on purpose — adding a case to either enum
     /// breaks the build until the mapping is updated.
-    init(_ command: URLCommand) {
+    public init(_ command: URLCommand) {
         switch command {
         case .refresh: self = .refreshNow
         case .switchToExternal: self = .switchToExternal
@@ -40,13 +40,13 @@ enum HotkeyAction: String, CaseIterable, Sendable {
 /// Uses `NSEvent.addGlobalMonitorForEvents` (background) and
 /// `addLocalMonitorForEvents` (foreground) to catch hotkeys in all states.
 @MainActor
-final class HotkeyManager: NSObject {
+public final class HotkeyManager: NSObject {
 
     private let service: SmartDockService
-    private let prefs = UserPreferences.shared
+    private let prefs: UserPreferences
 
     /// Called when Open Settings hotkey is pressed.
-    var onOpenSettings: (() -> Void)?
+    public var onOpenSettings: (() -> Void)?
 
     /// Accessed from deinit (nonisolated) and @MainActor methods.
     private nonisolated(unsafe) var globalMonitor: Any?
@@ -60,7 +60,8 @@ final class HotkeyManager: NSObject {
 
     // MARK: - Init
 
-    init(service: SmartDockService) {
+    public init(service: SmartDockService, prefs: UserPreferences = .shared) {
+        self.prefs = prefs
         self.service = service
         super.init()
 
@@ -92,7 +93,7 @@ final class HotkeyManager: NSObject {
 
     // MARK: - Public
 
-    func start() {
+    public func start() {
         stop()
         refreshBindingCache()
 
@@ -141,7 +142,7 @@ final class HotkeyManager: NSObject {
         }
     }
 
-    func stop() {
+    public func stop() {
         if let monitor = globalMonitor {
             NSEvent.removeMonitor(monitor)
             globalMonitor = nil
@@ -161,7 +162,9 @@ final class HotkeyManager: NSObject {
 
     /// Returns true if the event matched a hotkey binding.
     @discardableResult
-    private func handleKeyEvent(_ event: NSEvent) -> Bool {
+    /// Internal rather than private so a test can feed it a synthetic `NSEvent` the
+    /// way the monitors would.
+    func handleKeyEvent(_ event: NSEvent) -> Bool {
         guard !isRecording, !cachedBindings.isEmpty else { return false }
 
         for (action, binding) in cachedBindings
@@ -182,7 +185,7 @@ final class HotkeyManager: NSObject {
     }
 
     /// Runs an action. Shared by the hotkey monitors and the `smartdock://` URL scheme.
-    func perform(_ action: HotkeyAction) {
+    public func perform(_ action: HotkeyAction) {
         switch action {
         case .toggleAutohide:
             toggleAutohide()

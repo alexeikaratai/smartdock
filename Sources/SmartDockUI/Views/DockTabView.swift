@@ -16,7 +16,7 @@ import SmartDockCore
 final class DockTabView: NSView {
 
     /// Which profile the form is editing. Also the segment order.
-    enum Mode: Int {
+    enum Mode: Int, Sendable {
         case external = 0
         case builtin = 1
 
@@ -100,14 +100,17 @@ final class DockTabView: NSView {
         }
     }
 
-    // MARK: - Private
+    // MARK: - Controls
 
-    private var modeControl: NSSegmentedControl!
+    /// Internal rather than private so a test can read a control's state back —
+    /// whether Apply is enabled, which segment carries the marker — and click one.
+    var modeControl: NSSegmentedControl!
+    var applyButton: NSButton!
+    var useCurrentButton: NSButton!
+    var discardButton: NSButton!
+    var syncButton: NSButton!
+    var refusalLabel: NSTextField!
     private var profileForm: DockProfileForm!
-    private var applyButton: NSButton!
-    private var useCurrentButton: NSButton!
-    private var discardButton: NSButton!
-    private var refusalLabel: NSTextField!
     private var statusLabel: NSTextField!
 
     // MARK: - Init
@@ -214,7 +217,7 @@ final class DockTabView: NSView {
         // Stays with the profile it acts on: it writes the live Dock into whichever
         // mode is selected above, so separating it from that picker would leave a
         // button whose effect depends on a control on another tab.
-        let syncButton = UI.smallButton("Sync from System", target: self, action: #selector(syncFromSystem))
+        syncButton = UI.smallButton("Sync from System", target: self, action: #selector(syncFromSystem))
         addSubview(syncButton)
 
         statusLabel = UI.label("", font: .systemFont(ofSize: 11))

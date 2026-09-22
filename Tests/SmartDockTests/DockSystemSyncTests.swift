@@ -18,8 +18,18 @@ struct DockSystemSyncTests {
     /// Short enough to keep the suite fast, long enough to still batch.
     private let debounce: TimeInterval = 0.05
 
+    /// For tests that expect *nothing* to arrive: a fixed window past the debounce.
     private func waitForDebounce() async throws {
         try await Task.sleep(nanoseconds: UInt64(debounce * 6 * 1_000_000_000))
+    }
+
+    /// For tests that expect a report: wait for it, not for the clock. The debounce
+    /// fires on the main queue, and other suites — the view tests especially — keep
+    /// the main thread busy for longer than any fixed wait can allow for. Then one
+    /// more debounce window, so a second report would still be seen.
+    private func waitForReport(in log: ChangeLog) async throws {
+        try await waitUntil { !log.configs.isEmpty }
+        try await waitForDebounce()
     }
 
     /// Collects configs reported as externally changed.
@@ -77,7 +87,7 @@ struct DockSystemSyncTests {
 
         // Someone changes the Dock in System Settings.
         store.set("right", forKey: "orientation")
-        try await waitForDebounce()
+        try await waitForReport(in: log)
 
         #expect(log.configs.count == 1, "An external edit should be reported exactly once")
         #expect(log.configs.first?.position == .right)
@@ -112,7 +122,7 @@ struct DockSystemSyncTests {
             case .minimizesToApplication: ("minimize-to-application", true)
             }
         store.set(edit.value, forKey: edit.key)
-        try await waitForDebounce()
+        try await waitForReport(in: log)
 
         #expect(log.configs.count == 1, "`\(edit.key)` is not observed")
     }
@@ -142,7 +152,7 @@ struct DockSystemSyncTests {
         store.set("right", forKey: "orientation")
         store.set(true, forKey: "autohide")
         store.set(96, forKey: "tilesize")
-        try await waitForDebounce()
+        try await waitForReport(in: log)
 
         #expect(log.configs.count == 1, "One user action, one report")
         #expect(log.configs.first?.position == .right)
@@ -177,7 +187,7 @@ struct DockSystemSyncTests {
         controller.startObservingSystemChanges()
         controller.startObservingSystemChanges()
         store.set("right", forKey: "orientation")
-        try await waitForDebounce()
+        try await waitForReport(in: log)
 
         #expect(log.configs.count == 1, "Two observers would report the same edit twice")
     }

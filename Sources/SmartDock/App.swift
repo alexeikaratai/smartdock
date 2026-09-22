@@ -1,5 +1,6 @@
 import Cocoa
 import SmartDockCore
+import SmartDockUI
 import UserNotifications
 
 // MARK: - App Delegate
@@ -190,13 +191,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.schedulePermissionPoll(remainingAttempts: remainingAttempts - 1)
             }
         }
-    }
-}
-
-// MARK: - Bundle Helpers
-
-extension Bundle {
-    var shortVersion: String {
-        infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
     }
 }

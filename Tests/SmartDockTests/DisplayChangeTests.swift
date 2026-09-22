@@ -82,6 +82,7 @@ struct DisplayChangeTests {
 
         displays.value = 1
         monitor.handleReconfiguration()
+        try await waitUntil { fired() >= 1 }
         try await waitPastSettle()
 
         #expect(fired() == 1)
@@ -93,6 +94,7 @@ struct DisplayChangeTests {
 
         displays.value = 0
         monitor.handleReconfiguration()
+        try await waitUntil { fired() >= 1 }
         try await waitPastSettle()
 
         #expect(fired() == 1)
@@ -110,6 +112,7 @@ struct DisplayChangeTests {
         for _ in 0..<5 {
             monitor.handleReconfiguration()
         }
+        try await waitUntil { fired() >= 1 }
         try await waitPastSettle()
 
         #expect(fired() == 1, "Five callbacks for one connect is still one connect")
@@ -135,6 +138,7 @@ struct DisplayChangeTests {
         for _ in 0..<5 {
             monitor.handleReconfiguration()
         }
+        try await waitUntil { reads.value > readsAfterStart }
         try await waitPastSettle()
 
         #expect(
@@ -178,6 +182,7 @@ struct DisplayChangeTests {
 
         displays.value = 0
         monitor.forceRecheck()
+        try await waitUntil { fired() >= 1 }
         try await waitPastSettle()
 
         #expect(fired() == 1)
@@ -203,6 +208,8 @@ struct DisplayChangeTests {
             monitor.handleReconfiguration()
             try await Task.sleep(nanoseconds: UInt64(settle * 0.4 * 1_000_000_000))
         }
+
+        try await waitUntil { fired() >= 1 }
 
         #expect(fired() >= 1, "The wake re-check must fire on its own timer")
         monitor.stop()
@@ -244,6 +251,7 @@ struct DisplayMonitorLifecycleTests {
         // is only noticed because waking re-checks.
         count = 0
         monitor.handleWake(Notification(name: NSWorkspace.didWakeNotification))
+        try await waitUntil { fired.value >= 1 }
         try await Task.sleep(nanoseconds: UInt64(settle * 6 * 1_000_000_000))
 
         #expect(fired.value == 1)
@@ -321,6 +329,7 @@ struct DisplayCallbackTests {
         count = 1
         displayReconfigurationCallback(
             0, .addFlag, Unmanaged.passUnretained(monitor).toOpaque())
+        try await waitUntil { fired.value >= 1 }
         try await waitPastSettle()
 
         #expect(fired.value == 1, "A connect must travel from the C callback through to the app")

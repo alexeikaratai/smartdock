@@ -17,36 +17,88 @@ extension Notification.Name {
     )
 }
 
+// MARK: - Notification Center Seam
+
+/// The slice of `UNUserNotificationCenter` the manager needs. Injectable for a
+/// harder reason than the other seams: `UNUserNotificationCenter.current()` aborts
+/// any process without a bundle — the test runner included — so the real one is
+/// reached only through `SystemNotificationCenter`, and only inside the app.
+@MainActor
+protocol NotificationPosting: AnyObject {
+    func authorizationStatus() async -> UNAuthorizationStatus
+    func requestAuthorization() async throws -> Bool
+    func post(title: String, body: String, identifier: String) async throws
+}
+
+/// The real thing, resolved on first use rather than at construction.
+@MainActor
+final class SystemNotificationCenter: NotificationPosting {
+    func authorizationStatus() async -> UNAuthorizationStatus {
+        await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+    }
+
+    func requestAuthorization() async throws -> Bool {
+        try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
+    }
+
+    func post(title: String, body: String, identifier: String) async throws {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        try await UNUserNotificationCenter.current().add(
+            UNNotificationRequest(identifier: identifier, content: content, trigger: nil))
+    }
+}
+
 // MARK: - Notification Manager
 
 /// Posts macOS banner notifications when SmartDock switches profiles.
 /// Observes `.smartDockStateDidChange` — same pattern as SettingsWindow.
 @MainActor
-final class NotificationManager: NSObject {
+public final class NotificationManager: NSObject {
 
     /// Called when the user clicks a profile-switch banner.
-    var onNotificationClicked: (() -> Void)?
+    public var onNotificationClicked: (() -> Void)?
 
-    private let prefs = UserPreferences.shared
+    private let prefs: UserPreferences
+    private let center: any NotificationPosting
+    /// Which `NotificationCenter` carries the app's own announcements. The default
+    /// in the app; a private one per test, since the manager listens for *any*
+    /// sender and parallel suites would otherwise hear each other's switches.
+    private let events: NotificationCenter
     private var isAuthorized = false
 
     /// Owns both reasons to stay quiet — unchanged profile, and banners arriving
     /// faster than 3s apart. Lives in Core so the ordering between the two is
     /// covered by tests; see `ProfileSwitchAnnouncer`.
-    private var announcer = ProfileSwitchAnnouncer(cooldown: 3.0)
+    private var announcer: ProfileSwitchAnnouncer
 
     // MARK: - Init
 
-    override init() {
+    public convenience override init() {
+        self.init(center: SystemNotificationCenter())
+    }
+
+    init(
+        center: any NotificationPosting,
+        prefs: UserPreferences = .shared,
+        cooldown: TimeInterval = 3.0,
+        events: NotificationCenter = .default
+    ) {
+        self.center = center
+        self.prefs = prefs
+        self.events = events
+        self.announcer = ProfileSwitchAnnouncer(cooldown: cooldown)
         super.init()
 
-        NotificationCenter.default.addObserver(
+        events.addObserver(
             self,
             selector: #selector(handleStateChange),
             name: .smartDockStateDidChange,
             object: nil
         )
-        NotificationCenter.default.addObserver(
+        events.addObserver(
             self,
             selector: #selector(handleAuthRequest),
             name: .smartDockRequestNotificationAuth,
@@ -55,7 +107,9 @@ final class NotificationManager: NSObject {
     }
 
     deinit {
-        NotificationCenter.default.removeObserver(self)
+        // `events` is a `let` reference the deinit may touch; `NotificationCenter`
+        // is thread-safe, so no isolation hop is needed.
+        events.removeObserver(self)
     }
 
     // MARK: - Authorization
@@ -67,9 +121,8 @@ final class NotificationManager: NSObject {
     /// Request notification permission. Called lazily on first notification attempt.
     private func requestAuthorizationIfNeeded() {
         Task {
-            let center = UNUserNotificationCenter.current()
             do {
-                let granted = try await center.requestAuthorization(options: [.alert, .sound])
+                let granted = try await center.requestAuthorization()
                 isAuthorized = granted
                 if !granted {
                     prefs.notificationsEnabled = false
@@ -81,7 +134,7 @@ final class NotificationManager: NSObject {
                 Log.error("Notification permission request failed: \(error)")
             }
 
-            NotificationCenter.default.post(
+            events.post(
                 name: .smartDockNotificationPermissionChanged,
                 object: nil
             )
@@ -120,23 +173,22 @@ final class NotificationManager: NSObject {
 
     private func checkAndPost(profile: DockProfile) {
         Task {
-            let settings = await UNUserNotificationCenter.current().notificationSettings()
+            let status = await center.authorizationStatus()
 
-            if settings.authorizationStatus == .notDetermined {
+            if status == .notDetermined {
                 // Request authorization, then post the notification if granted.
-                let center = UNUserNotificationCenter.current()
-                let granted = (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
+                let granted = (try? await center.requestAuthorization()) ?? false
                 isAuthorized = granted
                 if !granted {
                     prefs.notificationsEnabled = false
-                    NotificationCenter.default.post(
+                    events.post(
                         name: .smartDockNotificationPermissionChanged,
                         object: nil
                     )
                     return
                 }
             } else {
-                isAuthorized = settings.authorizationStatus == .authorized
+                isAuthorized = status == .authorized
             }
 
             if isAuthorized {
@@ -146,19 +198,13 @@ final class NotificationManager: NSObject {
     }
 
     private func deliverNotification(profile: DockProfile) {
-        let content = UNMutableNotificationContent()
-        content.title = "SmartDock"
-        content.body = "Switched to \(profile.displayName) profile"
-        content.sound = .default
-
-        let request = UNNotificationRequest(
-            identifier: "com.smartdock.profileSwitch",
-            content: content,
-            trigger: nil
-        )
-
-        UNUserNotificationCenter.current().add(request) { error in
-            if let error {
+        Task {
+            do {
+                try await center.post(
+                    title: "SmartDock",
+                    body: "Switched to \(profile.displayName) profile",
+                    identifier: "com.smartdock.profileSwitch")
+            } catch {
                 Log.error("Failed to post notification: \(error)")
             }
         }
@@ -169,7 +215,7 @@ final class NotificationManager: NSObject {
 
 extension NotificationManager: UNUserNotificationCenterDelegate {
     /// Show banner even when app is in foreground (LSUIElement apps are always "in foreground").
-    nonisolated func userNotificationCenter(
+    public nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
@@ -178,7 +224,7 @@ extension NotificationManager: UNUserNotificationCenterDelegate {
 
     /// Clicking the banner opens Settings — the banner says the profile changed,
     /// so the obvious follow-up is seeing what it changed to.
-    nonisolated func userNotificationCenter(
+    public nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {

@@ -4,16 +4,57 @@ import SmartDockCore
 /// Watches the app's executable for changes (e.g. Homebrew upgrade replaces it).
 /// When detected, prompts user to relaunch the new version.
 @MainActor
-final class AppUpdateWatcher {
+public final class AppUpdateWatcher {
 
     /// Accessed from deinit (nonisolated) — must be nonisolated(unsafe).
     private nonisolated(unsafe) var source: (any DispatchSourceFileSystemObject)?
     private var pendingPrompt: DispatchWorkItem?
-    private var hasPrompted = false
+    private(set) var hasPrompted = false
 
-    func start() {
+    /// What is watched, how long the writes are allowed to settle, and what happens
+    /// once they have. The app watches its own executable, waits 2s and shows an
+    /// alert; a test watches a file it can touch, waits milliseconds, and answers
+    /// the question itself.
+    private let executablePath: () -> String?
+    private let debounce: TimeInterval
+    private let ask: () -> Bool
+    private let relaunch: () -> Void
+
+    // MARK: - Init
+
+    public convenience init() {
+        self.init(
+            executablePath: { Bundle.main.executablePath },
+            ask: AppUpdateWatcher.askWithAlert,
+            relaunch: { AppRelauncher.relaunch(bundlePath: Bundle.main.bundlePath) })
+    }
+
+    init(
+        executablePath: @escaping () -> String?,
+        debounce: TimeInterval = 2.0,
+        ask: @escaping () -> Bool,
+        relaunch: @escaping () -> Void
+    ) {
+        self.executablePath = executablePath
+        self.debounce = debounce
+        self.ask = ask
+        self.relaunch = relaunch
+    }
+
+    /// The app's question: a modal alert.
+    static func askWithAlert() -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "SmartDock was updated"
+        alert.informativeText = "A new version was installed. Relaunch to use it?"
+        alert.addButton(withTitle: "Relaunch")
+        alert.addButton(withTitle: "Later")
+        alert.alertStyle = .informational
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    public func start() {
         guard source == nil else { return }  // idempotent
-        guard let path = Bundle.main.executablePath else { return }
+        guard let path = executablePath() else { return }
 
         let fd = open(path, O_EVTONLY)
         guard fd >= 0 else {
@@ -37,7 +78,7 @@ final class AppUpdateWatcher {
         Log.info("AppUpdateWatcher started on \(path)")
     }
 
-    func stop() {
+    public func stop() {
         source?.cancel()
         source = nil
         pendingPrompt?.cancel()
@@ -50,7 +91,8 @@ final class AppUpdateWatcher {
 
     // MARK: - Private
 
-    private func handleChange() {
+    /// Internal so a test can stand in for the file-system event.
+    func handleChange() {
         guard !hasPrompted else { return }
 
         // Debounce — Homebrew may write multiple times during install
@@ -61,7 +103,7 @@ final class AppUpdateWatcher {
             self.promptForRelaunch()
         }
         pendingPrompt = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + debounce, execute: work)
     }
 
     private func promptForRelaunch() {
@@ -75,15 +117,6 @@ final class AppUpdateWatcher {
 
         Log.info("App binary changed — prompting for relaunch")
 
-        let alert = NSAlert()
-        alert.messageText = "SmartDock was updated"
-        alert.informativeText = "A new version was installed. Relaunch to use it?"
-        alert.addButton(withTitle: "Relaunch")
-        alert.addButton(withTitle: "Later")
-        alert.alertStyle = .informational
-
-        if alert.runModal() == .alertFirstButtonReturn {
-            AppRelauncher.relaunch(bundlePath: Bundle.main.bundlePath)
-        }
+        if ask() { relaunch() }
     }
 }

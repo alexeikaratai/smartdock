@@ -18,14 +18,22 @@ final class GeneralTabView: NSView {
 
     private let service: SmartDockService
     private let prefs: UserPreferences
+    private let launchAtLogin: LaunchAtLogin
 
-    private var launchAtLoginCheckbox: NSButton!
-    private var notificationsCheckbox: NSButton!
-    private var syncFromSystemCheckbox: NSButton!
+    // Internal rather than private so a test can read and click them.
+    var launchAtLoginCheckbox: NSButton!
+    var notificationsCheckbox: NSButton!
+    var syncFromSystemCheckbox: NSButton!
+    var refreshButton: NSButton!
 
     // MARK: - Init
 
-    init(service: SmartDockService, prefs: UserPreferences) {
+    init(
+        service: SmartDockService,
+        prefs: UserPreferences,
+        launchAtLogin: LaunchAtLogin = LaunchAtLogin()
+    ) {
+        self.launchAtLogin = launchAtLogin
         self.service = service
         self.prefs = prefs
         super.init(frame: .zero)
@@ -55,7 +63,7 @@ final class GeneralTabView: NSView {
 
         launchAtLoginCheckbox = UI.checkbox(
             "Launch at Login", target: self, action: #selector(toggleLaunchAtLogin))
-        launchAtLoginCheckbox.state = LaunchAtLogin.isEnabled ? .on : .off
+        launchAtLoginCheckbox.state = launchAtLogin.isEnabled ? .on : .off
         addSubview(launchAtLoginCheckbox)
 
         notificationsCheckbox = UI.checkbox(
@@ -68,7 +76,7 @@ final class GeneralTabView: NSView {
         syncFromSystemCheckbox.state = prefs.syncFromSystemEnabled ? .on : .off
         addSubview(syncFromSystemCheckbox)
 
-        let refreshButton = UI.smallButton(
+        refreshButton = UI.smallButton(
             "Refresh Now", target: self, action: #selector(refreshNow))
         addSubview(refreshButton)
 
@@ -111,8 +119,10 @@ final class GeneralTabView: NSView {
     // MARK: - Actions
 
     @objc private func toggleLaunchAtLogin(_ sender: NSButton) {
-        LaunchAtLogin.toggle()
-        sender.state = LaunchAtLogin.isEnabled ? .on : .off
+        launchAtLogin.toggle()
+        // Reads the state back rather than assuming the toggle took: a refused
+        // registration must leave the box where it was.
+        sender.state = launchAtLogin.isEnabled ? .on : .off
     }
 
     @objc private func toggleNotifications(_ sender: NSButton) {

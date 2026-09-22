@@ -76,20 +76,24 @@ substantial change.
 
 ## Architecture in one paragraph
 
-Two targets. **`SmartDockCore`** holds testable logic with no UI: configuration values,
-display monitoring, dock control, URL parsing, diagnostics. **`SmartDock`** is the
-AppKit executable — menu bar, windows, hotkeys, notifications. Dependencies flow one
-way: the app imports Core, never the reverse. External dependencies are consumed
-through protocols (`DisplayMonitoring`, `DockControlling`) so tests can inject mocks.
+Three targets. **`SmartDockCore`** holds logic with no UI: configuration values,
+display monitoring, dock control, URL parsing, diagnostics. **`SmartDockUI`** is the
+AppKit layer as a library — menu bar, windows, views, hotkeys, notifications — so the
+test bundle can build a view and read it back. **`SmartDock`** is the executable and
+holds only what must carry the app's own module name: `@main`, the App Intents (their
+identifiers are module-qualified) and the `@objc` scripting command classes.
+Dependencies flow one way: the app imports UI and Core, UI imports Core, never the
+reverse. External dependencies are consumed through protocols (`DisplayMonitoring`,
+`DockControlling`) so tests can inject mocks.
 
-**Put logic in Core whenever you can.** It is the difference between code that can be
-tested and code that cannot — see the next section.
+**Put logic in Core whenever you can**, and a view's state behind a value you can set
+and read — `DockProfileForm.configuration` is the shape to copy.
 
 ## Testing
 
 ```bash
 make test
-swift test --filter SmartDockTests.SmartDockServiceTests/testStartBeginsMonitoring
+swift test --filter startBeginsMonitoring
 ```
 
 Tests are written with **Swift Testing** — `@Suite`, `@Test`, `#expect` — and run in
@@ -99,11 +103,14 @@ scheduling around it, so there is nothing left to serialize.
 
 Conventions:
 
-- Inject mocks via the `DisplayMonitoring` / `DockControlling` protocols. Never
-  instantiate `DisplayMonitor` or `DockController` directly in a test — the real ones
-  talk to the window server and run AppleScript against your actual Dock.
+- `SmartDockService` takes mocks through the `DisplayMonitoring` / `DockControlling`
+  protocols. `DockController` is tested as the real type with `openDefaults`,
+  `runScript` and the delays injected — a bare `DockController()` would run AppleScript
+  against your actual Dock, and a bare `DisplayMonitor()` talks to the window server;
+  both appear only in a few smoke tests that assert ranges safe on any machine.
 - Mocks live in `Tests/SmartDockTests/Mocks.swift`.
-- `setUp` resets every `com.smartdock.*` UserDefaults key and sets explicit defaults.
+- Anything touching stored settings takes a `ScratchPreferences` — in-memory defaults,
+  torn down with the test. Never `UserPreferences.shared`.
 - Extract pure logic that the system would otherwise hide — CG flag filtering and
   `approximatelyEquals` are free functions precisely so they can be tested directly.
 - Don't assert on floating-point knife edges. Size comparisons use a 0.01 tolerance;
@@ -111,19 +118,33 @@ Conventions:
 
 ### About the coverage numbers
 
-`make coverage` reports on **`SmartDockCore` only**. The `SmartDock` target is an
-executable and is not linked into the test bundle, so none of the UI layer appears in
-the table — it reads as absent rather than as 0%.
+`make coverage` reports on `SmartDockCore` and `SmartDockUI`. The `SmartDock`
+executable — three files — is outside the test bundle and absent from the table.
 
-This is a real gap, not a measurement artifact. The practical consequence: logic that
-needs test coverage belongs in Core. `HotkeyBinding` is the worked example — modifier
-normalisation and matching started in the app layer, where a silent divergence between
-recording and dispatching was untestable, and moved to Core so `HotkeyBindingTests`
-could pin the behaviour down.
+Read the two halves differently. Core sits above 99% and every reachable branch has a
+test. UI is around 90%, and what is left is the body of each system call — the step
+that actually leaves the process. Every one of them is reached through a parameter
+whose default is the real thing, so the decisions around the call are tested and only
+the call is not: `UNUserNotificationCenter` behind `NotificationPosting` (its
+`current()` aborts any process without a bundle — measured, "bundleProxyForCurrentProcess
+is nil"), `SMAppService` behind `LoginItemRegistering`, and plain function parameters
+for `runLogShow` (`log show` in a subprocess), `presentSavePanel`, spawning the relaunch
+shell, prompting for Accessibility, opening a URL, running `tccutil`, and every
+`NSAlert`. Two exceptions are tested for real because they are harmless: `spawn` with a
+plan that runs `/usr/bin/true`, and the file-system source, by writing to a temporary
+file it watches. A modal alert does not merely go untested: it hangs the whole suite
+until it is seamed, which is how the failure alert in the Accessibility banner was
+found. Logic still belongs in Core when it can go there. `HotkeyBinding` is the worked example —
+modifier normalisation and matching started in the app layer, where a silent divergence
+between recording and dispatching was untestable, and moved to Core so
+`HotkeyBindingTests` could pin the behaviour down.
 
-Some things are genuinely untestable and that is fine: AppleScript execution against
-System Events, CoreGraphics display callbacks, `AXIsProcessTrusted`, `SMAppService`,
-and NSView layout. Don't write tests that only assert a mock was called.
+`NSStatusBar`, `NSWindow`, `NSPasteboard` and synthetic `NSEvent`s all work in the test
+process (measured), so a menu, a window or a keystroke is tested for real rather than
+through a mock. Don't write tests that only assert a mock was called. A test that waits
+for something to *arrive* on the main queue waits for it (`waitUntil`), never for a fixed
+time — the view tests keep the main thread busy, and a fixed sleep became a coin toss the
+day they appeared.
 
 A handful of "missed regions" in the table are not misses at all. A ternary or a `??`
 inside a string interpolation — `"\(flag ? "on" : "off")"`, `"\(dict[key] ?? "unknown")"`

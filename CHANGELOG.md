@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.0] — 2026-09-22
+
+### Changed
+
+- The AppKit layer is a library target, `SmartDockUI`, and the test suite builds the
+  real views. The profile form now has the test the compiler could not give it — every
+  setting, off its default, goes into the controls and comes back — and the Dock tab's
+  buttons, draft state and refusal notice are exercised by clicking them. The
+  executable keeps only `@main`, the App Intents and the scripting commands, so
+  nothing a Shortcut or a script refers to changes its name. Nothing changes for a
+  person using the app.
+- The whole AppKit layer is now tested for real — 83 test declarations build the menu, the
+  Settings window, the onboarding window and every tab, click their controls, fire
+  menu items and feed them keystrokes. Covered: every menu item and what it shows
+  (checkmarks, greyed items, the refusal line, the tooltip); every draft rule of the
+  Settings window with each answer to the Apply / Discard / Cancel question; ⌘0 and
+  Escape; hotkey dispatch including the rate limit and CapsLock; recording a shortcut,
+  clearing it with Escape, refusing Shift alone. What is deliberately not exercised is
+  what would leave the test process — registering a login item, prompting for
+  Accessibility, opening a browser, resetting a permission, posting a notification.
+- The menu reflects the service the moment it is built, not only on its first open —
+  a test read a fresh menu and found no checkmark; a person never could, since the
+  menu refreshes as it opens.
+- Tests that wait for a debounced report wait for the report rather than a fixed
+  time; with view tests in the same run, the fixed sleeps had become a coin toss.
+- The last untested corner of the app — the code that talks to macOS — is covered
+  too: what the switch banner says and when it stays quiet, what a refused
+  notification permission does to the checkbox, the Homebrew-update prompt and its
+  "Later", Launch at Login including a refused registration, the one-time
+  Accessibility prompt, and the Accessibility reset with its cancel and failure
+  paths. Each of those calls now travels through a parameter whose default is the
+  real system call, so the app behaves exactly as before while the decisions around
+  the call are tested.
+
+### Fixed
+
+- The "Reset Failed" alert in the Accessibility banner is now reachable as code
+  rather than only as a dialog — writing a test for the reset flow hung on it,
+  which is the same wall a future change would have hit.
+
 ## [2.7.2] — 2026-09-19
 
 ### Added
