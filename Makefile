@@ -1,11 +1,11 @@
-.PHONY: help build test clean icon app run sign notarize fix install release bump version-check changelog-check deps outdated doctor actions-check logs format lint coverage appintents appintents-check entitlements-check sdef-check
+.PHONY: help build test clean icon app run sign notarize fix install release bump version-check changelog-check release-notes deps outdated doctor actions-check logs format lint coverage appintents appintents-check entitlements-check sdef-check
 
 .DEFAULT_GOAL := help
 
 # === Config ===
 APP_NAME     := SmartDock
 BUNDLE_ID    := com.smartdock.app
-VERSION      := 2.8.1
+VERSION      := 2.8.2
 BUILD_DIR    := .build/release
 APP_DIR      := build/$(APP_NAME).app
 CONTENTS     := $(APP_DIR)/Contents
@@ -119,6 +119,12 @@ APPINTENTS_DIR  := .build/appintents
 APPINTENTS_CV   := $(APPINTENTS_DIR)/const-values
 APPINTENTS_META := $(APPINTENTS_DIR)/Metadata.appintents
 APPINTENTS_SRC  := Sources/$(APP_NAME)/AppIntentsSupport.swift
+
+# Prints the body of `## [VERSION]` from the CHANGELOG, stopping at the next heading.
+# On one line, with every `#` escaped: in a variable assignment make treats `#` as the
+# start of a comment (a recipe line does not), and a continuation lands inside the awk
+# program. Both truncate it to `awk -v v='` and the shell reports an unmatched quote.
+CHANGELOG_SECTION = awk -v v='\#\# [$(VERSION)]' 'index($$0, v) == 1 { f = 1; next } /^\#\# \[/ { f = 0 } f' CHANGELOG.md
 ENTITLEMENTS    := Resources/$(APP_NAME).entitlements
 SDEF            := Resources/$(APP_NAME).sdef
 SCRIPTING_SRC   := Sources/$(APP_NAME)/ScriptingSupport.swift
@@ -440,12 +446,17 @@ version-check:
 # this check lived inside the `release` target and the tag-triggered workflow never
 # reached it. It is its own target now, called from both paths.
 changelog-check:
-	@if [ -z "$$(awk -v v='## [$(VERSION)]' 'index($$0, v) == 1 { f = 1; next } /^## \[/ { f = 0 } f' \
-		CHANGELOG.md | tr -d '[:space:]')" ]; then \
+	@if [ -z "$$($(CHANGELOG_SECTION) | tr -d '[:space:]')" ]; then \
 		echo "❌ CHANGELOG section [$(VERSION)] is empty — write the release notes first"; \
 		exit 1; \
 	fi
 	@echo "✅ CHANGELOG section [$(VERSION)] has notes"
+
+# The body of this version's CHANGELOG section — what a release is published with.
+# `release-notes` prints it; `changelog-check` asks whether it is empty. One awk, so
+# the notes that are checked are the notes that ship.
+release-notes:
+	@$(CHANGELOG_SECTION)
 
 release: version-check app
 	@echo "🚀 Releasing v$(VERSION)..."
@@ -459,11 +470,14 @@ release: version-check app
 	fi
 	@# Zip the app
 	cd build && zip -r $(APP_NAME)-$(VERSION).zip $(APP_NAME).app
-	@# Create GitHub release
+	@# Create GitHub release, carrying this version's CHANGELOG section as the body.
+	@# `--generate-notes` used to stand in for it and produced a bare compare link;
+	@# what changed and why lives in the CHANGELOG, so that is what gets published.
+	@$(MAKE) --no-print-directory release-notes > build/release-notes.md
 	gh release create v$(VERSION) \
 		build/$(APP_NAME)-$(VERSION).zip \
 		--title "$(APP_NAME) $(VERSION)" \
-		--generate-notes
+		--notes-file build/release-notes.md
 	@echo "✅ Released v$(VERSION)"
 
 # === Install & Fix ===
@@ -523,6 +537,7 @@ help:
 	@echo "    make bump V=1.2.3  Bump version everywhere (Makefile, Info.plist, README badge)"
 	@echo "    make version-check Verify all version references agree"
 	@echo "    make changelog-check Verify this version's notes were written (gates releasing)"
+	@echo "    make release-notes    Print this version's CHANGELOG section (the release body)"
 	@echo "    make release       Build + zip + create GitHub release"
 	@echo ""
 	@echo "  Distribution (requires Developer ID):"

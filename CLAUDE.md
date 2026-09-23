@@ -131,9 +131,15 @@ separate lists until `DockProfileForm` put both directions of each field in one
 `binding(for: DockProperty)`. Prefer a copy helper (`DockConfiguration.with`) or drive the
 code from `allCases` with an exhaustive switch.
 
-**Report what is, not what was asked.** The menu bar reflects what the Dock actually holds,
-reconciled after verification. The *stored* profile is left alone — the user still wants
-auto-hide, macOS merely would not do it right now.
+**Report what is, not what was asked — but only where something is reported.** The menu
+bar icon, the tooltip and the refusal notice reflect what the Dock actually holds,
+reconciled after verification (`currentConfig`); the *stored* profile is left alone, since
+the user still wants auto-hide and macOS merely would not do it right now. A **control**
+sits on the other side: it reads `activeProfileConfig`, what the profile asks for. Reading
+the observed state there cost reversibility — after a refusal the auto-hide toggle kept
+re-requesting the same thing, so two presses left the setting flipped instead of back
+where it started. Shipped in 2.8.1; the menu item's title and the position tick had the
+same fault.
 
 ## Build & Run
 
@@ -143,6 +149,7 @@ make format / lint / coverage                  # swift-format apply · check (CI
 make appintents / appintents-check             # generate Metadata.appintents · verify every intent reached it
 make entitlements-check / sdef-check           # bundle carries the entitlements file · .sdef classes exist (both in app)
 make bump V=1.2.3 / version-check / release    # version everywhere · verify refs · build + zip + gh release (clean tree)
+make changelog-check / release-notes           # this version's notes exist · print them (the release body)
 make install / fix                             # copy to /Applications · xattr -cr + codesign
 make doctor / outdated / actions-check / logs  # env check · toolchain versions · Actions vs latest · live log
 swift test --filter startBeginsMonitoring      # one test
@@ -183,9 +190,12 @@ the sealed bundle back with `codesign -d --entitlements :-` and diffs it against
 needs no change to the check.
 
 **`release.yml`** (`v*` tag): 🧪 Test → 🔨 Build → 🎉 Release → 🍺 Homebrew (updates Cask +
-Formula in `alexeikaratai/homebrew-tap`). Build runs `make bump` for the tag and then
-`make changelog-check`, so a tag whose notes were never written stops before anything is
-published.
+Formula in `alexeikaratai/homebrew-tap`). Build runs `make bump` for the tag, then
+`make changelog-check` — so a tag whose notes were never written stops before anything is
+published — and writes `make release-notes` into the artifact beside the zip. Release has
+no checkout and could not produce them itself: the section for the tag exists only after
+`bump`, in Build's working copy. Both paths publish that file as the body; until 2.8.1
+they passed `--generate-notes`, which produced a bare compare link.
 
 **`dependabot.yml`**: monthly grouped Actions bumps; no `swift` entry because there are no
 SPM dependencies.
@@ -248,7 +258,7 @@ and applies the entitlements through `codesign`. README images are in `assets/`.
 | `DockConfiguration.swift` | `DockConfiguration` value type: position, autohide, icon size (0.0–1.0 scale, `pixelsToScale`/`scaleToPixels`, 0.01 tolerance), magnification, `MinimizeEffect` genie/scale, `animatesLaunch`, `showsRecents`, `showsIndicators`, `minimizesToApplication` (absent-key defaults measured: indicators on, minimize-into-app off). `with(...)` copies with fields replaced — the guard against field-by-field rebuilds. `differences(from:)` is the apply diff, pure and tested. `UserPreferences` persists per-mode profiles plus flags and hotkeys, `prefs[profile]` by `DockProfile` — never `if external { externalConfig } else …` at a call site; `migrateIfNeeded` converts the pre-scale pixel keys and is called once from `applicationDidFinishLaunching`, not by `load`; `initializeDefaultsIfNeeded` makes both profiles the Dock as it is on a fresh install, so the first apply is a no-op; `backfillMissingSettings` fills keys an old profile predates from the live Dock. `DockPosition`, `HotkeyBinding`. |
 | `DisplayMonitor.swift` | `CGDisplayRegisterReconfigurationCallback`, event-driven. Reacts only to add/remove/enable/disable — mode, move, mirror and shape changes fire during Mission Control and fullscreen — via the tested free function `shouldReactToDisplayChange(_:)`, using the named `CGDisplayChangeSummaryFlags` constants, never raw hex; `.beginConfigurationFlag` is skipped since completion follows. 1s settle debounce; fires only when the external count actually changes. `externalDisplayCount()` filters `CGDisplayIsBuiltin`, `CGDisplayIsActive`, `!CGDisplayIsAsleep` — clamshell, standby, phantom hubs. Wake: `didWakeNotification`/`screensDidWakeNotification` re-check after 2s on a separate work item (`pendingWakeCheck`) so a CG callback cannot cancel it; like every other check it fires only when the external count changed — a wake with the same displays never touches the Dock (`wakeWithTheSameDisplaysChangesNothing`). **`activeSpaceDidChangeNotification` is not observed** — AppleScript Dock changes trigger it and loop. |
 | `DockController.swift` | Applies via `NSAppleScript` → System Events, **one `tell` block per property** so one refusal cannot take the others down; never `killall Dock`. Diff-based: reads a fresh `UserDefaults(suiteName: "com.apple.dock")` and pushes only what differs, so frequent re-applies cost nothing. Reads back after 1s and records `DockApplyOutcome`. KVO on the same domain (`DockPrefsObserver`) reports System Settings edits via `onExternalConfigChanged`, debounced 0.5s; own changes are filtered by comparing to `lastAppliedConfig` with `approximatelyEquals`. Injectable `openDefaults`, `runScript`, delays. |
-| `SmartDockService.swift` | Orchestrator: display state → profile → apply. Guards every path on `isEnabled`. **`activeProfile` is the profile in force** — the displays select it, `applyProfile(_:)` overrides it until the next display change, wake or refresh. Everything that edits "the current profile" in place goes through `updateActiveProfile(_:)` (auto-hide toggle, position menu, System Settings edits via `handleExternalDockChange`, gated by `syncFromSystemEnabled`) — writing by `hasExternalDisplay` put built-in values into the external profile. `activeProfileDescription` is the one wording for every UI, including the override state. Reconciles `currentConfig` to the verified outcome on refusal, leaving the stored profile alone. Posts `smartDockStateDidChange` with `activeProfileKey` only on real change. |
+| `SmartDockService.swift` | Orchestrator: display state → profile → apply. Guards every path on `isEnabled`. `activeProfileConfig` is what the profile in force *asks for*; `currentConfig` is what the Dock holds after verification — controls read the first, displays the second. **`activeProfile` is the profile in force** — the displays select it, `applyProfile(_:)` overrides it until the next display change, wake or refresh. Everything that edits "the current profile" in place goes through `updateActiveProfile(_:)` (auto-hide toggle, position menu, System Settings edits via `handleExternalDockChange`, gated by `syncFromSystemEnabled`) — writing by `hasExternalDisplay` put built-in values into the external profile. `activeProfileDescription` is the one wording for every UI, including the override state. Reconciles `currentConfig` to the verified outcome on refusal, leaving the stored profile alone. Posts `smartDockStateDidChange` with `activeProfileKey` only on real change. |
 | `URLCommand.swift` | Parses `smartdock://`. Rejects foreign schemes, unknown verbs and `switch` with no target rather than guessing. |
 | `AppleScriptCommand.swift` | `DockProfile` — the two profiles, with `displayName` and `init(hasExternalDisplay:)`; also the `.sdef` enumeration, mapping four-character codes to `URLCommand`. `AppleScriptCommandTests` pins the codes to literals **and** greps the shipped `.sdef`. |
 | `DockApplyOutcome.swift` | What an apply actually achieved. Only **requested** properties can be reported rejected. `refusalNotice` is the user-facing line; `summary` the log line. |
@@ -292,14 +302,21 @@ for it — Dock tab height 600, measured; it was 552 before the two newest toggl
 Swift Testing, suites in parallel. `Mocks.swift` has `MockDisplayMonitor`
 (`simulateDisplayChange`), `MockDockController`, `MockServiceDelegate`; `TestSupport.swift`
 has `ScratchPreferences` (in-memory defaults — a real suite domain belongs to `cfprefsd` and
-leaks), `expectClose(_:_:within:)` and `waitUntil(_:timeout:)`. The UI suites build the real
+leaks), `expectClose(_:_:within:)` and `waitUntil(_:timeout:)`. `MockDockController` keeps
+its `mockSystemConfig` in step with what it accepted and calls `onApplyVerified`, the way
+the real controller does a second after an apply; until it did, no service test could see
+what happens after the Dock refuses something, and a real toggle bug shipped under a green
+suite. The UI suites build the real
 objects (`@testable import SmartDockUI`): views are clicked with `performClick`, menu
 items fired through `item.target?.perform(item.action!, with: item)`, key handlers fed
 `NSEvent.keyEvent(...)`, windows shown for real (`_ = NSApplication.shared` first, so
 `NSApp.activate` has an app). What the UI suites never do: register a login item,
 prompt for Accessibility, open a URL, spawn `tccutil` or `open -n`, or touch
 `UNUserNotificationCenter` — the last one aborts a process without a bundle, which is
-why `NotificationManager` has no tests. Never touch `UserPreferences.shared` in a test. `DockController`
+why `NotificationManager` reaches it only through `NotificationPosting` and its tests
+hand it a recorder. Each such suite gives its manager a private `NotificationCenter`:
+the manager listens for any sender, and parallel suites would otherwise hear each
+other's switches. Never touch `UserPreferences.shared` in a test. `DockController`
 is tested as the real type with `openDefaults`/`runScript`/delays injected; `SmartDockService`
 takes the mocks. A bare `DisplayMonitor()` or `DockController()` appears only in a few smoke
 tests that assert ranges safe on any machine — do not add more. Anchor size assertions to

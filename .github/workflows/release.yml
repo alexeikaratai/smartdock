@@ -74,6 +74,12 @@ jobs:
         # nothing on this path checked.
         run: make changelog-check
 
+      - name: 📄 Collect release notes
+        # Written here rather than in the release job, which has no checkout — and
+        # could not produce them anyway: the section for this tag only exists after
+        # `bump` runs, which happens in this job's working copy.
+        run: make release-notes > build/notes.md
+
       - name: 🔨 Build app bundle
         run: make app
 
@@ -84,7 +90,10 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: SmartDock-${{ steps.version.outputs.VERSION }}
-          path: build/SmartDock-${{ steps.version.outputs.VERSION }}.zip
+          # Both live under build/, so the download puts them side by side.
+          path: |
+            build/SmartDock-${{ steps.version.outputs.VERSION }}.zip
+            build/notes.md
 
   # ── Stage 3: GitHub Release ──────────────────────────────
 
@@ -111,14 +120,17 @@ jobs:
           TAG=${{ github.ref_name }}
           ZIP=SmartDock-${VERSION}.zip
 
+          # The body is this version's CHANGELOG section. `--generate-notes` used to
+          # stand in for it and produced a bare compare link — 2.8.1 shipped that way.
           if gh release view "${TAG}" --repo "${{ github.repository }}" &>/dev/null; then
-            echo "Release exists — uploading asset"
+            echo "Release exists — uploading asset and refreshing notes"
             gh release upload "${TAG}" "${ZIP}" --clobber --repo "${{ github.repository }}"
+            gh release edit "${TAG}" --repo "${{ github.repository }}" --notes-file notes.md
           else
             gh release create "${TAG}" "${ZIP}" \
               --repo "${{ github.repository }}" \
               --title "SmartDock ${VERSION}" \
-              --generate-notes
+              --notes-file notes.md
           fi
 
   # ── Stage 4: Homebrew Tap ────────────────────────────────

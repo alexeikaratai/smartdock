@@ -7,12 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.2] — 2026-09-23
+
 ### Added
 
-- A release can no longer be published without notes. The check that refuses an
-  empty `CHANGELOG` section is its own `make changelog-check` target, called both
-  by `make release` and by the tag-triggered workflow — it used to live inside
-  `make release` only, which is why 2.8.1 went out with an empty body.
+- A release now carries its notes. The GitHub release body is this version's
+  `CHANGELOG` section instead of an auto-generated compare link, on both paths that
+  publish — `make release` and the tag-triggered workflow.
+- A release can no longer be published without notes at all. The check that refuses
+  an empty `CHANGELOG` section is its own `make changelog-check` target, called from
+  both paths; it used to live inside `make release`, which the tag-triggered workflow
+  never reaches — which is why 2.8.1 went out with an empty body. One `awk` produces
+  the notes and answers the check, so what is verified is what gets published.
+
+### Fixed
+
+- Hiding the Dock while an app is fullscreen, then changing your mind, no longer
+  leaves the setting flipped. macOS declines auto-hide in fullscreen, and the menu
+  item, the hotkey and `smartdock://toggle-autohide` all read back what the Dock was
+  actually doing rather than what the profile asked for — so the second press
+  re-requested the same thing instead of undoing the first. The Dock Position tick
+  had the same fault. Controls now follow the profile; the menu bar icon and the
+  "macOS declined auto-hide" line still show what the Dock really holds.
 
 ## [2.8.1] — 2026-09-22
 

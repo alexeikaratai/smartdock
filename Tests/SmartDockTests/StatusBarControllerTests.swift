@@ -91,15 +91,47 @@ struct StatusBarControllerTests {
     }
 
     @Test func aRefusalIsShownUnderTheStatusLine() {
-        let f = Fixture(externalCount: 0)
+        // The Dock is visible (external profile); asking it to hide is a real change,
+        // and this is the one macOS declines while an app is fullscreen.
+        let f = Fixture(externalCount: 1)
         #expect(f.menu.refusalMenuItem.isHidden, "Nothing refused yet")
 
         f.dock.mockRejectedProperties = [.autohide]
-        f.dock.apply(DockConfiguration(autohide: true))
+        f.dock.apply(f.scratch.prefs.externalConfig.with(autohide: true))
         f.menu.menuNeedsUpdate(NSMenu())
 
         #expect(!f.menu.refusalMenuItem.isHidden)
         #expect(f.menu.refusalMenuItem.title.contains("auto-hide"))
+    }
+
+    /// After a refusal the item names what the *profile* asks for, so pressing it
+    /// twice returns to the start; the refusal line right below says macOS declined,
+    /// and the menu bar icon still draws the Dock as it really is.
+    @Test func theVisibilityItemFollowsTheProfileEvenWhenTheDockRefuses() {
+        let f = Fixture(externalCount: 1)
+        f.dock.mockRejectedProperties = [.autohide]
+        #expect(f.menu.dockVisibilityMenuItem.title == "Hide Dock")
+
+        f.click(f.menu.dockVisibilityMenuItem)
+
+        #expect(f.scratch.prefs.externalConfig.autohide, "the profile asks to hide")
+        #expect(!f.service.currentConfig.autohide, "the Dock did not")
+        #expect(f.menu.dockVisibilityMenuItem.title == "Show Dock", "the item offers the way back")
+        #expect(!f.menu.refusalMenuItem.isHidden, "and says why the Dock has not moved")
+    }
+
+    /// Same rule for the position submenu: the tick marks the chosen position, not
+    /// whichever one the Dock is sitting at after refusing to move.
+    @Test func thePositionTickFollowsTheProfileEvenWhenTheDockRefuses() throws {
+        let f = Fixture(externalCount: 1)
+        f.dock.mockRejectedProperties = [.position]
+
+        f.click(try #require(f.menu.positionMenuItems[.right]))
+
+        #expect(f.scratch.prefs.externalConfig.position == .right)
+        #expect(f.service.currentConfig.position == .bottom, "the Dock stayed put")
+        #expect(f.menu.positionMenuItems[.right]?.state == .on, "the tick follows the choice")
+        #expect(f.menu.positionMenuItems[.bottom]?.state == .off)
     }
 
     // MARK: - What the Items Do

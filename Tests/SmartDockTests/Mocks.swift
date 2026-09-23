@@ -71,11 +71,41 @@ final class MockDockController: DockControlling {
         lastAppliedConfig = config
 
         let requested = config.differences(from: mockSystemConfig)
-        lastApplyOutcome = DockApplyOutcome(
-            requested: requested,
-            rejected: requested.filter { mockRejectedProperties.contains($0) })
+        let rejected = requested.filter { mockRejectedProperties.contains($0) }
+        lastApplyOutcome = DockApplyOutcome(requested: requested, rejected: rejected)
+
+        // The Dock now holds everything it accepted, and the old value of whatever it
+        // refused. Reporting that back is what the real controller does a second after
+        // the apply — without it, `handleApplyVerified` never runs and every service
+        // test is blind to what happens after a refusal, which is how a real bug in
+        // the auto-hide toggle stayed invisible to a green suite.
+        mockSystemConfig = Self.accepted(config, rejecting: rejected, keeping: mockSystemConfig)
+        onApplyVerified?(lastApplyOutcome!, mockSystemConfig)
 
         return true
+    }
+
+    /// `config` with every refused property taken back from `previous`. Exhaustive on
+    /// purpose: a new `DockProperty` must say how the Dock would refuse it.
+    private static func accepted(
+        _ config: DockConfiguration, rejecting rejected: [DockProperty],
+        keeping previous: DockConfiguration
+    ) -> DockConfiguration {
+        rejected.reduce(config) { result, property in
+            switch property {
+            case .position: result.with(position: previous.position)
+            case .autohide: result.with(autohide: previous.autohide)
+            case .iconSize: result.with(iconSize: previous.iconSize)
+            case .magnification: result.with(magnification: previous.magnification)
+            case .magnificationSize: result.with(magnificationSize: previous.magnificationSize)
+            case .minimizeEffect: result.with(minimizeEffect: previous.minimizeEffect)
+            case .animatesLaunch: result.with(animatesLaunch: previous.animatesLaunch)
+            case .showsRecents: result.with(showsRecents: previous.showsRecents)
+            case .showsIndicators: result.with(showsIndicators: previous.showsIndicators)
+            case .minimizesToApplication:
+                result.with(minimizesToApplication: previous.minimizesToApplication)
+            }
+        }
     }
 
     func readSystemConfig() -> DockConfiguration {

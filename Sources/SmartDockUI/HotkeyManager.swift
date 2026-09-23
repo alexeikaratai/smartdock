@@ -203,7 +203,10 @@ public final class HotkeyManager: NSObject {
     }
 
     private func toggleAutohide() {
-        let current = service.currentConfig
+        // The stored profile, not `currentConfig`: after the Dock refuses (an app is
+        // fullscreen) the observed state is still the old one, so reading it would
+        // re-request the same thing and never toggle back.
+        let current = service.activeProfileConfig
 
         // `with` rather than rebuilding field by field: this call site used to list
         // every property, so each new setting silently reverted to its default the

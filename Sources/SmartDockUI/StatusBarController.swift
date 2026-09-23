@@ -249,7 +249,7 @@ public final class StatusBarController: NSObject {
     /// force directly — through the service, which knows which profile that is.
     @objc private func selectPosition(_ sender: NSMenuItem) {
         guard let position = sender.representedObject as? DockPosition else { return }
-        service.updateActiveProfile(service.currentConfig.with(position: position))
+        service.updateActiveProfile(service.activeProfileConfig.with(position: position))
     }
 
     public func showSettings(tab: SettingsWindow.Tab = .dock) {
@@ -301,7 +301,7 @@ public final class StatusBarController: NSObject {
             item.state = profile == service.activeProfile ? .on : .off
         }
         for (position, item) in positionMenuItems {
-            item.state = position == service.currentConfig.position ? .on : .off
+            item.state = position == service.activeProfileConfig.position ? .on : .off
         }
         updateRefusalNotice()
         updateActionAvailability()
@@ -325,11 +325,11 @@ public final class StatusBarController: NSObject {
     /// the Dock is visible. A title naming the state reads as a status line and
     /// leaves people unsure which way the item will move things.
     private func dockVisibilityTitle() -> String {
-        service.currentConfig.autohide ? "Show Dock" : "Hide Dock"
+        service.activeProfileConfig.autohide ? "Show Dock" : "Hide Dock"
     }
 
     private func applyDockVisibilityAppearance() {
-        let symbol = service.currentConfig.autohide ? "eye" : "eye.slash"
+        let symbol = service.activeProfileConfig.autohide ? "eye" : "eye.slash"
         dockVisibilityMenuItem.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
     }
 
