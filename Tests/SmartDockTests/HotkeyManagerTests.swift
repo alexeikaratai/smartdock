@@ -74,6 +74,24 @@ struct HotkeyManagerTests {
             f.scratch.prefs.builtinConfig.autohide, "the other profile is untouched — it was hidden and stays hidden")
     }
 
+    /// Two presses put things back where they were — even when the Dock refused the
+    /// first one, which it does whenever an app is fullscreen. The toggle used to
+    /// read the *observed* state, so after a refusal it kept asking for the same
+    /// thing and left the stored profile flipped: pressed twice, setting changed.
+    @Test func twoTogglesReturnToTheStartEvenWhenTheDockRefuses() {
+        let f = Fixture(externalCount: 1)
+        f.dock.mockRejectedProperties = [.autohide]
+        #expect(!f.scratch.prefs.externalConfig.autohide, "starts visible")
+
+        f.manager.perform(.toggleAutohide)
+        #expect(f.scratch.prefs.externalConfig.autohide, "asked to hide")
+        #expect(!f.service.currentConfig.autohide, "the Dock refused, and we report what is")
+
+        f.manager.perform(.toggleAutohide)
+
+        #expect(!f.scratch.prefs.externalConfig.autohide, "back where it started")
+    }
+
     @Test func openSettingsTellsTheHost() {
         let f = Fixture()
         var opened = 0

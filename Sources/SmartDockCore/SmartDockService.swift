@@ -73,6 +73,16 @@ public final class SmartDockService {
         }
     }
 
+    /// What the profile in force *asks for*, as stored.
+    ///
+    /// The counterpart to `currentConfig`, which is what the Dock actually holds after
+    /// verification. A control belongs on this side: read the observed state instead
+    /// and a refused apply makes the control stop being reversible — the auto-hide
+    /// toggle kept re-requesting the same thing and left the stored profile flipped
+    /// after two presses. Anything that *displays* state — the menu bar icon, the
+    /// tooltip, the refusal notice — stays on `currentConfig`.
+    public var activeProfileConfig: DockConfiguration { prefs[activeProfile] }
+
     /// The dock configuration we last applied (not the transient system state).
     public private(set) var currentConfig: DockConfiguration = DockConfiguration()
 
