@@ -233,6 +233,12 @@ compile on 26.6 over `let button = try #require(button("Export", in: view))`: in
 scope**, least of all inside a macro. Anything a test does that the compiler has opinions
 about — macros, shadowing, inference — is verified by the next CI run, not by the local one.
 
+**A workflow step creates what it writes into.** `make release-notes > build/notes.md`
+worked on the dev machine and failed on the runner: `build/` is made by `make app`, which
+comes later, and a developer always has one left over from the last build. The step does
+`mkdir -p build` itself now. The same shape as the toolchain gap above — the local run was
+green because the machine carried state a fresh checkout does not.
+
 **Stale build after changing an initialiser used as a default argument** — e.g.
 `SmartDockService.init(dockController: … = DockController())`. Link fails with `Undefined
 symbols` and an unrelated `SwiftUICore.tbd` warning. `rm -rf .build && swift build`.
