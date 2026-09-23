@@ -78,7 +78,13 @@ jobs:
         # Written here rather than in the release job, which has no checkout — and
         # could not produce them anyway: the section for this tag only exists after
         # `bump` runs, which happens in this job's working copy.
-        run: make release-notes > build/notes.md
+        #
+        # `build/` is created here rather than relied upon: `make app` makes it later,
+        # and a developer's machine always has one left over from the last build, so
+        # the missing directory only showed up on a clean runner.
+        run: |
+          mkdir -p build
+          make release-notes > build/notes.md
 
       - name: 🔨 Build app bundle
         run: make app
