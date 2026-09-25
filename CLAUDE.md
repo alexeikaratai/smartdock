@@ -121,15 +121,24 @@ nobody had asked it to. Nothing changes until the person edits a profile.
 
 **Break the build rather than write a note.** Agreement between two places is enforced by
 an exhaustive switch where the compiler can reach — `HotkeyAction(URLCommand)`,
-`push(_:of:)`, `ShortcutCoverage.intentType(for:)`, `DockProfileForm.binding(for:)` — and by a test or make target where it
-cannot: `.sdef` parity, `appintents-check`, `sdef-check`, `entitlements-check`, `version-check`.
+`push(_:of:)`, `ShortcutCoverage.intentType(for:)`, `DockProfileForm.binding(for:)`,
+`store(_:of:forKey:)`/`restore(_:into:from:)` — and by a test or make target where it
+cannot: `.sdef` parity, `anEditToEveryPropertyIsReported` (the KVO key list),
+`everyPropertyIsReadFromItsDockKey` (`readSystemConfig` — its initialiser defaults every
+argument, so a property it forgets to read compiles and returns *our* value),
+`appintents-check`, `sdef-check`, `entitlements-check`, `version-check`.
 
 **A list repeated in two places will drift.** `toggleAutohide` rebuilt the config field by
 field and silently reset every setting it had not heard of; a `zip` against a literal list
 quietly stopped checking two properties; the settings form read and wrote through two
 separate lists until `DockProfileForm` put both directions of each field in one
-`binding(for: DockProperty)`. Prefer a copy helper (`DockConfiguration.with`) or drive the
-code from `allCases` with an exhaustive switch.
+`binding(for: DockProperty)`; `save`, `load`, `backfillMissingSettings` and `migrateMode`
+each spelled the same ten settings out by hand until they shared `storageKey`, `store` and
+`restore` — the backfill had drifted to five of the ten, so the next setting added would
+have reached every saved profile as our default, and `load`'s hand-written absent-key rule
+used `value > 0` for the two sizes and so could not keep a Dock deliberately set to 16px.
+Prefer a copy helper (`DockConfiguration.with`) or drive the code from `allCases` with an
+exhaustive switch.
 
 **Report what is, not what was asked — but only where something is reported.** The menu
 bar icon, the tooltip and the refusal notice reflect what the Dock actually holds,
@@ -261,7 +270,7 @@ and applies the entitlements through `codesign`. README images are in `assets/`.
 
 | File | Responsibility |
 |---|---|
-| `DockConfiguration.swift` | `DockConfiguration` value type: position, autohide, icon size (0.0–1.0 scale, `pixelsToScale`/`scaleToPixels`, 0.01 tolerance), magnification, `MinimizeEffect` genie/scale, `animatesLaunch`, `showsRecents`, `showsIndicators`, `minimizesToApplication` (absent-key defaults measured: indicators on, minimize-into-app off). `with(...)` copies with fields replaced — the guard against field-by-field rebuilds. `differences(from:)` is the apply diff, pure and tested. `UserPreferences` persists per-mode profiles plus flags and hotkeys, `prefs[profile]` by `DockProfile` — never `if external { externalConfig } else …` at a call site; `migrateIfNeeded` converts the pre-scale pixel keys and is called once from `applicationDidFinishLaunching`, not by `load`; `initializeDefaultsIfNeeded` makes both profiles the Dock as it is on a fresh install, so the first apply is a no-op; `backfillMissingSettings` fills keys an old profile predates from the live Dock. `DockPosition`, `HotkeyBinding`. |
+| `DockConfiguration.swift` | `DockConfiguration` value type: position, autohide, icon size (0.0–1.0 scale, `pixelsToScale`/`scaleToPixels`, 0.01 tolerance), magnification, `MinimizeEffect` genie/scale, `animatesLaunch`, `showsRecents`, `showsIndicators`, `minimizesToApplication` (absent-key defaults measured: indicators on, minimize-into-app off). `with(...)` copies with fields replaced — the guard against field-by-field rebuilds. `differences(from:)` is the apply diff, pure and tested. `UserPreferences` persists per-mode profiles plus flags and hotkeys, `prefs[profile]` by `DockProfile` — never `if external { externalConfig } else …` at a call site; `migrateIfNeeded` converts the pre-scale pixel keys and is called once from `applicationDidFinishLaunching`, not by `load`; `initializeDefaultsIfNeeded` makes both profiles the Dock as it is on a fresh install, so the first apply is a no-op; `backfillMissingSettings` fills keys an old profile predates from the live Dock. Every one of those four reaches a stored key through `storageKey(_:_:)` and a value through the exhaustive `store`/`restore` pair, so a property cannot be written without being read back or seeded; an absent key means *default* because `restore` returns the config untouched, never because a fallback was spelled out per field. `DockPosition`, `HotkeyBinding`. |
 | `DisplayMonitor.swift` | `CGDisplayRegisterReconfigurationCallback`, event-driven. Reacts only to add/remove/enable/disable — mode, move, mirror and shape changes fire during Mission Control and fullscreen — via the tested free function `shouldReactToDisplayChange(_:)`, using the named `CGDisplayChangeSummaryFlags` constants, never raw hex; `.beginConfigurationFlag` is skipped since completion follows. 1s settle debounce; fires only when the external count actually changes. `externalDisplayCount()` filters `CGDisplayIsBuiltin`, `CGDisplayIsActive`, `!CGDisplayIsAsleep` — clamshell, standby, phantom hubs. Wake: `didWakeNotification`/`screensDidWakeNotification` re-check after 2s on a separate work item (`pendingWakeCheck`) so a CG callback cannot cancel it; like every other check it fires only when the external count changed — a wake with the same displays never touches the Dock (`wakeWithTheSameDisplaysChangesNothing`). **`activeSpaceDidChangeNotification` is not observed** — AppleScript Dock changes trigger it and loop. |
 | `DockController.swift` | Applies via `NSAppleScript` → System Events, **one `tell` block per property** so one refusal cannot take the others down; never `killall Dock`. Diff-based: reads a fresh `UserDefaults(suiteName: "com.apple.dock")` and pushes only what differs, so frequent re-applies cost nothing. Reads back after 1s and records `DockApplyOutcome`. KVO on the same domain (`DockPrefsObserver`) reports System Settings edits via `onExternalConfigChanged`, debounced 0.5s; own changes are filtered by comparing to `lastAppliedConfig` with `approximatelyEquals`. Injectable `openDefaults`, `runScript`, delays. |
 | `SmartDockService.swift` | Orchestrator: display state → profile → apply. Guards every path on `isEnabled`. `activeProfileConfig` is what the profile in force *asks for*; `currentConfig` is what the Dock holds after verification — controls read the first, displays the second. **`activeProfile` is the profile in force** — the displays select it, `applyProfile(_:)` overrides it until the next display change, wake or refresh. Everything that edits "the current profile" in place goes through `updateActiveProfile(_:)` (auto-hide toggle, position menu, System Settings edits via `handleExternalDockChange`, gated by `syncFromSystemEnabled`) — writing by `hasExternalDisplay` put built-in values into the external profile. `activeProfileDescription` is the one wording for every UI, including the override state. Reconciles `currentConfig` to the verified outcome on refusal, leaving the stored profile alone. Posts `smartDockStateDidChange` with `activeProfileKey` only on real change. |

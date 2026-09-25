@@ -18,6 +18,44 @@ struct DockSystemConfigTests {
         return (store, DockController(openDefaults: { store }))
     }
 
+    // MARK: - Every Property
+
+    /// Every property has to come back out of the Dock's own domain.
+    ///
+    /// `readSystemConfig` builds its result through an initialiser where every argument
+    /// has a default, so a property it forgets to read still compiles and quietly
+    /// returns *our* default. Nothing else notices: the profile is then diffed against a
+    /// value the Dock never reported, and the first apply pushes a setting nobody
+    /// touched. The switch is exhaustive, so a new property does not compile here until
+    /// it names the key macOS keeps it under.
+    @Test(arguments: DockProperty.allCases)
+    func everyPropertyIsReadFromItsDockKey(property: DockProperty) {
+        let (store, controller) = makeSubject()
+        // The magnified size is deliberately not diffed while magnification is off,
+        // exactly as its slider is disabled in System Settings.
+        store.set(true, forKey: "magnification")
+
+        // Each value differs from what this property reads as when its key is absent.
+        let edit: (key: String, value: Any) =
+            switch property {
+            case .position: ("orientation", "left")
+            case .autohide: ("autohide", true)
+            case .iconSize: ("tilesize", 80)
+            case .magnification: ("magnification", true)
+            case .magnificationSize: ("largesize", 100)
+            case .minimizeEffect: ("mineffect", "scale")
+            case .animatesLaunch: ("launchanim", false)
+            case .showsRecents: ("show-recents", false)
+            case .showsIndicators: ("show-process-indicators", false)
+            case .minimizesToApplication: ("minimize-to-application", true)
+            }
+        store.set(edit.value, forKey: edit.key)
+
+        let differences = controller.readSystemConfig().differences(from: DockConfiguration())
+
+        #expect(differences.contains(property), "`\(edit.key)` is not read")
+    }
+
     // MARK: - Booleans
 
     @Test func autohideIsRead() {
