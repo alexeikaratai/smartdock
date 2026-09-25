@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.3] — 2026-09-25
+
+### Fixed
+
+- The smallest Dock stays the smallest. Dragging either size slider all the way left
+  stores a scale of exactly zero — 16px, the smallest macOS offers — and the loader
+  used "greater than zero" to tell a saved value from a key that was never written, so
+  a deliberate minimum came back as the 48px default and could not be kept. Whether
+  someone chose a value is answered by the key being there, never by the value itself.
+- A setting a saved profile predates is taken from the Dock as it stands — all of them
+  now, not five of them. The backfill named half the properties by hand, so the next
+  setting added would have reached every existing profile as SmartDock's own default
+  and restyled a Dock nobody had touched, which is the one thing that backfill exists
+  to prevent. Nothing would have failed to build. For a profile saved before 1.1.0,
+  which predates the magnification size, that value now comes from the person's own
+  Dock rather than from ours.
+
+### Changed
+
+- **One list of Dock settings instead of four.** Saving, loading, backfilling and
+  migrating a profile now walk `DockProperty.allCases` through a single exhaustive
+  switch, so a new Dock setting does not compile until both storing and reading it are
+  in place. `readSystemConfig` is held to every property by a test, since a config
+  built from an initialiser with all-default arguments accepts a forgotten one in
+  silence. The same drift kept `showsRecents` out of the diagnostic report for two
+  releases.
+
 ## [2.8.2] — 2026-09-23
 
 ### Added

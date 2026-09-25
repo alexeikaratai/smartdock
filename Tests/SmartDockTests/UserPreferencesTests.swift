@@ -88,6 +88,64 @@ struct UserPreferencesTests {
         #expect(scratch.prefs.builtinConfig.approximatelyEquals(config))
     }
 
+    /// Both size sliders reach 0.0 — `pixelsToScale(16)`, the smallest Dock macOS
+    /// offers — and the loader used `value > 0` to spot an absent key. A deliberate
+    /// minimum is indistinguishable from nothing that way, so it read back as our
+    /// 48px default and the smallest Dock could not be kept. Whether someone chose
+    /// a value is answered by the key being there, never by the value itself.
+    @Test func theSmallestSizesSurviveSaveAndLoad() {
+        let scratch = ScratchPreferences()
+        let smallest = DockConfiguration.pixelsToScale(16)
+        #expect(smallest == 0.0, "the slider's left edge really is zero")
+
+        scratch.prefs.builtinConfig = DockConfiguration(
+            iconSize: smallest, magnification: true, magnificationSize: smallest)
+
+        #expect(scratch.prefs.builtinConfig.iconSize == smallest)
+        #expect(scratch.prefs.builtinConfig.magnificationSize == smallest)
+    }
+
+    /// Every property survives a save and a load, one named at a time so a failure
+    /// says which. Driven by `allCases`: saving and loading were two hand-written lists
+    /// of ten fields before they shared one exhaustive switch, and a field missing from
+    /// either was invisible — the form would just show the default on every open.
+    @Test(arguments: DockProperty.allCases)
+    func everyPropertySurvivesSaveAndLoad(property: DockProperty) {
+        let scratch = ScratchPreferences()
+        let changed = Self.flip(property, of: DockConfiguration(), to: Self.everythingChanged)
+
+        scratch.prefs.builtinConfig = changed
+
+        #expect(
+            scratch.prefs.builtinConfig.describe(property) == changed.describe(property),
+            "\(property) did not survive the round trip")
+    }
+
+    /// The stored key is built from `DockProperty.rawValue`, and these are the
+    /// spellings already written on every installed machine. The raw values double as
+    /// log and report text, so a rename to read better in a diagnostic would orphan
+    /// real profiles — this cannot make that impossible, but it makes it deliberate:
+    /// the switch is exhaustive, so a new property must state its on-disk spelling.
+    @Test func storedKeysStillMatchTheirPropertyNames() {
+        for property in DockProperty.allCases {
+            let onDisk: String =
+                switch property {
+                case .position: "position"
+                case .autohide: "autohide"
+                case .iconSize: "iconSize"
+                case .magnification: "magnification"
+                case .magnificationSize: "magnificationSize"
+                case .minimizeEffect: "minimizeEffect"
+                case .animatesLaunch: "animatesLaunch"
+                case .showsRecents: "showsRecents"
+                case .showsIndicators: "showsIndicators"
+                case .minimizesToApplication: "minimizesToApplication"
+                }
+
+            #expect(property.rawValue == onDisk, "renaming this orphans keys already on disk")
+        }
+    }
+
     @Test func minimizeEffectAndLaunchAnimationSurviveSaveAndLoad() {
         let scratch = ScratchPreferences()
 
@@ -429,5 +487,40 @@ struct UserPreferencesTests {
         scratch.prefs.migrateIfNeeded()
 
         #expect(!scratch.prefs.isConfigured)
+    }
+
+    // MARK: - Helpers
+
+    /// Every field away from its default, so taking any single one of them is a real
+    /// change and a property that failed to round-trip cannot look like a pass.
+    private static let everythingChanged = DockConfiguration(
+        autohide: true,
+        position: .right,
+        iconSize: DockConfiguration.pixelsToScale(96),
+        magnification: true,
+        magnificationSize: DockConfiguration.pixelsToScale(112),
+        minimizeEffect: .scale,
+        animatesLaunch: false,
+        showsRecents: false,
+        showsIndicators: false,
+        minimizesToApplication: true)
+
+    /// One property taken from `other`, the rest left at `base`.
+    private static func flip(
+        _ property: DockProperty, of base: DockConfiguration, to other: DockConfiguration
+    ) -> DockConfiguration {
+        switch property {
+        case .position: base.with(position: other.position)
+        case .autohide: base.with(autohide: other.autohide)
+        case .iconSize: base.with(iconSize: other.iconSize)
+        case .magnification: base.with(magnification: other.magnification)
+        case .magnificationSize: base.with(magnificationSize: other.magnificationSize)
+        case .minimizeEffect: base.with(minimizeEffect: other.minimizeEffect)
+        case .animatesLaunch: base.with(animatesLaunch: other.animatesLaunch)
+        case .showsRecents: base.with(showsRecents: other.showsRecents)
+        case .showsIndicators: base.with(showsIndicators: other.showsIndicators)
+        case .minimizesToApplication:
+            base.with(minimizesToApplication: other.minimizesToApplication)
+        }
     }
 }

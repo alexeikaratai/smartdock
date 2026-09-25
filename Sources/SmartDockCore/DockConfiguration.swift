@@ -351,32 +351,25 @@ public final class UserPreferences {
     /// that already carries a choice keeps it, otherwise every launch would
     /// overwrite the profile with whatever the Dock happened to hold.
     ///
+    /// Every property is covered because the loop walks `DockProperty.allCases` and
+    /// seeds through the same exhaustive `store` that `save` uses. It used to name five
+    /// of the ten by hand, which meant the next property added would arrive at an
+    /// existing profile as a struct default — the exact restyling this exists to stop,
+    /// and nothing would have failed to build. `DiagnosticReport` had the same fault
+    /// with the same property, `showsRecents`, and went two releases unreported.
+    ///
     /// Separate from `initializeDefaultsIfNeeded`, which only ever runs before the
     /// first profile exists and so can never reach an upgrading install.
     public func backfillMissingSettings(from systemConfig: DockConfiguration) {
         guard isConfigured else { return }
 
-        for key in ["external", "builtin"] {
-            guard defaults.object(forKey: "\(prefix).\(key).autohide") != nil else { continue }
+        for profile in ["external", "builtin"] {
+            guard defaults.object(forKey: storageKey(profile, .autohide)) != nil else { continue }
 
-            if defaults.object(forKey: "\(prefix).\(key).minimizeEffect") == nil {
-                defaults.set(
-                    systemConfig.minimizeEffect.rawValue, forKey: "\(prefix).\(key).minimizeEffect")
-            }
-            if defaults.object(forKey: "\(prefix).\(key).animatesLaunch") == nil {
-                defaults.set(
-                    systemConfig.animatesLaunch, forKey: "\(prefix).\(key).animatesLaunch")
-            }
-            if defaults.object(forKey: "\(prefix).\(key).showsRecents") == nil {
-                defaults.set(systemConfig.showsRecents, forKey: "\(prefix).\(key).showsRecents")
-            }
-            if defaults.object(forKey: "\(prefix).\(key).showsIndicators") == nil {
-                defaults.set(systemConfig.showsIndicators, forKey: "\(prefix).\(key).showsIndicators")
-            }
-            if defaults.object(forKey: "\(prefix).\(key).minimizesToApplication") == nil {
-                defaults.set(
-                    systemConfig.minimizesToApplication,
-                    forKey: "\(prefix).\(key).minimizesToApplication")
+            for property in DockProperty.allCases {
+                let storage = storageKey(profile, property)
+                guard defaults.object(forKey: storage) == nil else { continue }
+                store(property, of: systemConfig, forKey: storage)
             }
         }
     }
@@ -516,9 +509,6 @@ public final class UserPreferences {
     }
 
     private func migrateMode(_ key: String) {
-        let sizeKey = "\(prefix).\(key).iconSize"
-        let magSizeKey = "\(prefix).\(key).magnificationSize"
-
         // Old format stored pixels (16–128). New format stores a 0.0–1.0 scale, so
         // anything above 1 is still in the old units and needs converting.
         //
@@ -526,73 +516,116 @@ public final class UserPreferences {
         // `NSNumber`, which bridges to `Double` whether the value was written as an
         // integer or not. A separate `as? Int` branch used to sit here and could
         // never run.
-        for key in [sizeKey, magSizeKey] {
-            guard let pixels = defaults.object(forKey: key) as? Double, pixels > 1.0 else {
+        for property in [DockProperty.iconSize, .magnificationSize] {
+            let storage = storageKey(key, property)
+            guard let pixels = defaults.object(forKey: storage) as? Double, pixels > 1.0 else {
                 continue
             }
-            defaults.set(DockConfiguration.pixelsToScale(Int(pixels)), forKey: key)
+            defaults.set(DockConfiguration.pixelsToScale(Int(pixels)), forKey: storage)
         }
     }
 
     // MARK: - Persistence
 
+    /// Where one property of one profile lives.
+    ///
+    /// Every read and write of a profile goes through here, so the stored key is
+    /// spelled once instead of in each of `save`, `load`, `backfillMissingSettings`
+    /// and `migrateMode`. The spelling happens to equal `DockProperty.rawValue`, and
+    /// `storedKeysStillMatchTheirPropertyNames` pins that — but this stays a function
+    /// rather than becoming `property.rawValue` at the call sites, because those raw
+    /// values are also log and diagnostic text. Renaming a case to read better in a
+    /// report must not orphan every key already written to disk.
+    private func storageKey(_ profile: String, _ property: DockProperty) -> String {
+        "\(prefix).\(profile).\(property.rawValue)"
+    }
+
+    /// Writes one property's value.
+    ///
+    /// Exhaustive on `DockProperty`, so a new setting does not compile until this
+    /// knows how to store it — and saving a profile and backfilling one share the
+    /// single switch rather than each carrying its own list. `backfillMissingSettings`
+    /// used to carry a list of its own, five of the ten properties long.
+    private func store(
+        _ property: DockProperty, of config: DockConfiguration, forKey storage: String
+    ) {
+        switch property {
+        case .autohide: defaults.set(config.autohide, forKey: storage)
+        case .position: defaults.set(config.position.rawValue, forKey: storage)
+        case .iconSize: defaults.set(config.iconSize, forKey: storage)
+        case .magnification: defaults.set(config.magnification, forKey: storage)
+        case .magnificationSize: defaults.set(config.magnificationSize, forKey: storage)
+        case .minimizeEffect: defaults.set(config.minimizeEffect.rawValue, forKey: storage)
+        case .animatesLaunch: defaults.set(config.animatesLaunch, forKey: storage)
+        case .showsRecents: defaults.set(config.showsRecents, forKey: storage)
+        case .showsIndicators: defaults.set(config.showsIndicators, forKey: storage)
+        case .minimizesToApplication:
+            defaults.set(config.minimizesToApplication, forKey: storage)
+        }
+    }
+
+    /// Reads one property back onto `config`, leaving it untouched when the key is
+    /// absent so the struct default stands.
+    ///
+    /// That guard is the whole absent-key rule, in one place rather than restated per
+    /// field. The loader used to spell it out ten times and got two of them wrong: the
+    /// sizes were recovered with `value > 0`, which cannot tell a Dock someone
+    /// deliberately set to its 16px minimum (scale 0.0) from a key that was never
+    /// written, so the smallest Dock macOS offers could not be kept.
+    ///
+    /// A value that no longer decodes — a position or effect from a future version —
+    /// passes `nil` to `with`, which keeps the default for the same reason.
+    private func restore(
+        _ property: DockProperty, into config: DockConfiguration, from profile: String
+    ) -> DockConfiguration {
+        let storage = storageKey(profile, property)
+        guard defaults.object(forKey: storage) != nil else { return config }
+
+        switch property {
+        case .autohide:
+            return config.with(autohide: defaults.bool(forKey: storage))
+        case .position:
+            return config.with(
+                position: DockPosition(rawValue: defaults.string(forKey: storage) ?? ""))
+        case .iconSize:
+            return config.with(iconSize: defaults.double(forKey: storage))
+        case .magnification:
+            return config.with(magnification: defaults.bool(forKey: storage))
+        case .magnificationSize:
+            return config.with(magnificationSize: defaults.double(forKey: storage))
+        case .minimizeEffect:
+            return config.with(
+                minimizeEffect: MinimizeEffect(rawValue: defaults.string(forKey: storage) ?? ""))
+        case .animatesLaunch:
+            return config.with(animatesLaunch: defaults.bool(forKey: storage))
+        case .showsRecents:
+            return config.with(showsRecents: defaults.bool(forKey: storage))
+        case .showsIndicators:
+            return config.with(showsIndicators: defaults.bool(forKey: storage))
+        case .minimizesToApplication:
+            return config.with(minimizesToApplication: defaults.bool(forKey: storage))
+        }
+    }
+
     private func save(_ config: DockConfiguration, key: String) {
-        defaults.set(config.autohide, forKey: "\(prefix).\(key).autohide")
-        defaults.set(config.position.rawValue, forKey: "\(prefix).\(key).position")
-        defaults.set(config.iconSize, forKey: "\(prefix).\(key).iconSize")
-        defaults.set(config.magnification, forKey: "\(prefix).\(key).magnification")
-        defaults.set(config.magnificationSize, forKey: "\(prefix).\(key).magnificationSize")
-        defaults.set(config.minimizeEffect.rawValue, forKey: "\(prefix).\(key).minimizeEffect")
-        defaults.set(config.animatesLaunch, forKey: "\(prefix).\(key).animatesLaunch")
-        defaults.set(config.showsRecents, forKey: "\(prefix).\(key).showsRecents")
-        defaults.set(config.showsIndicators, forKey: "\(prefix).\(key).showsIndicators")
-        defaults.set(
-            config.minimizesToApplication, forKey: "\(prefix).\(key).minimizesToApplication")
+        for property in DockProperty.allCases {
+            store(property, of: config, forKey: storageKey(key, property))
+        }
     }
 
     private func load(key: String) -> DockConfiguration? {
-        let autohideKey = "\(prefix).\(key).autohide"
-        guard defaults.object(forKey: autohideKey) != nil else { return nil }
+        // `autohide` is the sentinel for "a profile was saved here": every save writes
+        // it, so its absence means nothing was ever stored — not a Dock that happens
+        // to be visible.
+        guard defaults.object(forKey: storageKey(key, .autohide)) != nil else { return nil }
 
-        let positionRaw = defaults.string(forKey: "\(prefix).\(key).position") ?? "bottom"
-        let iconSize = defaults.double(forKey: "\(prefix).\(key).iconSize")
-        let magSize = defaults.double(forKey: "\(prefix).\(key).magnificationSize")
-        let effectRaw = defaults.string(forKey: "\(prefix).\(key).minimizeEffect") ?? ""
-
-        // Profiles saved before these two existed have neither key. `bool(forKey:)`
-        // would read a missing `animatesLaunch` as false and quietly turn launch
-        // animation off for everyone upgrading, so the absent case is spelled out.
-        let animationKey = "\(prefix).\(key).animatesLaunch"
-        let animates =
-            defaults.object(forKey: animationKey) != nil
-            ? defaults.bool(forKey: animationKey) : true
-        let recentsKey = "\(prefix).\(key).showsRecents"
-        let recents =
-            defaults.object(forKey: recentsKey) != nil
-            ? defaults.bool(forKey: recentsKey) : true
-        let indicatorsKey = "\(prefix).\(key).showsIndicators"
-        let indicators =
-            defaults.object(forKey: indicatorsKey) != nil
-            ? defaults.bool(forKey: indicatorsKey) : true
-        // Off by default, so `bool(forKey:)`'s false-when-absent happens to be right;
-        // spelled out anyway so the rule reads the same for every key.
-        let minimizeKey = "\(prefix).\(key).minimizesToApplication"
-        let minimizes =
-            defaults.object(forKey: minimizeKey) != nil
-            ? defaults.bool(forKey: minimizeKey) : false
-
-        return DockConfiguration(
-            autohide: defaults.bool(forKey: autohideKey),
-            position: DockPosition(rawValue: positionRaw) ?? .bottom,
-            iconSize: iconSize > 0 ? iconSize : 0.2857,
-            magnification: defaults.bool(forKey: "\(prefix).\(key).magnification"),
-            magnificationSize: magSize > 0 ? magSize : 0.4286,
-            minimizeEffect: MinimizeEffect(rawValue: effectRaw) ?? .genie,
-            animatesLaunch: animates,
-            showsRecents: recents,
-            showsIndicators: indicators,
-            minimizesToApplication: minimizes
-        )
+        // Starting from the struct defaults and letting each present key overwrite its
+        // own field is what makes an absent key mean *default* rather than `false` or
+        // zero. The same shape as `DockProfileForm`, which reduces over `allCases` to
+        // load its controls.
+        return DockProperty.allCases.reduce(DockConfiguration()) { config, property in
+            restore(property, into: config, from: key)
+        }
     }
 }
 
