@@ -336,7 +336,12 @@ is tested as the real type with `openDefaults`/`runScript`/delays injected; `Sma
 takes the mocks. A bare `DisplayMonitor()` or `DockController()` appears only in a few smoke
 tests that assert ranges safe on any machine — do not add more. Anchor size assertions to
 `pixelsToScale()`, not knife-edge floats. `#expect` wraps its argument in a
-closure, so a `mutating` call goes into a named `let` first.
+closure, so a `mutating` call goes into a named `let` first. `ShotTool` asserts nothing —
+it draws `assets/settings.png` from the real window, and is `.enabled(if:)` on `SHOT_PATH`
+so an ordinary run neither executes it nor writes a file. It lives in the bundle because
+only the bundle can build the view hierarchy, and it exists because the picture it
+replaced was shot by hand at 1.8.1 and still showed a three-tab window five versions
+later. `screencapture` is not an option from here: it needs a Screen Recording grant.
 
 ## Code Style
 

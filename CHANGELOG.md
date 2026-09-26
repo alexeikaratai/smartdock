@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.4] — 2026-09-26
+
+### Fixed
+
+- The README showed a settings window that has not existed for five versions. The
+  screenshot was taken by hand at 1.8.1 and still had three tabs and a merged Settings
+  pane; the text beside it described the same three. Both now show the four tabs the app
+  has — Dock, General, Shortcuts, About — along with the minimize effect, the launch,
+  recents and indicator toggles, and Use Current Dock / Discard / Apply. Re-taking the
+  picture is now one command (`ShotTool`), which is what it cost the last time nothing
+  was retaken.
+
 ## [2.8.3] — 2026-09-25
 
 ### Fixed
