@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.8.3-blue?style=flat-square" alt="Version 2.8.3"/>
+  <img src="https://img.shields.io/badge/version-2.8.4-blue?style=flat-square" alt="Version 2.8.4"/>
   <img src="https://img.shields.io/badge/macOS-14.0%2B-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS 14+"/>
   <img src="https://img.shields.io/badge/Swift-6.2-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 6.2"/>
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License"/>
@@ -39,7 +39,7 @@ On first launch both profiles are your Dock exactly as it is. Nothing changes un
 | 🔗 | **URL scheme** | `smartdock://` commands for Raycast, Alfred, Shortcuts.app and shell scripts |
 | 🩺 | **Diagnostics** | Copy Diagnostic Info + Export Logs — both scrubbed of anything identifying |
 | 📜 | **AppleScript** | Scriptable from Script Editor, `osascript`, Automator and Shortcuts |
-| 🎨 | **Glass UI** | Tabbed settings window (Settings / Shortcuts / About) with `NSVisualEffectView` |
+| 🎨 | **Glass UI** | Tabbed settings window (Dock / General / Shortcuts / About) with `NSVisualEffectView` |
 | 🚀 | **Launch at Login** | Native `SMAppService` integration |
 | 🛡️ | **Smooth transitions** | Per-property AppleScript — no Dock restart needed |
 | 👋 | **Onboarding** | Welcome screen on first launch |
@@ -176,7 +176,7 @@ Sources/
 │   └── AppIntentsSupport.swift       # App Intents for Shortcuts.app and Spotlight
 └── SmartDockUI/                      # AppKit layer as a library, so it can be tested
     ├── StatusBarController.swift     # Menu bar icon & dropdown with SF Symbol icons
-    ├── SettingsWindow.swift          # Tabbed glass window (Settings / Shortcuts / About)
+    ├── SettingsWindow.swift          # Tabbed glass window (Dock / General / Shortcuts / About)
     ├── OnboardingWindow.swift        # First-launch welcome screen
     ├── NotificationManager.swift     # macOS banner notifications
     ├── HotkeyManager.swift           # Global keyboard shortcuts (5 actions)
