@@ -176,6 +176,7 @@ struct DiagnosticReportTests {
             case .showsRecents: base.with(showsRecents: false)
             case .showsIndicators: base.with(showsIndicators: false)
             case .minimizesToApplication: base.with(minimizesToApplication: true)
+            case .autohideMenuBar: base.with(autohideMenuBar: true)
             }
 
         #expect(

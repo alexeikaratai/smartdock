@@ -136,11 +136,15 @@ public final class SettingsWindow: NSObject {
     // MARK: - Window Construction
 
     /// Tall enough that no tab scrolls at the default size. Measured: the Dock tab
-    /// needs 600pt (552 before the indicator and minimize-into-app toggles) and
-    /// General 116, with the header and tab control above them taking another 118.
-    /// The scroll view on the Dock tab stays as the safety net for a shrunk window —
-    /// it is not a substitute for a size that fits.
-    static let defaultContentSize = NSSize(width: 420, height: 720)
+    /// needs 622pt (552 before the indicator and minimize-into-app toggles, 600 before
+    /// the menu bar one) and General 116, with the header and tab control above them
+    /// taking another 118. The scroll view on the Dock tab stays as the safety net for
+    /// a shrunk window — it is not a substitute for a size that fits.
+    ///
+    /// `theDockTabFitsTheDefaultWindowWithoutScrolling` measures it rather than trusting
+    /// this comment: the 600 above went stale the moment a checkbox was added, and
+    /// nothing failed.
+    static let defaultContentSize = NSSize(width: 420, height: 742)
 
     private func makeWindow() -> NSWindow {
         let (w, contentView) = UI.glassWindow(

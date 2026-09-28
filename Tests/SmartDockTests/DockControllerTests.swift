@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import SmartDockCore
@@ -186,6 +187,18 @@ struct DockControllerTests {
         #expect((0.0...1.0).contains(config.iconSize))
         #expect((0.0...1.0).contains(config.magnificationSize))
         #expect(DockPosition.allCases.contains(config.position))
+    }
+
+    /// The menu bar's domain has to be spelled the way `UserDefaults` accepts, and only
+    /// the real thing can say whether it is. Every other test hands the controller an
+    /// in-memory store, so a name that opens nothing looks perfectly healthy to them —
+    /// which is how `UserDefaults.globalDomain` ("NSGlobalDomain") shipped through the
+    /// whole suite while returning `nil`, making a hidden menu bar read as visible.
+    /// Asserts only that the store opens, never what is in it.
+    @Test func theGlobalPreferencesDomainOpens() {
+        #expect(
+            UserDefaults(suiteName: DockController.globalPreferencesDomain) != nil,
+            "`\(DockController.globalPreferencesDomain)` is not a usable suite name")
     }
 
     // MARK: - DockConfiguration Edge Cases

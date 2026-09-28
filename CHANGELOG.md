@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.9.0] — 2026-09-28
+
+### Added
+
+- **The menu bar is part of a profile.** Hide it on the laptop and keep it on the
+  external screen, or the other way round — the same switch that moves the Dock now
+  carries "Auto-hide the menu bar". It completes what macOS lets us reach: of the twelve
+  settings System Events exposes under `dock preferences`, eleven are now covered, and
+  the twelfth (double-click behaviour) cannot be read at all on current macOS — System
+  Events throws on the "Fill" value Apple added without adding it to the dictionary.
+- Menu bar changes made in System Settings are imported like every other setting. They
+  come from a different preferences domain than the Dock's, so they need a watcher of
+  their own; without it the app would have ignored the change and then undone it on the
+  next refresh.
+
+### Fixed
+
+- The source tree in the README called `DockProfileForm` "the eight profile controls"
+  when it has carried ten since 2.7.2 — the same two toggles that had left the
+  screenshot out of date. It now says one control per Dock setting, with no count to
+  fall behind the next one.
+
 ## [2.8.4] — 2026-09-26
 
 ### Fixed

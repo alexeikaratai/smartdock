@@ -139,6 +139,8 @@ public struct DiagnosticReport: Sendable {
         case .showsIndicators: config.showsIndicators ? "indicators" : "no indicators"
         case .minimizesToApplication:
             config.minimizesToApplication ? "minimize into app" : "minimize to Dock"
+        case .autohideMenuBar:
+            config.autohideMenuBar ? "menu bar auto-hides" : "menu bar always visible"
         }
     }
 }

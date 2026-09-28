@@ -140,6 +140,7 @@ struct UserPreferencesTests {
                 case .showsRecents: "showsRecents"
                 case .showsIndicators: "showsIndicators"
                 case .minimizesToApplication: "minimizesToApplication"
+                case .autohideMenuBar: "autohideMenuBar"
                 }
 
             #expect(property.rawValue == onDisk, "renaming this orphans keys already on disk")
@@ -503,7 +504,8 @@ struct UserPreferencesTests {
         animatesLaunch: false,
         showsRecents: false,
         showsIndicators: false,
-        minimizesToApplication: true)
+        minimizesToApplication: true,
+        autohideMenuBar: true)
 
     /// One property taken from `other`, the rest left at `base`.
     private static func flip(
@@ -521,6 +523,7 @@ struct UserPreferencesTests {
         case .showsIndicators: base.with(showsIndicators: other.showsIndicators)
         case .minimizesToApplication:
             base.with(minimizesToApplication: other.minimizesToApplication)
+        case .autohideMenuBar: base.with(autohideMenuBar: other.autohideMenuBar)
         }
     }
 }
