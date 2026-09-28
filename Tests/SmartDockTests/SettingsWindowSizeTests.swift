@@ -13,7 +13,8 @@ import Testing
 @MainActor
 struct SettingsWindowSizeTests {
 
-    @Test func theDockTabFitsTheDefaultWindowWithoutScrolling() throws {
+    /// A shown settings window on the Dock tab, sized as asked.
+    private func showDockTab(at size: NSSize) throws -> (SettingsWindow, NSWindow, NSScrollView) {
         _ = NSApplication.shared
         let scratch = ScratchPreferences()
         let monitor = MockDisplayMonitor()
@@ -23,23 +24,60 @@ struct SettingsWindowSizeTests {
         let settings = SettingsWindow(
             service: service, hotkeyManager: hotkeys, prefs: scratch.prefs,
             decideDraft: { _ in .discard })
-        defer { settings.window?.close() }
 
         settings.show(tab: .dock)
         let window = try #require(settings.window)
-        window.setContentSize(SettingsWindow.defaultContentSize)
+        window.setContentSize(size)
         window.layoutIfNeeded()
+        return (settings, window, try #require(settings.settingsScroll))
+    }
 
-        let scroll = try #require(settings.settingsScroll)
-        let content = try #require(scroll.documentView).fittingSize.height
-        let visible = scroll.contentView.bounds.height
+    /// The height outside the scroll view — header and tab control.
+    private func chromeHeight(_ window: NSWindow, _ scroll: NSScrollView) throws -> CGFloat {
+        let contentView = try #require(window.contentView)
+        return contentView.bounds.height - scroll.contentView.bounds.height
+    }
 
+    /// What the fit check rests on: the header and tab control are a fixed height, so a
+    /// window the server refused to make as large as asked still yields the same answer.
+    /// Without this the fit test measured the realised window and passed on a desktop
+    /// while failing on a CI runner, which clamped the content to 554pt.
+    @Test func theChromeHeightDoesNotDependOnTheWindowSize() throws {
+        let (big, bigWindow, bigScroll) = try showDockTab(at: SettingsWindow.defaultContentSize)
+        defer { big.window?.close() }
+        let (small, smallWindow, smallScroll) = try showDockTab(
+            at: NSSize(width: SettingsWindow.defaultContentSize.width, height: 500))
+        defer { small.window?.close() }
+
+        let atDefault = try chromeHeight(bigWindow, bigScroll)
+        let atSmall = try chromeHeight(smallWindow, smallScroll)
+
+        #expect(atDefault > 0)
         #expect(
-            content <= visible,
+            abs(atDefault - atSmall) < 1,
+            "header+tabs measure \(atDefault)pt in a full window and \(atSmall)pt in a squeezed one")
+    }
+
+    @Test func theDockTabFitsTheDefaultWindowWithoutScrolling() throws {
+        let (settings, window, scroll) = try showDockTab(at: SettingsWindow.defaultContentSize)
+        defer { settings.window?.close() }
+
+        let content = try #require(scroll.documentView).fittingSize.height
+
+        // Measured against the size the window *asks* for, not the one it got. A window
+        // server can refuse: on a CI runner the content came back 554pt tall however
+        // large the window was made, and comparing with the realised height failed there
+        // while passing on a desktop. What survives clamping is everything outside the
+        // scroll view, which `theChromeHeightDoesNotDependOnTheWindowSize` pins.
+        let outside = try chromeHeight(window, scroll)
+        let needed = content + outside
+        #expect(
+            needed <= SettingsWindow.defaultContentSize.height,
             """
-            The Dock tab needs \(Int(content.rounded()))pt but only \(Int(visible.rounded()))pt \
-            is visible, so it scrolls at the default size. Raise \
-            `SettingsWindow.defaultContentSize` by \(Int((content - visible).rounded()))pt.
+            The Dock tab needs \(Int(content.rounded()))pt and the header another \
+            \(Int(outside.rounded()))pt, so the window has to be \(Int(needed.rounded()))pt \
+            tall — it is \(Int(SettingsWindow.defaultContentSize.height))pt, so the tab \
+            scrolls at its default size. Raise `SettingsWindow.defaultContentSize`.
             """)
     }
 }
