@@ -41,6 +41,10 @@ public protocol DockControlling: AnyObject {
 /// entirely — System Events tells the Dock to update itself gracefully.
 public final class DockController: DockControlling {
 
+    /// The domain `autohide menu bar` is stored in, spelled the way `UserDefaults`
+    /// accepts it. `aRealGlobalDomainStoreCanBeOpened` pins that it still opens.
+    public static let globalPreferencesDomain = ".GlobalPreferences"
+
     public var onExternalConfigChanged: ((DockConfiguration) -> Void)?
 
     /// Last config we applied via AppleScript — used to distinguish our own
@@ -52,6 +56,9 @@ public final class DockController: DockControlling {
     public var onApplyVerified: ((DockApplyOutcome, DockConfiguration) -> Void)?
 
     private var prefsObserver: DockPrefsObserver?
+
+    /// The second domain's watcher — see `startObservingSystemChanges`.
+    private var globalPrefsObserver: DockPrefsObserver?
     private var pendingExternalCheck: DispatchWorkItem?
     private var pendingVerification: DispatchWorkItem?
 
@@ -72,12 +79,33 @@ public final class DockController: DockControlling {
     /// own Dock while the suite runs.
     private let suiteName: String
 
-    /// Opens the preferences store. A closure rather than a stored instance because
-    /// the production path must build a **fresh** `UserDefaults` on every read: the
-    /// Dock process writes these keys, and a cached instance serves stale values
-    /// back. Tests hand over one in-memory store, which has no daemon behind it and
-    /// so leaves nothing on disk.
-    private let openDefaults: () -> UserDefaults?
+    /// Preferences domain the menu bar setting lives in.
+    ///
+    /// `.GlobalPreferences`, **not** `UserDefaults.globalDomain`. That constant reads
+    /// `"NSGlobalDomain"`, which is what `defaults` takes on the command line but not a
+    /// suite name: `UserDefaults(suiteName: "NSGlobalDomain")` returns `nil`, and macOS
+    /// logs "Using NSGlobalDomain as an NSUserDefaults suite name does not make sense
+    /// and will not work". Measured — the first build read the menu bar through it, got
+    /// `nil`, and reported a hidden menu bar as visible.
+    private let globalSuiteName: String
+
+    /// Opens a preferences store by domain name.
+    ///
+    /// A closure rather than a stored instance because the production path must build a
+    /// **fresh** `UserDefaults` on every read: the Dock process writes these keys, and a
+    /// cached instance serves stale values back. Tests hand over in-memory stores, which
+    /// have no daemon behind them and so leave nothing on disk.
+    ///
+    /// One seam taking the domain rather than a closure per domain. Two closures meant a
+    /// fixture could supply the Dock's and forget the global one, and then quietly read
+    /// the *developer's* `NSGlobalDomain` — green on a machine whose menu bar is visible,
+    /// failing on one where it is hidden. Keyed this way, a fixture covers both by
+    /// construction.
+    private let openDomain: (String) -> UserDefaults?
+
+    private func openDefaults() -> UserDefaults? { openDomain(suiteName) }
+
+    private func openGlobalDefaults() -> UserDefaults? { openDomain(globalSuiteName) }
 
     /// Runs one script against System Events.
     ///
@@ -88,13 +116,15 @@ public final class DockController: DockControlling {
 
     public init(
         suiteName: String = "com.apple.dock",
-        openDefaults: (() -> UserDefaults?)? = nil,
+        globalSuiteName: String = DockController.globalPreferencesDomain,
+        openDomain: ((String) -> UserDefaults?)? = nil,
         verificationDelay: TimeInterval = 1.0,
         externalChangeDebounce: TimeInterval = 0.5,
         runScript: ((String) -> Bool)? = nil
     ) {
         self.suiteName = suiteName
-        self.openDefaults = openDefaults ?? { UserDefaults(suiteName: suiteName) }
+        self.globalSuiteName = globalSuiteName
+        self.openDomain = openDomain ?? { UserDefaults(suiteName: $0) }
         self.verificationDelay = verificationDelay
         self.externalChangeDebounce = externalChangeDebounce
         self.runScript = runScript ?? Self.executeAppleScript
@@ -130,6 +160,18 @@ public final class DockController: DockControlling {
             d.object(forKey: "minimize-to-application") != nil
             ? d.bool(forKey: "minimize-to-application") : false
 
+        // The one setting from the other domain. Absent means the menu bar stays put —
+        // measured: with `_HIHideMenuBar` deleted, System Events reports `false`.
+        //
+        // A domain that will not open is a different thing from an absent key, and
+        // silently answering `false` for it is how a hidden menu bar got reported as
+        // visible. It is said out loud now.
+        let globalStore = openGlobalDefaults()
+        if globalStore == nil {
+            Log.error("Cannot open \(globalSuiteName) — menu bar state is unknown")
+        }
+        let hidesMenuBar = globalStore?.bool(forKey: "_HIHideMenuBar") ?? false
+
         return DockConfiguration(
             autohide: d.bool(forKey: "autohide"),
             position: DockPosition(rawValue: orientationRaw) ?? .bottom,
@@ -140,7 +182,8 @@ public final class DockController: DockControlling {
             animatesLaunch: animates,
             showsRecents: recents,
             showsIndicators: indicators,
-            minimizesToApplication: minimizes
+            minimizesToApplication: minimizes,
+            autohideMenuBar: hidesMenuBar
         )
     }
 
@@ -228,6 +271,7 @@ public final class DockController: DockControlling {
         case .showsRecents: return applyShowRecents(config.showsRecents)
         case .showsIndicators: return applyShowIndicators(config.showsIndicators)
         case .minimizesToApplication: return applyMinimizeToApplication(config.minimizesToApplication)
+        case .autohideMenuBar: return applyAutohideMenuBar(config.autohideMenuBar)
         }
     }
 
@@ -238,12 +282,26 @@ public final class DockController: DockControlling {
 
         lastAppliedConfig = readSystemConfig()
 
-        let observer = DockPrefsObserver(defaults: openDefaults())
+        let observer = DockPrefsObserver(
+            defaults: openDefaults(), keys: DockPrefsObserver.dockKeys)
         observer.onChange = { [weak self] in
             self?.handleExternalChange()
         }
         observer.start()
         prefsObserver = observer
+
+        // The menu bar sits in another domain, so one observer cannot see it. Without
+        // this second one a person who hides the menu bar in System Settings would have
+        // the change ignored — and then pushed back to what the profile says on the next
+        // apply, undoing an edit they had just made.
+        let globalObserver = DockPrefsObserver(
+            defaults: openGlobalDefaults(), keys: DockPrefsObserver.globalKeys)
+        globalObserver.onChange = { [weak self] in
+            self?.handleExternalChange()
+        }
+        globalObserver.start()
+        globalPrefsObserver = globalObserver
+
         Log.info("Dock system preferences observer started")
     }
 
@@ -254,6 +312,8 @@ public final class DockController: DockControlling {
         pendingVerification = nil
         prefsObserver?.stop()
         prefsObserver = nil
+        globalPrefsObserver?.stop()
+        globalPrefsObserver = nil
     }
 
     /// Debounced handler for KVO callbacks. System Settings may change
@@ -337,6 +397,20 @@ public final class DockController: DockControlling {
             tell application "System Events"
                 tell dock preferences
                     set minimize into application to \(minimizes)
+                end tell
+            end tell
+            """)
+    }
+
+    /// Reached through `dock preferences` like the rest, even though the value lands in
+    /// `NSGlobalDomain` — System Events owns both sides, so this needs no `defaults
+    /// write` and no `killall`.
+    private func applyAutohideMenuBar(_ autohides: Bool) -> Bool {
+        runAppleScript(
+            """
+            tell application "System Events"
+                tell dock preferences
+                    set autohide menu bar to \(autohides)
                 end tell
             end tell
             """)
@@ -435,12 +509,20 @@ private final class DockPrefsObserver: NSObject {
 
     /// Accessed from deinit (nonisolated) — must be nonisolated(unsafe).
     private nonisolated(unsafe) var observedDefaults: UserDefaults?
-    private let watchedKeys = [
+
+    /// The Dock's own keys. Every setting but one lives here.
+    static let dockKeys = [
         "autohide", "orientation", "tilesize",
         "magnification", "largesize",
         "mineffect", "launchanim", "show-recents",
         "show-process-indicators", "minimize-to-application",
     ]
+
+    /// `NSGlobalDomain`'s share — just the menu bar, which is not the Dock's setting
+    /// even though System Events files it under `dock preferences`.
+    static let globalKeys = ["_HIHideMenuBar"]
+
+    private let watchedKeys: [String]
 
     /// Thread-safe flag — accessed from deinit (nonisolated) and @MainActor methods.
     private nonisolated(unsafe) var isObserving = false
@@ -448,8 +530,9 @@ private final class DockPrefsObserver: NSObject {
     /// The store to watch — supplied by the controller so both read the same one.
     private let defaults: UserDefaults?
 
-    init(defaults: UserDefaults?) {
+    init(defaults: UserDefaults?, keys: [String]) {
         self.defaults = defaults
+        self.watchedKeys = keys
     }
 
     func start() {

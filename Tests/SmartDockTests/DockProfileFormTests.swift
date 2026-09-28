@@ -25,7 +25,8 @@ struct DockProfileFormTests {
         animatesLaunch: false,
         showsRecents: false,
         showsIndicators: false,
-        minimizesToApplication: true)
+        minimizesToApplication: true,
+        autohideMenuBar: true)
 
     @Test func aConfigurationSurvivesTheRoundTrip() {
         let form = DockProfileForm()
@@ -84,6 +85,7 @@ struct DockProfileFormTests {
         case .showsRecents: base.with(showsRecents: other.showsRecents)
         case .showsIndicators: base.with(showsIndicators: other.showsIndicators)
         case .minimizesToApplication: base.with(minimizesToApplication: other.minimizesToApplication)
+        case .autohideMenuBar: base.with(autohideMenuBar: other.autohideMenuBar)
         }
     }
 }

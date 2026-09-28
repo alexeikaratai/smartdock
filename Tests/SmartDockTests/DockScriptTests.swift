@@ -28,7 +28,7 @@ struct DockScriptTests {
 
         let box = ScriptLog()
         let controller = DockController(
-            openDefaults: { store }, verificationDelay: 0.01,
+            openDomain: { _ in store }, verificationDelay: 0.01,
             runScript: { script in
                 box.record(script)
                 // Keep the domain alive for as long as the controller is.
@@ -119,7 +119,7 @@ struct DockScriptTests {
     @Test func aFailedScriptMakesApplyReportFailure() {
         let store = InMemoryDefaults()
         let controller = DockController(
-            openDefaults: { store }, verificationDelay: 0.01, runScript: { _ in false })
+            openDomain: { _ in store }, verificationDelay: 0.01, runScript: { _ in false })
 
         #expect(!controller.apply(DockConfiguration(autohide: true)))
     }
@@ -175,6 +175,17 @@ struct DockScriptTests {
 
         #expect(scripts().count == 1)
         #expect(scripts()[0].contains("set show indicators to false"), "\(scripts())")
+    }
+
+    /// Set through `dock preferences` like every other property, even though the value
+    /// lands in `NSGlobalDomain` — so it needs no `defaults write` and no `killall`.
+    @Test func menuBarScriptSetsAutohideMenuBar() {
+        let (scripts, controller) = makeRecorder()
+
+        controller.apply(DockConfiguration(autohideMenuBar: true))
+
+        #expect(scripts().count == 1)
+        #expect(scripts()[0].contains("set autohide menu bar to true"), "\(scripts())")
     }
 
     @Test func minimizeToApplicationScriptSetsMinimizeIntoApplication() {

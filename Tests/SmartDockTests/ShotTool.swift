@@ -14,6 +14,9 @@ import Testing
 ///       SHOT_VERSION=$(awk '/^VERSION/ {print $3; exit}' Makefile) \
 ///       swift test --filter renderTheSettingsWindow
 ///
+/// Run it **after** `make bump`, never before: the window header carries the version, so
+/// a picture taken first ships showing the previous one.
+///
 /// The point is that re-shooting costs one command. The picture it replaced was taken by
 /// hand at 1.8.1 and still showed a three-tab window five versions later, because nothing
 /// made it cheap to retake. It draws from a scratch store, so it shows made-up settings
@@ -53,7 +56,12 @@ struct ShotTool {
 
         settings.show(tab: .dock)
         let window = try #require(settings.window)
-        window.setContentSize(NSSize(width: 420, height: 720))
+        window.setContentSize(SettingsWindow.defaultContentSize)
+
+        // Pinned, or the picture follows whatever appearance the machine happens to be
+        // in when it is taken — the same shot came out dark one evening and light the
+        // next morning.
+        window.appearance = NSAppearance(named: .aqua)
 
         // The header reads `Bundle.main.shortVersion`, and in a test bundle that is the
         // runner's 1.0.0. Put the app's real version back before the picture is taken.

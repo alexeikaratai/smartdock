@@ -30,7 +30,7 @@ struct DockApplyVerificationTests {
 
         // A Dock that does what it is told.
         let controller = DockController(
-            openDefaults: { store }, verificationDelay: delay,
+            openDomain: { _ in store }, verificationDelay: delay,
             runScript: { _ in
                 store.set("left", forKey: "orientation")
                 return true
@@ -55,7 +55,7 @@ struct DockApplyVerificationTests {
         store.set("bottom", forKey: "orientation")
 
         // A Dock that reports success and changes nothing.
-        let controller = DockController(openDefaults: { store }, verificationDelay: delay, runScript: { _ in true })
+        let controller = DockController(openDomain: { _ in store }, verificationDelay: delay, runScript: { _ in true })
 
         controller.apply(DockConfiguration(position: .left))
         try await waitForVerification()
@@ -71,7 +71,7 @@ struct DockApplyVerificationTests {
         let store = InMemoryDefaults()
         store.set("bottom", forKey: "orientation")
 
-        let controller = DockController(openDefaults: { store }, verificationDelay: delay, runScript: { _ in true })
+        let controller = DockController(openDomain: { _ in store }, verificationDelay: delay, runScript: { _ in true })
 
         #expect(controller.apply(DockConfiguration(position: .left)))
 
@@ -88,7 +88,7 @@ struct DockApplyVerificationTests {
 
         var scriptCount = 0
         let controller = DockController(
-            openDefaults: { store }, verificationDelay: delay,
+            openDomain: { _ in store }, verificationDelay: delay,
             runScript: { _ in
                 scriptCount += 1
                 return true
@@ -111,7 +111,7 @@ struct DockApplyVerificationTests {
         store.set("bottom", forKey: "orientation")
 
         let controller = DockController(
-            openDefaults: { store }, verificationDelay: delay,
+            openDomain: { _ in store }, verificationDelay: delay,
             runScript: { _ in
                 store.set("right", forKey: "orientation")
                 return true

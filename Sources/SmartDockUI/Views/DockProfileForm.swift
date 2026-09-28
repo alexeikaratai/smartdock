@@ -31,6 +31,7 @@ final class DockProfileForm: NSView {
     private var recentsCheckbox: NSButton!
     private var indicatorsCheckbox: NSButton!
     private var minimizeToAppCheckbox: NSButton!
+    private var menuBarCheckbox: NSButton!
 
     // MARK: - Init
 
@@ -113,6 +114,10 @@ final class DockProfileForm: NSView {
             FieldBinding(
                 load: { self.minimizeToAppCheckbox.state = $0.minimizesToApplication ? .on : .off },
                 store: { $0.with(minimizesToApplication: self.minimizeToAppCheckbox.state == .on) })
+        case .autohideMenuBar:
+            FieldBinding(
+                load: { self.menuBarCheckbox.state = $0.autohideMenuBar ? .on : .off },
+                store: { $0.with(autohideMenuBar: self.menuBarCheckbox.state == .on) })
         }
     }
 
@@ -203,6 +208,13 @@ final class DockProfileForm: NSView {
             "Minimize windows into application icon", target: self, action: #selector(controlChanged))
         addSubview(minimizeToAppCheckbox)
 
+        // System Settings words it "Automatically hide and show the menu bar", but that
+        // is a four-way popup there (always, on desktop, in fullscreen, never) and this
+        // is the on/off that System Events exposes. Named for what the checkbox does.
+        menuBarCheckbox = UI.checkbox(
+            "Auto-hide the menu bar", target: self, action: #selector(controlChanged))
+        addSubview(menuBarCheckbox)
+
         // The host places this view 14pt inside its card, so every control sits on
         // the form's own edges; the vertical rhythm is the one the card always had.
         NSLayoutConstraint.activate([
@@ -261,7 +273,11 @@ final class DockProfileForm: NSView {
 
             minimizeToAppCheckbox.topAnchor.constraint(equalTo: indicatorsCheckbox.bottomAnchor, constant: 8),
             minimizeToAppCheckbox.leadingAnchor.constraint(equalTo: leadingAnchor),
-            minimizeToAppCheckbox.bottomAnchor.constraint(equalTo: bottomAnchor),
+
+            menuBarCheckbox.topAnchor.constraint(
+                equalTo: minimizeToAppCheckbox.bottomAnchor, constant: 8),
+            menuBarCheckbox.leadingAnchor.constraint(equalTo: leadingAnchor),
+            menuBarCheckbox.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
     }
 

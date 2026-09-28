@@ -39,13 +39,26 @@ struct DockSystemSyncTests {
     }
 
     private func makeSubject() -> (store: InMemoryDefaults, controller: DockController, log: ChangeLog) {
+        let subject = makeSubjectWithGlobal()
+        // The global store is dropped here, not discarded: the controller's own closure
+        // holds it, so the second observer still has a domain to watch.
+        return (subject.store, subject.controller, subject.log)
+    }
+
+    /// Both domains, for the tests that care which one a key lives in.
+    private func makeSubjectWithGlobal() -> (
+        store: InMemoryDefaults, global: InMemoryDefaults, controller: DockController,
+        log: ChangeLog
+    ) {
         let store = InMemoryDefaults()
+        let global = InMemoryDefaults()
         let log = ChangeLog()
         let controller = DockController(
-            openDefaults: { store }, verificationDelay: 0.01,
+            openDomain: { $0 == DockController.globalPreferencesDomain ? global : store },
+            verificationDelay: 0.01,
             externalChangeDebounce: debounce, runScript: { _ in true })
         controller.onExternalConfigChanged = { log.record($0) }
-        return (store, controller, log)
+        return (store, global, controller, log)
     }
 
     // MARK: - Observing
@@ -53,7 +66,7 @@ struct DockSystemSyncTests {
     /// A store that cannot be opened is observed by nobody — and stopping an
     /// observer that never started must not touch a `nil` domain either.
     @Test func anUnopenableStoreIsNeverObserved() {
-        let controller = DockController(openDefaults: { nil }, runScript: { _ in true })
+        let controller = DockController(openDomain: { _ in nil }, runScript: { _ in true })
 
         controller.startObservingSystemChanges()
         controller.stopObservingSystemChanges()
@@ -66,7 +79,7 @@ struct DockSystemSyncTests {
         let store = InMemoryDefaults()
         let log = ChangeLog()
         var controller: DockController? = DockController(
-            openDefaults: { store }, verificationDelay: 0.01,
+            openDomain: { _ in store }, verificationDelay: 0.01,
             externalChangeDebounce: debounce, runScript: { _ in true })
         controller?.onExternalConfigChanged = { log.record($0) }
         controller?.startObservingSystemChanges()
@@ -93,14 +106,15 @@ struct DockSystemSyncTests {
         #expect(log.configs.first?.position == .right)
     }
 
-    /// Every property has a key the observer must watch. A key missing from the
-    /// list would make System Settings edits to that property vanish silently — no
-    /// error, no log — which is exactly what happened to nothing only because the
-    /// list was extended by hand each time. The switch is exhaustive: a new property
-    /// does not compile here until it names its key.
+    /// Every property has a key the observer must watch, in the domain that holds it.
+    /// A key missing from the list would make System Settings edits to that property
+    /// vanish silently — no error, no log — and the next apply would then push the
+    /// profile's old value back, undoing an edit the person had just made. The switch
+    /// is exhaustive: a new property does not compile here until it names its key, and
+    /// it has to say which domain, since the menu bar is not in the Dock's.
     @Test(arguments: DockProperty.allCases)
     func anEditToEveryPropertyIsReported(property: DockProperty) async throws {
-        let (store, controller, log) = makeSubject()
+        let (store, global, controller, log) = makeSubjectWithGlobal()
         // The magnified size is invisible — and deliberately not compared — while
         // magnification is off, just as its slider is disabled in System Settings.
         store.set(true, forKey: "magnification")
@@ -108,20 +122,21 @@ struct DockSystemSyncTests {
 
         // Each value differs from what the domain reads as, so the change is not
         // filtered out as SmartDock's own echo.
-        let edit: (key: String, value: Any) =
+        let edit: (domain: InMemoryDefaults, key: String, value: Any) =
             switch property {
-            case .position: ("orientation", "left")
-            case .autohide: ("autohide", true)
-            case .iconSize: ("tilesize", 80)
-            case .magnification: ("magnification", false)
-            case .magnificationSize: ("largesize", 100)
-            case .minimizeEffect: ("mineffect", "scale")
-            case .animatesLaunch: ("launchanim", false)
-            case .showsRecents: ("show-recents", false)
-            case .showsIndicators: ("show-process-indicators", false)
-            case .minimizesToApplication: ("minimize-to-application", true)
+            case .position: (store, "orientation", "left")
+            case .autohide: (store, "autohide", true)
+            case .iconSize: (store, "tilesize", 80)
+            case .magnification: (store, "magnification", false)
+            case .magnificationSize: (store, "largesize", 100)
+            case .minimizeEffect: (store, "mineffect", "scale")
+            case .animatesLaunch: (store, "launchanim", false)
+            case .showsRecents: (store, "show-recents", false)
+            case .showsIndicators: (store, "show-process-indicators", false)
+            case .minimizesToApplication: (store, "minimize-to-application", true)
+            case .autohideMenuBar: (global, "_HIHideMenuBar", true)
             }
-        store.set(edit.value, forKey: edit.key)
+        edit.domain.set(edit.value, forKey: edit.key)
         try await waitForReport(in: log)
 
         #expect(log.configs.count == 1, "`\(edit.key)` is not observed")
