@@ -8,6 +8,12 @@ import Testing
 ///
 /// Every test gets its own scratch domain, never `com.apple.dock`: a test that
 /// wrote there would reconfigure the developer's actual Dock mid-suite.
+/// Collects the scripts a controller would have run.
+private final class ScriptLog {
+    private(set) var scripts: [String] = []
+    func record(_ script: String) { scripts.append(script) }
+}
+
 @Suite("Reading system config")
 @MainActor
 struct DockSystemConfigTests {
@@ -24,11 +30,47 @@ struct DockSystemConfigTests {
     private func makeSubjectWithGlobal() -> (
         store: InMemoryDefaults, global: InMemoryDefaults, controller: DockController
     ) {
+        let (store, global, _, controller) = makeSubjectWithBothMenuBarDomains()
+        return (store, global, controller)
+    }
+
+    /// All three stores. The menu bar spans two of them: the popup's value and the half
+    /// that does the hiding.
+    private func makeSubjectWithBothMenuBarDomains() -> (
+        store: InMemoryDefaults, global: InMemoryDefaults, centre: InMemoryDefaults,
+        controller: DockController
+    ) {
+        let (store, global, centre, controller, _) = makeSubjectRecordingScripts()
+        return (store, global, centre, controller)
+    }
+
+    /// All three stores plus the scripts the controller would have run.
+    ///
+    /// `runScript` is injected even where a test only reads: left at its default it is
+    /// the real System Events, so an `apply` here would reconfigure the machine running
+    /// the suite — which is exactly what it did until this fixture stopped it.
+    private func makeSubjectRecordingScripts() -> (
+        store: InMemoryDefaults, global: InMemoryDefaults, centre: InMemoryDefaults,
+        controller: DockController, scripts: () -> [String]
+    ) {
         let store = InMemoryDefaults()
         let global = InMemoryDefaults()
+        let centre = InMemoryDefaults()
+        let log = ScriptLog()
         let controller = DockController(
-            openDomain: { $0 == DockController.globalPreferencesDomain ? global : store })
-        return (store, global, controller)
+            openDomain: {
+                switch $0 {
+                case DockController.globalPreferencesDomain: global
+                case DockController.controlCentreDomain: centre
+                default: store
+                }
+            },
+            verificationDelay: 0.01,
+            runScript: { script in
+                log.record(script)
+                return true
+            })
+        return (store, global, centre, controller, { log.scripts })
     }
 
     // MARK: - Every Property
@@ -44,7 +86,7 @@ struct DockSystemConfigTests {
     /// while everything else is in the Dock's.
     @Test(arguments: DockProperty.allCases)
     func everyPropertyIsReadFromItsSystemKey(property: DockProperty) {
-        let (store, global, controller) = makeSubjectWithGlobal()
+        let (store, _, centre, controller) = makeSubjectWithBothMenuBarDomains()
         // The magnified size is deliberately not diffed while magnification is off,
         // exactly as its slider is disabled in System Settings.
         store.set(true, forKey: "magnification")
@@ -62,7 +104,7 @@ struct DockSystemConfigTests {
             case .showsRecents: (store, "show-recents", false)
             case .showsIndicators: (store, "show-process-indicators", false)
             case .minimizesToApplication: (store, "minimize-to-application", true)
-            case .autohideMenuBar: (global, "_HIHideMenuBar", true)
+            case .menuBarAutoHide: (centre, "AutoHideMenuBarOption", MenuBarAutoHide.always.optionValue)
             }
         edit.domain.set(edit.value, forKey: edit.key)
 
@@ -73,28 +115,79 @@ struct DockSystemConfigTests {
 
     // MARK: - The Other Domain
 
-    /// The menu bar is the one setting System Events files under `dock preferences`
-    /// that macOS does **not** keep in `com.apple.dock`. Reading it from the Dock's
-    /// domain would report "menu bar visible" for everyone who hides it, and the first
-    /// apply would then show a menu bar they had deliberately hidden.
-    @Test func theMenuBarIsReadFromTheGlobalDomainOnly() {
-        let (store, global, controller) = makeSubjectWithGlobal()
+    /// The popup's value is the setting; `_HIHideMenuBar` only does the hiding. Reading
+    /// the wrong one of them is how a Dock profile came to disagree with the System
+    /// Settings popup in both directions at once.
+    @Test func theMenuBarComesFromThePopupsOwnDomain() {
+        let (store, global, centre, controller) = makeSubjectWithBothMenuBarDomains()
 
-        // Planted in the wrong domain: must change nothing.
-        store.set(true, forKey: "_HIHideMenuBar")
-        #expect(!controller.readSystemConfig().autohideMenuBar, "read from the Dock's domain")
+        // Planted in the Dock's domain: must change nothing.
+        store.set(MenuBarAutoHide.always.optionValue, forKey: "AutoHideMenuBarOption")
+        #expect(controller.readSystemConfig().menuBarAutoHide == .inFullScreen)
 
+        centre.set(MenuBarAutoHide.never.optionValue, forKey: "AutoHideMenuBarOption")
+        #expect(controller.readSystemConfig().menuBarAutoHide == .never)
+
+        // The popup wins over the hiding half, which macOS lets drift out of step.
         global.set(true, forKey: "_HIHideMenuBar")
-        #expect(controller.readSystemConfig().autohideMenuBar)
+        #expect(controller.readSystemConfig().menuBarAutoHide == .never, "the popup decides")
     }
 
-    /// Measured with the key deleted: System Events reports `false`. An absent key has
-    /// to read the same way, or every apply would push a script for a setting nobody
-    /// changed.
-    @Test func anAbsentMenuBarKeyReadsAsVisible() {
-        let (_, _, controller) = makeSubjectWithGlobal()
+    /// An account that has never touched the setting has neither key. Measured on one:
+    /// the popup reads "In Full Screen Only".
+    @Test func anUntouchedAccountReadsAsInFullScreenOnly() {
+        let (_, _, _, controller) = makeSubjectWithBothMenuBarDomains()
 
-        #expect(!controller.readSystemConfig().autohideMenuBar)
+        #expect(controller.readSystemConfig().menuBarAutoHide == .inFullScreen)
+    }
+
+    /// Before the popup's value existed we only had the hiding half. A profile read on
+    /// a machine where something wrote that and nothing else still has to mean something.
+    @Test func withoutThePopupValueTheHidingHalfDecides() {
+        let (_, global, _, controller) = makeSubjectWithBothMenuBarDomains()
+
+        global.set(true, forKey: "_HIHideMenuBar")
+
+        #expect(controller.readSystemConfig().menuBarAutoHide == .always)
+    }
+
+    /// Applying has to move the popup's value too, or System Settings goes on showing
+    /// the position the person had before while the menu bar behaves differently.
+    @Test func applyingWritesThePopupsValue() {
+        let (_, _, centre, controller) = makeSubjectWithBothMenuBarDomains()
+
+        controller.apply(DockConfiguration(menuBarAutoHide: .onDesktop))
+
+        #expect(
+            centre.object(forKey: "AutoHideMenuBarOption") as? Int
+                == MenuBarAutoHide.onDesktop.optionValue)
+    }
+
+    /// Every position maps to a distinct stored value, in the order System Settings
+    /// lists them — the popup resolves a selection by index.
+    @Test func everyPositionHasItsOwnOptionValue() {
+        let values = MenuBarAutoHide.allCases.map(\.optionValue)
+
+        #expect(values == [0, 1, 2, 3])
+        #expect(Set(values).count == MenuBarAutoHide.allCases.count)
+        for option in MenuBarAutoHide.allCases {
+            #expect(MenuBarAutoHide(optionValue: option.optionValue) == option)
+        }
+    }
+
+    /// A menu bar left hidden by the other half produces no difference against a profile
+    /// that agrees with the popup — so without this it would stay hidden for good.
+    @Test func applyReconcilesHalvesThatHaveFallenOutOfStep() {
+        let (_, global, centre, controller, scripts) = makeSubjectRecordingScripts()
+        centre.set(MenuBarAutoHide.inFullScreen.optionValue, forKey: "AutoHideMenuBarOption")
+        global.set(true, forKey: "_HIHideMenuBar")  // hiding, though the popup says otherwise
+
+        // Asks for exactly what the popup already reports, so nothing differs.
+        controller.apply(DockConfiguration(menuBarAutoHide: .inFullScreen))
+
+        #expect(
+            scripts().contains { $0.contains("set autohide menu bar to false") },
+            "the hiding half was left contradicting the popup: \(scripts())")
     }
 
     // MARK: - Booleans

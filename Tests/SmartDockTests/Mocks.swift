@@ -104,7 +104,7 @@ final class MockDockController: DockControlling {
             case .showsIndicators: result.with(showsIndicators: previous.showsIndicators)
             case .minimizesToApplication:
                 result.with(minimizesToApplication: previous.minimizesToApplication)
-            case .autohideMenuBar: result.with(autohideMenuBar: previous.autohideMenuBar)
+            case .menuBarAutoHide: result.with(menuBarAutoHide: previous.menuBarAutoHide)
             }
         }
     }

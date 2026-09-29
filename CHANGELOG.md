@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.0] — 2026-09-29
+
+### Changed
+
+- **The menu bar setting is the same four positions macOS offers** — Always, On Desktop
+  Only, In Full Screen Only, Never — instead of the checkbox 2.9.0 shipped. The checkbox
+  could reach only two of the four and named neither of them correctly: switching it off
+  did not mean "the menu bar stays put", and System Settings went on showing a position
+  that contradicted what the menu bar was actually doing.
+- Picking a position now writes both halves macOS keeps this setting in. One of them
+  hides the menu bar and the other is what the System Settings popup displays, and macOS
+  never reconciles them — writing either alone is how the app and the system came to tell
+  different stories. Where they are already out of step, the next apply puts them back.
+- A menu bar value saved by 2.9.0 is discarded rather than guessed at: it was a yes/no
+  answer to a question with four answers, so the position is re-read from the system, the
+  way any setting a profile predates is.
+
 ## [2.9.0] — 2026-09-28
 
 ### Added

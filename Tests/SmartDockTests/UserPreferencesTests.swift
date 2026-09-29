@@ -140,7 +140,7 @@ struct UserPreferencesTests {
                 case .showsRecents: "showsRecents"
                 case .showsIndicators: "showsIndicators"
                 case .minimizesToApplication: "minimizesToApplication"
-                case .autohideMenuBar: "autohideMenuBar"
+                case .menuBarAutoHide: "menuBarAutoHide"
                 }
 
             #expect(property.rawValue == onDisk, "renaming this orphans keys already on disk")
@@ -482,6 +482,35 @@ struct UserPreferencesTests {
             DockConfiguration.pixelsToScale(96))
     }
 
+    /// 2.9.0 stored this as a checkbox — a Bool under the name the four-way setting now
+    /// uses. Reading it back as a position would be a guess at something the person was
+    /// never offered, so migration drops it and backfill reseeds from the live system.
+    @Test func migrationDropsTheBooleanMenuBarValueFrom290() {
+        let scratch = ScratchPreferences()
+        scratch.defaults.set(true, forKey: "com.smartdock.builtin.autohide")
+        scratch.defaults.set(true, forKey: "com.smartdock.builtin.autohideMenuBar")
+
+        scratch.prefs.migrateIfNeeded()
+
+        #expect(
+            scratch.defaults.object(forKey: "com.smartdock.builtin.autohideMenuBar") == nil,
+            "2.9.0's checkbox value is left behind in preferences")
+        #expect(scratch.defaults.object(forKey: "com.smartdock.builtin.menuBarAutoHide") == nil)
+
+        scratch.prefs.backfillMissingSettings(from: DockConfiguration(menuBarAutoHide: .onDesktop))
+        #expect(scratch.prefs.builtinConfig.menuBarAutoHide == .onDesktop, "seeded from the system")
+    }
+
+    /// A position someone did choose survives migration untouched.
+    @Test func migrationLeavesAChosenMenuBarPositionAlone() {
+        let scratch = ScratchPreferences()
+        scratch.prefs.builtinConfig = DockConfiguration(menuBarAutoHide: .never)
+
+        scratch.prefs.migrateIfNeeded()
+
+        #expect(scratch.prefs.builtinConfig.menuBarAutoHide == .never)
+    }
+
     @Test func migrationOnAnUntouchedInstallDoesNothing() {
         let scratch = ScratchPreferences()
 
@@ -505,7 +534,7 @@ struct UserPreferencesTests {
         showsRecents: false,
         showsIndicators: false,
         minimizesToApplication: true,
-        autohideMenuBar: true)
+        menuBarAutoHide: .always)
 
     /// One property taken from `other`, the rest left at `base`.
     private static func flip(
@@ -523,7 +552,7 @@ struct UserPreferencesTests {
         case .showsIndicators: base.with(showsIndicators: other.showsIndicators)
         case .minimizesToApplication:
             base.with(minimizesToApplication: other.minimizesToApplication)
-        case .autohideMenuBar: base.with(autohideMenuBar: other.autohideMenuBar)
+        case .menuBarAutoHide: base.with(menuBarAutoHide: other.menuBarAutoHide)
         }
     }
 }
