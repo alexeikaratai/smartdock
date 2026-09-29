@@ -41,9 +41,14 @@ public protocol DockControlling: AnyObject {
 /// entirely — System Events tells the Dock to update itself gracefully.
 public final class DockController: DockControlling {
 
-    /// The domain `autohide menu bar` is stored in, spelled the way `UserDefaults`
-    /// accepts it. `aRealGlobalDomainStoreCanBeOpened` pins that it still opens.
+    /// The domain that actually hides the menu bar (`_HIHideMenuBar`), spelled the way
+    /// `UserDefaults` accepts it. `theGlobalPreferencesDomainOpens` pins that it opens.
     public static let globalPreferencesDomain = ".GlobalPreferences"
+
+    /// The domain System Settings reads its menu bar popup from
+    /// (`AutoHideMenuBarOption`). A different store from the one above, and the two do
+    /// not track each other — measured: writing either left the other untouched.
+    public static let controlCentreDomain = "com.apple.controlcenter"
 
     public var onExternalConfigChanged: ((DockConfiguration) -> Void)?
 
@@ -59,6 +64,9 @@ public final class DockController: DockControlling {
 
     /// The second domain's watcher — see `startObservingSystemChanges`.
     private var globalPrefsObserver: DockPrefsObserver?
+
+    /// The third: Control Centre, where the menu bar popup keeps its value.
+    private var optionPrefsObserver: DockPrefsObserver?
     private var pendingExternalCheck: DispatchWorkItem?
     private var pendingVerification: DispatchWorkItem?
 
@@ -166,11 +174,22 @@ public final class DockController: DockControlling {
         // A domain that will not open is a different thing from an absent key, and
         // silently answering `false` for it is how a hidden menu bar got reported as
         // visible. It is said out loud now.
+        // The popup's own value is the setting; `_HIHideMenuBar` is only the half that
+        // does the hiding. Prefer the popup, fall back to the behaviour when it has
+        // never been written.
+        let optionStore = openDomain(Self.controlCentreDomain)
         let globalStore = openGlobalDefaults()
         if globalStore == nil {
             Log.error("Cannot open \(globalSuiteName) — menu bar state is unknown")
         }
-        let hidesMenuBar = globalStore?.bool(forKey: "_HIHideMenuBar") ?? false
+        let menuBar: MenuBarAutoHide =
+            if let raw = optionStore?.object(forKey: "AutoHideMenuBarOption") as? Int,
+                let option = MenuBarAutoHide(optionValue: raw)
+            {
+                option
+            } else {
+                globalStore?.bool(forKey: "_HIHideMenuBar") == true ? .always : .inFullScreen
+            }
 
         return DockConfiguration(
             autohide: d.bool(forKey: "autohide"),
@@ -183,7 +202,7 @@ public final class DockController: DockControlling {
             showsRecents: recents,
             showsIndicators: indicators,
             minimizesToApplication: minimizes,
-            autohideMenuBar: hidesMenuBar
+            menuBarAutoHide: menuBar
         )
     }
 
@@ -192,7 +211,16 @@ public final class DockController: DockControlling {
         // Read current system state and only apply properties that differ.
         // Each AppleScript poke can cause the Dock to briefly flash — skipping
         // unchanged properties avoids spurious dock appearances.
-        let changed = config.differences(from: readSystemConfig())
+        var changed = config.differences(from: readSystemConfig())
+
+        // The menu bar's two halves can fall out of step — macOS never reconciles them,
+        // and the popup's value is what `readSystemConfig` reports, so a menu bar left
+        // hidden by the other half produces no difference and would stay hidden forever.
+        // Pushing the position writes both, which is what puts them back together.
+        if !changed.contains(.menuBarAutoHide), menuBarHalvesDisagree() {
+            changed.append(.menuBarAutoHide)
+            Log.info("Menu bar halves out of step — reapplying the position")
+        }
 
         var allOk = true
         for property in changed {
@@ -271,7 +299,7 @@ public final class DockController: DockControlling {
         case .showsRecents: return applyShowRecents(config.showsRecents)
         case .showsIndicators: return applyShowIndicators(config.showsIndicators)
         case .minimizesToApplication: return applyMinimizeToApplication(config.minimizesToApplication)
-        case .autohideMenuBar: return applyAutohideMenuBar(config.autohideMenuBar)
+        case .menuBarAutoHide: return applyMenuBarAutoHide(config.menuBarAutoHide)
         }
     }
 
@@ -302,6 +330,16 @@ public final class DockController: DockControlling {
         globalObserver.start()
         globalPrefsObserver = globalObserver
 
+        // And the third: the popup's own value. Someone picking a position in System
+        // Settings writes here, and only here — the hiding half may not move at all.
+        let optionObserver = DockPrefsObserver(
+            defaults: openDomain(Self.controlCentreDomain), keys: DockPrefsObserver.controlCentreKeys)
+        optionObserver.onChange = { [weak self] in
+            self?.handleExternalChange()
+        }
+        optionObserver.start()
+        optionPrefsObserver = optionObserver
+
         Log.info("Dock system preferences observer started")
     }
 
@@ -314,6 +352,8 @@ public final class DockController: DockControlling {
         prefsObserver = nil
         globalPrefsObserver?.stop()
         globalPrefsObserver = nil
+        optionPrefsObserver?.stop()
+        optionPrefsObserver = nil
     }
 
     /// Debounced handler for KVO callbacks. System Settings may change
@@ -402,15 +442,31 @@ public final class DockController: DockControlling {
             """)
     }
 
-    /// Reached through `dock preferences` like the rest, even though the value lands in
-    /// `NSGlobalDomain` — System Events owns both sides, so this needs no `defaults
-    /// write` and no `killall`.
-    private func applyAutohideMenuBar(_ autohides: Bool) -> Bool {
-        runAppleScript(
+    /// Whether the displayed position and the half that does the hiding contradict
+    /// each other. Nothing but an apply puts them back in step.
+    private func menuBarHalvesDisagree() -> Bool {
+        guard let hides = openGlobalDefaults()?.bool(forKey: "_HIHideMenuBar") else {
+            return false
+        }
+        return hides != readSystemConfig().menuBarAutoHide.hidesOnDesktop
+    }
+
+    /// Writes both halves, because neither alone is the setting.
+    ///
+    /// System Events moves `_HIHideMenuBar`, which is what actually hides the menu bar
+    /// but leaves the System Settings popup reading whatever it read before. The popup
+    /// takes its value from `AutoHideMenuBarOption`, which changes the display and hides
+    /// nothing. Writing one and not the other is how the app and the system came to
+    /// disagree — measured both ways round.
+    private func applyMenuBarAutoHide(_ option: MenuBarAutoHide) -> Bool {
+        openDomain(Self.controlCentreDomain)?
+            .set(option.optionValue, forKey: "AutoHideMenuBarOption")
+
+        return runAppleScript(
             """
             tell application "System Events"
                 tell dock preferences
-                    set autohide menu bar to \(autohides)
+                    set autohide menu bar to \(option.hidesOnDesktop)
                 end tell
             end tell
             """)
@@ -521,6 +577,9 @@ private final class DockPrefsObserver: NSObject {
     /// `NSGlobalDomain`'s share — just the menu bar, which is not the Dock's setting
     /// even though System Events files it under `dock preferences`.
     static let globalKeys = ["_HIHideMenuBar"]
+
+    /// Control Centre's share — the half System Settings shows.
+    static let controlCentreKeys = ["AutoHideMenuBarOption"]
 
     private let watchedKeys: [String]
 

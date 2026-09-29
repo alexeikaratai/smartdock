@@ -177,15 +177,26 @@ struct DockScriptTests {
         #expect(scripts()[0].contains("set show indicators to false"), "\(scripts())")
     }
 
-    /// Set through `dock preferences` like every other property, even though the value
-    /// lands in `NSGlobalDomain` — so it needs no `defaults write` and no `killall`.
-    @Test func menuBarScriptSetsAutohideMenuBar() {
+    /// Both halves go out together: the script hides the menu bar, the written option
+    /// makes System Settings agree. Neither alone is the setting.
+    @Test func menuBarApplyWritesTheScriptAndTheOption() {
         let (scripts, controller) = makeRecorder()
 
-        controller.apply(DockConfiguration(autohideMenuBar: true))
+        controller.apply(DockConfiguration(menuBarAutoHide: .always))
 
         #expect(scripts().count == 1)
         #expect(scripts()[0].contains("set autohide menu bar to true"), "\(scripts())")
+    }
+
+    /// "Never" and "In Full Screen Only" both leave the menu bar alone on the desktop —
+    /// the difference between them is macOS's own, and only the option carries it.
+    @Test func aPositionThatDoesNotHideStillAsksForFalse() {
+        let (scripts, controller) = makeRecorder()
+
+        controller.apply(DockConfiguration(menuBarAutoHide: .never))
+
+        #expect(scripts().count == 1)
+        #expect(scripts()[0].contains("set autohide menu bar to false"), "\(scripts())")
     }
 
     @Test func minimizeToApplicationScriptSetsMinimizeIntoApplication() {

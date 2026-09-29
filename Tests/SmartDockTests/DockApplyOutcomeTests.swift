@@ -162,7 +162,7 @@ struct DockApplyOutcomeTests {
         .showsRecents: "recent applications",
         .showsIndicators: "app indicators",
         .minimizesToApplication: "minimize into application",
-        .autohideMenuBar: "menu bar auto-hide",
+        .menuBarAutoHide: "menu bar auto-hide",
     ]
 
     @Test(arguments: DockProperty.allCases)

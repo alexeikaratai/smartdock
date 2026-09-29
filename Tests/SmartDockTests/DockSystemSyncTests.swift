@@ -52,12 +52,20 @@ struct DockSystemSyncTests {
     ) {
         let store = InMemoryDefaults()
         let global = InMemoryDefaults()
+        let centre = InMemoryDefaults()
         let log = ChangeLog()
         let controller = DockController(
-            openDomain: { $0 == DockController.globalPreferencesDomain ? global : store },
+            openDomain: {
+                switch $0 {
+                case DockController.globalPreferencesDomain: global
+                case DockController.controlCentreDomain: centre
+                default: store
+                }
+            },
             verificationDelay: 0.01,
             externalChangeDebounce: debounce, runScript: { _ in true })
         controller.onExternalConfigChanged = { log.record($0) }
+        // `centre` is held by the closure, so the option observer still has a domain.
         return (store, global, controller, log)
     }
 
@@ -134,7 +142,7 @@ struct DockSystemSyncTests {
             case .showsRecents: (store, "show-recents", false)
             case .showsIndicators: (store, "show-process-indicators", false)
             case .minimizesToApplication: (store, "minimize-to-application", true)
-            case .autohideMenuBar: (global, "_HIHideMenuBar", true)
+            case .menuBarAutoHide: (global, "_HIHideMenuBar", true)
             }
         edit.domain.set(edit.value, forKey: edit.key)
         try await waitForReport(in: log)

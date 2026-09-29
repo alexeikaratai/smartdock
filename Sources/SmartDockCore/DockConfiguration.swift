@@ -37,6 +37,62 @@ public enum MinimizeEffect: String, CaseIterable, Sendable {
     }
 }
 
+// MARK: - Menu Bar Auto-Hide
+
+/// The four positions macOS offers for "Automatically hide and show the menu bar",
+/// in the order System Settings lists them.
+///
+/// Two stores back this, and they disagree by design — measured, not assumed:
+/// `AutoHideMenuBarOption` in `com.apple.controlcenter` is what the System Settings
+/// popup *displays*, while `_HIHideMenuBar` in the global domain is what actually
+/// hides the menu bar. Writing one leaves the other alone: setting the option to
+/// "Always" moved the popup and hid nothing, and hiding through System Events left
+/// the popup reading "In Full Screen Only". Applying a position therefore writes
+/// both, or the app and the system tell the person different stories.
+public enum MenuBarAutoHide: String, CaseIterable, Sendable {
+    case always
+    case onDesktop
+    case inFullScreen
+    case never
+
+    /// How System Settings words it.
+    public var displayName: String {
+        switch self {
+        case .always: return "Always"
+        case .onDesktop: return "On Desktop Only"
+        case .inFullScreen: return "In Full Screen Only"
+        case .never: return "Never"
+        }
+    }
+
+    /// The value `AutoHideMenuBarOption` carries — the popup's own index.
+    public var optionValue: Int {
+        switch self {
+        case .always: return 0
+        case .onDesktop: return 1
+        case .inFullScreen: return 2
+        case .never: return 3
+        }
+    }
+
+    /// Whether the menu bar hides while an ordinary window is in front, which is the
+    /// half `_HIHideMenuBar` controls. The full-screen half is macOS's own business:
+    /// nothing we can write moves it.
+    public var hidesOnDesktop: Bool {
+        switch self {
+        case .always, .onDesktop: return true
+        case .inFullScreen, .never: return false
+        }
+    }
+
+    public init?(optionValue: Int) {
+        guard let match = Self.allCases.first(where: { $0.optionValue == optionValue }) else {
+            return nil
+        }
+        self = match
+    }
+}
+
 // MARK: - Dock Configuration
 
 /// Full set of Dock preferences for a given mode (external / built-in).
@@ -65,12 +121,11 @@ public struct DockConfiguration: Equatable, Sendable {
     /// System Events, `minimize-to-application` in `com.apple.dock`. Off by default;
     /// an absent key means `false`.
     public let minimizesToApplication: Bool
-    /// "Automatically hide and show the menu bar" — `autohide menu bar` in System
-    /// Events. The only setting here that does **not** live in `com.apple.dock`: it is
-    /// `_HIHideMenuBar` in `NSGlobalDomain`, which is why the controller opens a second
-    /// defaults domain and watches it separately. Off by default; an absent key means
-    /// `false` (measured: with the key deleted, System Events reports `false`).
-    public let autohideMenuBar: Bool
+    /// "Automatically hide and show the menu bar" — the four-position popup, not a
+    /// checkbox. Neither of the two keys behind it lives in `com.apple.dock`, which is
+    /// why the controller opens two further domains and watches them. `inFullScreen` is
+    /// the default: measured on an account that had never touched the setting.
+    public let menuBarAutoHide: MenuBarAutoHide
 
     public init(
         autohide: Bool = false,
@@ -83,7 +138,7 @@ public struct DockConfiguration: Equatable, Sendable {
         showsRecents: Bool = true,
         showsIndicators: Bool = true,
         minimizesToApplication: Bool = false,
-        autohideMenuBar: Bool = false
+        menuBarAutoHide: MenuBarAutoHide = .inFullScreen
     ) {
         self.autohide = autohide
         self.position = position
@@ -95,7 +150,7 @@ public struct DockConfiguration: Equatable, Sendable {
         self.showsRecents = showsRecents
         self.showsIndicators = showsIndicators
         self.minimizesToApplication = minimizesToApplication
-        self.autohideMenuBar = autohideMenuBar
+        self.menuBarAutoHide = menuBarAutoHide
     }
 
     /// A copy with some properties replaced and the rest carried over.
@@ -117,7 +172,7 @@ public struct DockConfiguration: Equatable, Sendable {
         showsRecents: Bool? = nil,
         showsIndicators: Bool? = nil,
         minimizesToApplication: Bool? = nil,
-        autohideMenuBar: Bool? = nil
+        menuBarAutoHide: MenuBarAutoHide? = nil
     ) -> DockConfiguration {
         DockConfiguration(
             autohide: autohide ?? self.autohide,
@@ -130,7 +185,7 @@ public struct DockConfiguration: Equatable, Sendable {
             showsRecents: showsRecents ?? self.showsRecents,
             showsIndicators: showsIndicators ?? self.showsIndicators,
             minimizesToApplication: minimizesToApplication ?? self.minimizesToApplication,
-            autohideMenuBar: autohideMenuBar ?? self.autohideMenuBar
+            menuBarAutoHide: menuBarAutoHide ?? self.menuBarAutoHide
         )
     }
 
@@ -166,7 +221,7 @@ public struct DockConfiguration: Equatable, Sendable {
             showsRecents == other.showsRecents,
             showsIndicators == other.showsIndicators,
             minimizesToApplication == other.minimizesToApplication,
-            autohideMenuBar == other.autohideMenuBar,
+            menuBarAutoHide == other.menuBarAutoHide,
             abs(iconSize - other.iconSize) <= Self.sizeTolerance
         else { return false }
 
@@ -197,7 +252,7 @@ public enum DockProperty: String, CaseIterable, Sendable {
     case showsRecents
     case showsIndicators
     case minimizesToApplication
-    case autohideMenuBar
+    case menuBarAutoHide
 
     /// How to name this setting to a person. The raw values are camelCase keys
     /// meant for logs and diagnostics; `iconSize` in a menu would read as a typo.
@@ -213,7 +268,7 @@ public enum DockProperty: String, CaseIterable, Sendable {
         case .showsRecents: return "recent applications"
         case .showsIndicators: return "app indicators"
         case .minimizesToApplication: return "minimize into application"
-        case .autohideMenuBar: return "menu bar auto-hide"
+        case .menuBarAutoHide: return "menu bar auto-hide"
         }
     }
 }
@@ -253,7 +308,7 @@ public extension DockConfiguration {
         if minimizesToApplication != current.minimizesToApplication {
             changed.append(.minimizesToApplication)
         }
-        if autohideMenuBar != current.autohideMenuBar { changed.append(.autohideMenuBar) }
+        if menuBarAutoHide != current.menuBarAutoHide { changed.append(.menuBarAutoHide) }
 
         return changed
     }
@@ -271,7 +326,7 @@ public extension DockConfiguration {
         case .showsRecents: return "showsRecents=\(showsRecents)"
         case .showsIndicators: return "showsIndicators=\(showsIndicators)"
         case .minimizesToApplication: return "minimizesToApplication=\(minimizesToApplication)"
-        case .autohideMenuBar: return "autohideMenuBar=\(autohideMenuBar)"
+        case .menuBarAutoHide: return "menuBarAutoHide=\(menuBarAutoHide.rawValue)"
         }
     }
 }
@@ -538,6 +593,14 @@ public final class UserPreferences {
             }
             defaults.set(DockConfiguration.pixelsToScale(Int(pixels)), forKey: storage)
         }
+
+        // 2.9.0 stored the menu bar as a checkbox, under `autohideMenuBar`. The setting
+        // it stood for turned out to be four-way, so the property was renamed and that
+        // key is no longer read by anything — remove it rather than leave a value in
+        // someone's preferences that nothing will ever look at again. Its replacement is
+        // absent afterwards, so `backfillMissingSettings` seeds it from the live system,
+        // which is the right source for a position the person was never offered.
+        defaults.removeObject(forKey: "\(prefix).\(key).autohideMenuBar")
     }
 
     // MARK: - Persistence
@@ -576,7 +639,7 @@ public final class UserPreferences {
         case .showsIndicators: defaults.set(config.showsIndicators, forKey: storage)
         case .minimizesToApplication:
             defaults.set(config.minimizesToApplication, forKey: storage)
-        case .autohideMenuBar: defaults.set(config.autohideMenuBar, forKey: storage)
+        case .menuBarAutoHide: defaults.set(config.menuBarAutoHide.rawValue, forKey: storage)
         }
     }
 
@@ -620,8 +683,9 @@ public final class UserPreferences {
             return config.with(showsIndicators: defaults.bool(forKey: storage))
         case .minimizesToApplication:
             return config.with(minimizesToApplication: defaults.bool(forKey: storage))
-        case .autohideMenuBar:
-            return config.with(autohideMenuBar: defaults.bool(forKey: storage))
+        case .menuBarAutoHide:
+            return config.with(
+                menuBarAutoHide: MenuBarAutoHide(rawValue: defaults.string(forKey: storage) ?? ""))
         }
     }
 

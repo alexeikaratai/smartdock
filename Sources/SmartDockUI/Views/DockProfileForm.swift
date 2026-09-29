@@ -31,7 +31,8 @@ final class DockProfileForm: NSView {
     private var recentsCheckbox: NSButton!
     private var indicatorsCheckbox: NSButton!
     private var minimizeToAppCheckbox: NSButton!
-    private var menuBarCheckbox: NSButton!
+    private var menuBarTitle: NSTextField!
+    private var menuBarPopup: NSPopUpButton!
 
     // MARK: - Init
 
@@ -114,10 +115,10 @@ final class DockProfileForm: NSView {
             FieldBinding(
                 load: { self.minimizeToAppCheckbox.state = $0.minimizesToApplication ? .on : .off },
                 store: { $0.with(minimizesToApplication: self.minimizeToAppCheckbox.state == .on) })
-        case .autohideMenuBar:
+        case .menuBarAutoHide:
             FieldBinding(
-                load: { self.menuBarCheckbox.state = $0.autohideMenuBar ? .on : .off },
-                store: { $0.with(autohideMenuBar: self.menuBarCheckbox.state == .on) })
+                load: { self.menuBarPopup.selectItem(withTitle: $0.menuBarAutoHide.displayName) },
+                store: { $0.with(menuBarAutoHide: self.selectedMenuBarAutoHide) })
         }
     }
 
@@ -128,6 +129,14 @@ final class DockProfileForm: NSView {
         let index = minimizeEffectPopup.indexOfSelectedItem
         guard MinimizeEffect.allCases.indices.contains(index) else { return .genie }
         return MinimizeEffect.allCases[index]
+    }
+
+    /// Resolved by index for the same reason as the minimize effect: the list comes
+    /// from `allCases`, so a reworded name must not change what a selection means.
+    private var selectedMenuBarAutoHide: MenuBarAutoHide {
+        let index = menuBarPopup.indexOfSelectedItem
+        guard MenuBarAutoHide.allCases.indices.contains(index) else { return .inFullScreen }
+        return MenuBarAutoHide.allCases[index]
     }
 
     /// State that follows other controls rather than a field of its own: the
@@ -208,12 +217,18 @@ final class DockProfileForm: NSView {
             "Minimize windows into application icon", target: self, action: #selector(controlChanged))
         addSubview(minimizeToAppCheckbox)
 
-        // System Settings words it "Automatically hide and show the menu bar", but that
-        // is a four-way popup there (always, on desktop, in fullscreen, never) and this
-        // is the on/off that System Events exposes. Named for what the checkbox does.
-        menuBarCheckbox = UI.checkbox(
-            "Auto-hide the menu bar", target: self, action: #selector(controlChanged))
-        addSubview(menuBarCheckbox)
+        // The same four positions System Settings offers, in its order — the enum is
+        // the source of the list. It was a checkbox first, which could only reach two
+        // of the four and read back the wrong one of them.
+        menuBarTitle = UI.label("Menu Bar", font: .systemFont(ofSize: 13, weight: .medium))
+        addSubview(menuBarTitle)
+
+        menuBarPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+        menuBarPopup.translatesAutoresizingMaskIntoConstraints = false
+        menuBarPopup.addItems(withTitles: MenuBarAutoHide.allCases.map(\.displayName))
+        menuBarPopup.target = self
+        menuBarPopup.action = #selector(controlChanged)
+        addSubview(menuBarPopup)
 
         // The host places this view 14pt inside its card, so every control sits on
         // the form's own edges; the vertical rhythm is the one the card always had.
@@ -274,10 +289,15 @@ final class DockProfileForm: NSView {
             minimizeToAppCheckbox.topAnchor.constraint(equalTo: indicatorsCheckbox.bottomAnchor, constant: 8),
             minimizeToAppCheckbox.leadingAnchor.constraint(equalTo: leadingAnchor),
 
-            menuBarCheckbox.topAnchor.constraint(
-                equalTo: minimizeToAppCheckbox.bottomAnchor, constant: 8),
-            menuBarCheckbox.leadingAnchor.constraint(equalTo: leadingAnchor),
-            menuBarCheckbox.bottomAnchor.constraint(equalTo: bottomAnchor),
+            menuBarTitle.topAnchor.constraint(
+                equalTo: minimizeToAppCheckbox.bottomAnchor, constant: 16),
+            menuBarTitle.leadingAnchor.constraint(equalTo: leadingAnchor),
+            menuBarTitle.bottomAnchor.constraint(equalTo: bottomAnchor),
+
+            menuBarPopup.centerYAnchor.constraint(equalTo: menuBarTitle.centerYAnchor),
+            menuBarPopup.trailingAnchor.constraint(equalTo: trailingAnchor),
+            menuBarPopup.leadingAnchor.constraint(
+                greaterThanOrEqualTo: menuBarTitle.trailingAnchor, constant: 12),
         ])
     }
 
