@@ -43,12 +43,12 @@ struct StatusBarControllerTests {
     @Test func theStatusLineNamesTheProfileInForce() {
         let f = Fixture(externalCount: 1)
 
-        #expect(f.menu.statusMenuItem.title == "Status: External monitor connected")
+        #expect(f.menu.statusMenuItem.wording == "Status: External monitor connected")
 
         f.service.applyProfile(.builtin)
         f.menu.menuNeedsUpdate(NSMenu())
 
-        #expect(f.menu.statusMenuItem.title == "Status: Built-in profile · external monitor connected")
+        #expect(f.menu.statusMenuItem.wording == "Status: Built-in profile · external monitor connected")
     }
 
     @Test func theCheckmarkSitsOnTheProfileInForce() {
@@ -73,17 +73,17 @@ struct StatusBarControllerTests {
     /// Names what the click will *do*, not what the state is.
     @Test func theVisibilityItemNamesTheAction() {
         let external = Fixture(externalCount: 1)  // visible
-        #expect(external.menu.dockVisibilityMenuItem.title == "Hide Dock")
+        #expect(external.menu.dockVisibilityMenuItem.wording == "Hide Dock")
 
         let builtin = Fixture(externalCount: 0)  // hidden
-        #expect(builtin.menu.dockVisibilityMenuItem.title == "Show Dock")
+        #expect(builtin.menu.dockVisibilityMenuItem.wording == "Show Dock")
     }
 
     @Test func aDisabledServiceGreysEverythingThatMovesTheDock() {
         let f = Fixture(started: false)
 
-        #expect(f.menu.statusMenuItem.title == "Status: Disabled")
-        #expect(f.menu.toggleMenuItem.title == "Enable")
+        #expect(f.menu.statusMenuItem.wording == "Status: Disabled")
+        #expect(f.menu.toggleMenuItem.wording == "Enable")
         #expect(!f.menu.refreshMenuItem.isEnabled)
         #expect(!f.menu.dockVisibilityMenuItem.isEnabled)
         #expect(!f.menu.positionMenuItem.isEnabled)
@@ -101,7 +101,7 @@ struct StatusBarControllerTests {
         f.menu.menuNeedsUpdate(NSMenu())
 
         #expect(!f.menu.refusalMenuItem.isHidden)
-        #expect(f.menu.refusalMenuItem.title.contains("auto-hide"))
+        #expect(f.menu.refusalMenuItem.wording.contains("auto-hide"))
     }
 
     /// After a refusal the item names what the *profile* asks for, so pressing it
@@ -110,13 +110,13 @@ struct StatusBarControllerTests {
     @Test func theVisibilityItemFollowsTheProfileEvenWhenTheDockRefuses() {
         let f = Fixture(externalCount: 1)
         f.dock.mockRejectedProperties = [.autohide]
-        #expect(f.menu.dockVisibilityMenuItem.title == "Hide Dock")
+        #expect(f.menu.dockVisibilityMenuItem.wording == "Hide Dock")
 
         f.click(f.menu.dockVisibilityMenuItem)
 
         #expect(f.scratch.prefs.externalConfig.autohide, "the profile asks to hide")
         #expect(!f.service.currentConfig.autohide, "the Dock did not")
-        #expect(f.menu.dockVisibilityMenuItem.title == "Show Dock", "the item offers the way back")
+        #expect(f.menu.dockVisibilityMenuItem.wording == "Show Dock", "the item offers the way back")
         #expect(!f.menu.refusalMenuItem.isHidden, "and says why the Dock has not moved")
     }
 
@@ -134,6 +134,43 @@ struct StatusBarControllerTests {
         #expect(f.menu.positionMenuItems[.bottom]?.state == .off)
     }
 
+    /// Every item that had an icon still carries one, and carries it where macOS 26
+    /// will actually draw it: inside the attributed title, not in `NSMenuItem.image`,
+    /// which that release ignores in a status menu. Nothing failed when the icons
+    /// vanished — the images were still being set, just never rendered.
+    @Test func everyIconBearingItemCarriesItsIconInTheTitle() throws {
+        let f = Fixture(externalCount: 1)
+        var items: [NSMenuItem] = [
+            f.menu.toggleMenuItem, f.menu.refreshMenuItem, f.menu.positionMenuItem,
+            f.menu.dockVisibilityMenuItem,
+        ]
+        items.append(contentsOf: f.menu.profileMenuItems.values)
+
+        for item in items {
+            let attributed = try #require(item.attributedTitle, "\(item.wording) has no icon")
+            #expect(
+                attributed.string.contains("\u{FFFC}"),
+                "\(item.wording) carries no image attachment")
+            #expect(!item.wording.isEmpty, "\(item.wording) lost its words")
+        }
+    }
+
+    /// The icon survives a change of wording. It lives in the title, so a plain
+    /// `title =` anywhere would drop it — and the item would keep the old words too.
+    @Test func theIconSurvivesTheTitleChanging() {
+        let f = Fixture(externalCount: 1)
+        #expect(f.menu.toggleMenuItem.wording == "Disable")
+
+        f.click(f.menu.toggleMenuItem)
+
+        // Read from what the menu draws, not from `title`: assigning `title` alone
+        // leaves the attributed string — icon *and* old words — on screen untouched.
+        #expect(f.menu.toggleMenuItem.wording == "Enable", "the words follow the state")
+        #expect(
+            f.menu.toggleMenuItem.attributedTitle?.string.contains("\u{FFFC}") == true,
+            "the icon was dropped when the wording changed")
+    }
+
     // MARK: - What the Items Do
 
     @Test func theToggleItemStopsAndStartsTheService() {
@@ -142,11 +179,11 @@ struct StatusBarControllerTests {
 
         f.click(f.menu.toggleMenuItem)
         #expect(!f.service.isEnabled)
-        #expect(f.menu.toggleMenuItem.title == "Enable")
+        #expect(f.menu.toggleMenuItem.wording == "Enable")
 
         f.click(f.menu.toggleMenuItem)
         #expect(f.service.isEnabled)
-        #expect(f.menu.toggleMenuItem.title == "Disable")
+        #expect(f.menu.toggleMenuItem.wording == "Disable")
     }
 
     @Test func refreshGoesThroughTheHotkeyPath() {
@@ -185,7 +222,7 @@ struct StatusBarControllerTests {
 
         #expect(f.dock.lastAppliedConfig?.autohide == true)
         #expect(f.scratch.prefs.externalConfig.autohide, "written to the external profile, which is in force")
-        #expect(f.menu.dockVisibilityMenuItem.title == "Show Dock")
+        #expect(f.menu.dockVisibilityMenuItem.wording == "Show Dock")
     }
 
     // MARK: - Icon & Windows
