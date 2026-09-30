@@ -171,6 +171,57 @@ struct StatusBarControllerTests {
             "the icon was dropped when the wording changed")
     }
 
+    /// The settings item must stay bare: macOS draws a gear on it by itself, and ours
+    /// made two. Found by eye, so it is pinned here — nothing else would catch it.
+    @Test func theSettingsItemCarriesNoIconOfOurs() throws {
+        let f = Fixture(externalCount: 1)
+        let menu = try #require(f.menu.statusItem.menu)
+        let settings = try #require(
+            menu.items.first { $0.wording.hasPrefix("Settings") }, "no settings item")
+
+        #expect(
+            settings.attributedTitle == nil,
+            "macOS draws its own gear here; anything of ours makes two icons or shifts the words")
+        #expect(settings.wording == "Settings…")
+    }
+
+    /// Icons keep their own proportions. They were drawn into one fixed box at first,
+    /// which lined them up and squashed the wide ones — a laptop and a rectangle came
+    /// out visibly stretched. Widths differ now because each follows its symbol; the
+    /// column is held by a tab stop instead.
+    @Test func iconsAreNotSquashedIntoAUniformBox() throws {
+        let f = Fixture(externalCount: 1)
+        var widths: Set<CGFloat> = []
+
+        let items: [NSMenuItem] = [
+            f.menu.toggleMenuItem, f.menu.positionMenuItem, f.menu.dockVisibilityMenuItem,
+        ]
+        for item in items {
+            let attributed = try #require(item.attributedTitle)
+            let attachment = try #require(
+                attributed.attribute(.attachment, at: 0, effectiveRange: nil) as? NSTextAttachment,
+                "\(item.wording) has no icon")
+            #expect(
+                attachment.image?.isTemplate == true,
+                "\(item.wording): a non-template image follows neither highlight nor theme")
+            widths.insert(attachment.bounds.width)
+        }
+
+        #expect(widths.count > 1, "every icon got the same width — they are being stretched")
+    }
+
+    /// The words line up whatever the icon's width, which is what the tab stop is for.
+    @Test func theWordsStartAtOneColumn() throws {
+        let f = Fixture(externalCount: 1)
+        let attributed = try #require(f.menu.toggleMenuItem.attributedTitle)
+        let style = try #require(
+            attributed.attribute(.paragraphStyle, at: 0, effectiveRange: nil)
+                as? NSParagraphStyle)
+
+        #expect(style.tabStops.count == 1)
+        #expect(style.tabStops.first?.location == StatusBarController.textColumn)
+    }
+
     // MARK: - What the Items Do
 
     @Test func theToggleItemStopsAndStartsTheService() {

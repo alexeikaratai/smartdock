@@ -180,7 +180,12 @@ public final class StatusBarController: NSObject {
             keyEquivalent: ","
         )
         settingsItem.target = self
-        setTitle(settingsItem.title, symbol: Symbol.settings, on: settingsItem)
+        // Left bare on purpose, title and all. macOS decorates the item it recognises
+        // as the app's settings with a gear of its own — measured by taking ours away
+        // and watching a gear remain — so giving it one made the row show two. It draws
+        // that gear in the image column, which shifts the words along by about as much
+        // as our in-title icon does, so the row lines up with the rest on its own; a
+        // spacer of ours on top of it pushed the words a further 40pt to the right.
         menu.addItem(settingsItem)
 
         // Shortcuts
@@ -254,24 +259,48 @@ public final class StatusBarController: NSObject {
         item.attributedTitle = Self.attributedTitle(title, symbol: symbol)
     }
 
-    /// The icon, two spaces, then the words.
+    /// Where the words start, measured from the icon's left edge. Wide enough for the
+    /// widest symbol here plus a gap.
+    static let textColumn: CGFloat = 26
+
+    /// The height every icon is drawn at; its width follows from its own proportions.
+    static let iconHeight: CGFloat = 14
+
+    /// The icon, a tab, then the words.
+    ///
+    /// The symbol image goes in untouched. Drawing it into a fixed box first — which is
+    /// how the icons were first made to line up — rasterises it, and the template mask
+    /// does not survive: the glyph then keeps one colour while the row highlights and
+    /// the system changes theme around it. Measured by removing the redraw and watching
+    /// the icons start following the cursor again.
+    ///
+    /// So the width is whatever the symbol's proportions give, and a tab stop does the
+    /// aligning instead of a uniform box.
     static func attributedTitle(_ title: String, symbol: String) -> NSAttributedString {
         let result = NSMutableAttributedString()
 
         if let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 14, weight: .regular))
         {
-            // Template, or it would not follow the highlight.
+            // Template, or it follows neither the highlight nor the theme.
             image.isTemplate = true
+            let size = image.size
+            let width = size.height > 0 ? size.width * (iconHeight / size.height) : iconHeight
+
             let attachment = NSTextAttachment()
             attachment.image = image
             // Measured against the menu's own text: the glyph sits low otherwise.
-            attachment.bounds = CGRect(x: 0, y: -3, width: 16, height: 14)
+            attachment.bounds = CGRect(x: 0, y: -3, width: width, height: iconHeight)
             result.append(NSAttributedString(attachment: attachment))
-            result.append(NSAttributedString(string: "  "))
+            result.append(NSAttributedString(string: "\t"))
         }
 
         result.append(NSAttributedString(string: title))
+
+        let style = NSMutableParagraphStyle()
+        style.tabStops = [NSTextTab(textAlignment: .left, location: textColumn)]
+        result.addAttribute(
+            .paragraphStyle, value: style, range: NSRange(location: 0, length: result.length))
         return result
     }
 

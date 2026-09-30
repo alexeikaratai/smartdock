@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.11.1] — 2026-09-30
+
+### Fixed
+
+- **The menu bar menu has its icons back, in shape and in colour.** macOS 26 stopped
+  drawing the image on a status menu item, so every entry had been rendering as bare text
+  since the OS update — nothing in SmartDock had changed, and a thirty-line test app that
+  set nothing else lost its icons too. They are drawn inside the item's title now, which
+  macOS still honours: each keeps its own proportions, they line up in a column, and they
+  follow the highlight and the light/dark theme the way they always did.
+- The settings item shows one gear rather than two. macOS draws its own on the item it
+  recognises as the app's settings, so SmartDock no longer adds one there.
+
 ## [2.11.0] — 2026-09-30
 
 ### Fixed
