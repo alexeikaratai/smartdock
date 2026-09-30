@@ -105,7 +105,7 @@ public final class StatusBarController: NSObject {
             keyEquivalent: "e"
         )
         toggleMenuItem.target = self
-        toggleMenuItem.image = NSImage(systemSymbolName: "power", accessibilityDescription: nil)
+        setTitle(toggleMenuItem.title, symbol: Symbol.toggle, on: toggleMenuItem)
         menu.addItem(toggleMenuItem)
 
         // Forced refresh
@@ -115,8 +115,7 @@ public final class StatusBarController: NSObject {
             keyEquivalent: "r"
         )
         refreshMenuItem.target = self
-        refreshMenuItem.image = NSImage(
-            systemSymbolName: "arrow.clockwise", accessibilityDescription: nil)
+        setTitle("Refresh Now", symbol: Symbol.refresh, on: refreshMenuItem)
         menu.addItem(refreshMenuItem)
 
         menu.addItem(.separator())
@@ -132,9 +131,10 @@ public final class StatusBarController: NSObject {
             )
             item.target = self
             item.representedObject = profile
-            item.image = NSImage(
-                systemSymbolName: profile == .external ? "display.2" : "laptopcomputer",
-                accessibilityDescription: nil)
+            setTitle(
+                profile.displayName,
+                symbol: profile == .external ? Symbol.external : Symbol.builtin,
+                on: item)
             profileMenuItems[profile] = item
             menu.addItem(item)
         }
@@ -143,8 +143,7 @@ public final class StatusBarController: NSObject {
         // stored profile and apply at once — there is no draft here, unlike the
         // Dock tab in Settings.
         positionMenuItem = NSMenuItem(title: "Dock Position", action: nil, keyEquivalent: "")
-        positionMenuItem.image = NSImage(
-            systemSymbolName: "rectangle.bottomthird.inset.filled", accessibilityDescription: nil)
+        setTitle("Dock Position", symbol: Symbol.position, on: positionMenuItem)
         let positionMenu = NSMenu()
         positionMenu.autoenablesItems = false
         for position in DockPosition.allCases {
@@ -181,7 +180,7 @@ public final class StatusBarController: NSObject {
             keyEquivalent: ","
         )
         settingsItem.target = self
-        settingsItem.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: nil)
+        setTitle(settingsItem.title, symbol: Symbol.settings, on: settingsItem)
         menu.addItem(settingsItem)
 
         // Shortcuts
@@ -191,7 +190,7 @@ public final class StatusBarController: NSObject {
             keyEquivalent: ""
         )
         shortcutsItem.target = self
-        shortcutsItem.image = NSImage(systemSymbolName: "keyboard", accessibilityDescription: nil)
+        setTitle(shortcutsItem.title, symbol: Symbol.shortcuts, on: shortcutsItem)
         menu.addItem(shortcutsItem)
 
         // About
@@ -201,7 +200,7 @@ public final class StatusBarController: NSObject {
             keyEquivalent: ""
         )
         aboutItem.target = self
-        aboutItem.image = NSImage(systemSymbolName: "info.circle", accessibilityDescription: nil)
+        setTitle(aboutItem.title, symbol: Symbol.about, on: aboutItem)
         menu.addItem(aboutItem)
 
         menu.addItem(.separator())
@@ -213,13 +212,67 @@ public final class StatusBarController: NSObject {
             keyEquivalent: "q"
         )
         quitItem.target = self
-        quitItem.image = NSImage(systemSymbolName: "xmark.circle", accessibilityDescription: nil)
+        setTitle(quitItem.title, symbol: Symbol.quit, on: quitItem)
         menu.addItem(quitItem)
 
         statusItem.menu = menu
         // The items above are built with placeholder state; reflect the service now
         // rather than only on the first open, so the menu is right from the start.
         updateMenuState()
+    }
+
+    // MARK: - Menu Item Icons
+
+    /// Symbol names, named once so a title change and its icon cannot drift apart.
+    private enum Symbol {
+        static let toggle = "power"
+        static let refresh = "arrow.clockwise"
+        static let external = "display.2"
+        static let builtin = "laptopcomputer"
+        static let position = "rectangle.bottomthird.inset.filled"
+        static let settings = "gearshape"
+        static let shortcuts = "keyboard"
+        static let about = "info.circle"
+        static let quit = "xmark.circle"
+    }
+
+    /// Gives an item a title with its icon in front of it.
+    ///
+    /// The icon goes **inside** the attributed title rather than into
+    /// `NSMenuItem.image`, because macOS 26 draws no image in a status menu at all —
+    /// measured against a thirty-line app that set nothing but `image`, and against the
+    /// same app setting an attachment, which did draw. The attachment keeps what the
+    /// image gave: it whitens under the highlight and greys out with a disabled item,
+    /// both checked on the running menu.
+    ///
+    /// `title` is set too and stays the plain wording — it is what the tests read and
+    /// what the menu falls back to. Every later change of wording comes back through
+    /// here: setting `title` alone would leave the old attributed string in place and
+    /// the item would go on displaying the previous words.
+    private func setTitle(_ title: String, symbol: String, on item: NSMenuItem) {
+        item.title = title
+        item.attributedTitle = Self.attributedTitle(title, symbol: symbol)
+    }
+
+    /// The icon, two spaces, then the words.
+    static func attributedTitle(_ title: String, symbol: String) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+
+        if let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 14, weight: .regular))
+        {
+            // Template, or it would not follow the highlight.
+            image.isTemplate = true
+            let attachment = NSTextAttachment()
+            attachment.image = image
+            // Measured against the menu's own text: the glyph sits low otherwise.
+            attachment.bounds = CGRect(x: 0, y: -3, width: 16, height: 14)
+            result.append(NSAttributedString(attachment: attachment))
+            result.append(NSAttributedString(string: "  "))
+        }
+
+        result.append(NSAttributedString(string: title))
+        return result
     }
 
     // MARK: - Actions
@@ -294,8 +347,11 @@ public final class StatusBarController: NSObject {
     /// a refusal only becomes known a second after the apply.
     private func updateMenuState() {
         statusMenuItem.title = statusText()
-        toggleMenuItem.title = service.isEnabled ? "Disable" : "Enable"
-        dockVisibilityMenuItem.title = dockVisibilityTitle()
+        setTitle(
+            service.isEnabled ? "Disable" : "Enable", symbol: Symbol.toggle, on: toggleMenuItem)
+        // Title and symbol both change with visibility, so they are set together by
+        // `applyDockVisibilityAppearance` — assigning `title` here as well would put a
+        // plain string back over the one carrying the icon.
         applyDockVisibilityAppearance()
         for (profile, item) in profileMenuItems {
             item.state = profile == service.activeProfile ? .on : .off
@@ -330,7 +386,7 @@ public final class StatusBarController: NSObject {
 
     private func applyDockVisibilityAppearance() {
         let symbol = service.activeProfileConfig.autohide ? "eye" : "eye.slash"
-        dockVisibilityMenuItem.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+        setTitle(dockVisibilityTitle(), symbol: symbol, on: dockVisibilityMenuItem)
     }
 
     /// Surfaces a setting the Dock refused. Read on every menu open because the
@@ -432,5 +488,25 @@ extension StatusBarController: NSMenuDelegate {
 extension StatusBarController: SmartDockServiceDelegate {
     public func serviceDidUpdateState(_ service: SmartDockService, hasExternal: Bool) {
         updateUI()
+    }
+}
+
+// MARK: - Menu Item Wording
+
+extension NSMenuItem {
+
+    /// What the item actually displays, without the icon carried alongside it.
+    ///
+    /// Reads the attributed title first, because that is what the menu draws and the
+    /// two can disagree: assigning `title` leaves an existing `attributedTitle` in
+    /// place untouched, so the property says one thing while the menu shows another —
+    /// measured. Setting `attributedTitle` does overwrite `title`, with the attributed
+    /// string's plain text, where a text attachment contributes `U+FFFC` and its
+    /// spacing. Anything asking "what does this item say" reads this, never `title`.
+    var wording: String {
+        let shown = attributedTitle?.string ?? title
+        guard let marker = shown.lastIndex(of: "\u{FFFC}") else { return shown }
+        return String(shown[shown.index(after: marker)...])
+            .trimmingCharacters(in: .whitespaces)
     }
 }

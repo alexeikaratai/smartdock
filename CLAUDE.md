@@ -406,7 +406,18 @@ current profile". `hasExternalDisplay` is only for saying what is plugged in.
 `LSUIElement = true`; never call `setActivationPolicy(.accessory)` — it can drop the
 status item at launch. Glass via `NSVisualEffectView` (`.hudWindow` / `.popover`).
 The menu bar icon is drawn programmatically (`makeIcon`, cached per position and visibility)
-with `isTemplate = true`; menu items and windows use SF Symbols directly, no fallback. Sliders show
+with `isTemplate = true`; menu items and windows use SF Symbols directly, no fallback.
+**macOS 26 draws no `NSMenuItem.image` in a status menu, so the icons live in the
+title.** Every item had an image and every symbol resolved — measured — yet the menu drew
+plain text, not even reserving the image column; a thirty-line status item that set nothing
+but `image` behaved the same, so it is the OS, not the app. An image glued into
+`attributedTitle` as an `NSTextAttachment` **does** draw, whitens under the highlight and
+greys with a disabled item, all three checked on the running menu. `setTitle(_:symbol:on:)`
+is the only way an item gets its words: the icon lives in the title now, so a bare
+`item.title =` is a bug in two directions — it leaves the existing `attributedTitle`
+untouched, so the menu goes on showing the **old** words with the icon, while the property
+says something else. `NSMenuItem.wording` reads what is drawn for exactly that reason, and
+is what tests assert on; `title` stopped being the wording. Sliders show
 the value in pixels — the unit System Settings uses. **Nothing in the Dock tab is applied
 without Apply**: a draft survives a tab switch and a display change; switching profiles or
 closing the window with a draft asks Apply / Discard / Cancel (`askAboutDraft`). Until

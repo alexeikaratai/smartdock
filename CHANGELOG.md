@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.11.0] — 2026-09-30
+
+### Fixed
+
+- **The menu bar menu has its icons back.** macOS 26 stopped drawing the image on a status
+  menu item, so every entry — Disable, Refresh Now, the two profiles, Dock Position, Hide
+  Dock, Settings, Shortcuts, About, Quit — had been rendering as bare text since the OS
+  update. Nothing in SmartDock had changed: the images were still being set, and a
+  thirty-line test app that set nothing else lost its icons too. They are drawn inside the
+  item's title now, which macOS still honours, and they follow the highlight and the
+  greyed-out state the way they always did.
+
 ## [2.10.0] — 2026-09-29
 
 ### Changed
