@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The README screenshot shows the settings window as it is. It was taken at 2.9.0, before
   the menu bar became a four-position popup, so it still pictured the checkbox that
   replaced — and was itself replaced — two releases ago.
+- The source tree in the README lists every file again. `DockApplyOutcome`, `RateLimiter`
+  and `PendingCommandQueue` were missing from it although the listing ends in a `└──` and
+  so claims to be complete.
 
 ## [2.11.1] — 2026-09-30
 
