@@ -60,14 +60,32 @@ public final class HotkeyManager: NSObject {
 
     // MARK: - Init
 
-    public init(service: SmartDockService, prefs: UserPreferences = .shared) {
+    /// Where activation notices come from.
+    ///
+    /// A parameter rather than `NSWorkspace.shared.notificationCenter` named in the body:
+    /// that centre is process-wide, so `handleAppActivation` could not be exercised
+    /// without every parallel suite hearing it — and it went untested for exactly that
+    /// reason while guarding a silent failure, hotkeys that never come back after
+    /// Accessibility is granted.
+    ///
+    /// `deinit` reads it, but it needs no `nonisolated(unsafe)`: unlike the event
+    /// monitors above, which are `Any?`, `NotificationCenter` is itself `Sendable`, and
+    /// the compiler says so if the marker is written anyway.
+    private let workspaceEvents: NotificationCenter
+
+    public init(
+        service: SmartDockService,
+        prefs: UserPreferences = .shared,
+        workspaceEvents: NotificationCenter = NSWorkspace.shared.notificationCenter
+    ) {
         self.prefs = prefs
         self.service = service
+        self.workspaceEvents = workspaceEvents
         super.init()
 
         // Re-create monitors when SmartDock becomes active —
         // picks up any Accessibility permission changes made in System Settings.
-        NSWorkspace.shared.notificationCenter.addObserver(
+        workspaceEvents.addObserver(
             self,
             selector: #selector(handleAppActivation),
             name: NSWorkspace.didActivateApplicationNotification,
@@ -76,7 +94,7 @@ public final class HotkeyManager: NSObject {
     }
 
     deinit {
-        NSWorkspace.shared.notificationCenter.removeObserver(self)
+        workspaceEvents.removeObserver(self)
         if let monitor = globalMonitor { NSEvent.removeMonitor(monitor) }
         if let monitor = localMonitor { NSEvent.removeMonitor(monitor) }
     }

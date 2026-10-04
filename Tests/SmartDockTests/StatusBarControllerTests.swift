@@ -28,7 +28,11 @@ struct StatusBarControllerTests {
             monitor.mockExternalCount = externalCount
             service = SmartDockService(displayMonitor: monitor, dockController: dock, prefs: scratch.prefs)
             if started { service.start() }
-            hotkeys = HotkeyManager(service: service, prefs: scratch.prefs)
+            hotkeys = HotkeyManager(
+                service: service, prefs: scratch.prefs,
+                // Private: the workspace centre is process-wide, and a real activation
+                // mid-suite would have this manager install real event monitors.
+                workspaceEvents: NotificationCenter())
             menu = StatusBarController(service: service, hotkeyManager: hotkeys, prefs: scratch.prefs)
         }
 

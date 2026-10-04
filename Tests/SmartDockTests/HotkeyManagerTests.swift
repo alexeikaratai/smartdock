@@ -18,6 +18,18 @@ struct HotkeyManagerTests {
         let dock = MockDockController()
         let service: SmartDockService
         let manager: HotkeyManager
+        /// Private to this test: the real workspace centre is process-wide, and parallel
+        /// suites would otherwise hear each other's activations.
+        let workspaceEvents = NotificationCenter()
+
+        /// Posts the activation notice the workspace sends when an app comes forward.
+        /// `nil` stands for one carrying no application we recognise.
+        func activate(_ app: NSRunningApplication?) {
+            workspaceEvents.post(
+                name: NSWorkspace.didActivateApplicationNotification,
+                object: nil,
+                userInfo: app.map { [NSWorkspace.applicationUserInfoKey: $0] })
+        }
 
         init(externalCount: Int = 1) {
             scratch.prefs.externalConfig = DockConfiguration(autohide: false, position: .bottom)
@@ -25,7 +37,8 @@ struct HotkeyManagerTests {
             monitor.mockExternalCount = externalCount
             service = SmartDockService(displayMonitor: monitor, dockController: dock, prefs: scratch.prefs)
             service.start()
-            manager = HotkeyManager(service: service, prefs: scratch.prefs)
+            manager = HotkeyManager(
+                service: service, prefs: scratch.prefs, workspaceEvents: workspaceEvents)
         }
     }
 
@@ -199,4 +212,73 @@ struct HotkeyManagerTests {
         #expect(f.manager.handleKeyEvent(try keyDown(15, [.control, .option])))
         f.manager.stop()
     }
+
+    // MARK: - Re-arming After Activation
+
+    /// Granting Accessibility in System Settings does not reach a monitor that already
+    /// exists — `addGlobalMonitorForEvents` ignores a permission given after the fact.
+    /// So the monitors are rebuilt when SmartDock itself becomes active again. Nothing
+    /// else notices if this stops working: the hotkeys simply never start firing.
+    @Test func becomingActiveRebuildsTheMonitorsFromTheStoredBindings() throws {
+        let f = Fixture()
+        f.scratch.prefs.setHotkey(Self.controlOptionR, for: HotkeyAction.refreshNow.rawValue)
+        f.manager.start()
+
+        // A binding recorded after the monitors were built — the cache has not seen it.
+        let newBinding = HotkeyBinding(
+            keyCode: 17, modifiers: NSEvent.ModifierFlags([.control, .option]).rawValue,
+            displayName: "T")
+        f.scratch.prefs.setHotkey(newBinding, for: HotkeyAction.refreshNow.rawValue)
+        let newKey = try keyDown(17, [.control, .option])
+        #expect(!f.manager.handleKeyEvent(newKey), "not armed yet — that is the premise")
+
+        f.activate(Self.ourselves)
+
+        #expect(f.manager.handleKeyEvent(newKey), "the new binding reached the monitors")
+    }
+
+    /// Another app coming forward says nothing about our permissions.
+    @Test func anotherAppBecomingActiveChangesNothing() throws {
+        let f = Fixture()
+        f.scratch.prefs.setHotkey(Self.controlOptionR, for: HotkeyAction.refreshNow.rawValue)
+        f.manager.start()
+
+        let newBinding = HotkeyBinding(
+            keyCode: 17, modifiers: NSEvent.ModifierFlags([.control, .option]).rawValue,
+            displayName: "T")
+        f.scratch.prefs.setHotkey(newBinding, for: HotkeyAction.refreshNow.rawValue)
+
+        // A real other application, so the bundle-id check is what does the rejecting
+        // — a notice carrying nothing at all would be turned away by the cast alone.
+        let other = try #require(
+            NSWorkspace.shared.runningApplications.first {
+                $0.bundleIdentifier != nil && $0.bundleIdentifier != Bundle.main.bundleIdentifier
+            }, "no other running application to speak for")
+        f.activate(other)
+        #expect(
+            !f.manager.handleKeyEvent(try keyDown(17, [.control, .option])),
+            "someone else's activation must not re-arm us")
+
+        f.activate(nil)
+        #expect(
+            !f.manager.handleKeyEvent(try keyDown(17, [.control, .option])),
+            "and neither must a notice carrying no application")
+    }
+
+    /// With nothing bound there are no monitors to rebuild, and `start()` would only
+    /// log that it skipped — the guard keeps the notice from doing work for nothing.
+    @Test func activationWithNoBindingsArmsNothing() throws {
+        let f = Fixture()
+        f.manager.start()
+
+        f.scratch.prefs.setHotkey(Self.controlOptionR, for: HotkeyAction.refreshNow.rawValue)
+        f.activate(Self.ourselves)
+
+        #expect(
+            !f.manager.handleKeyEvent(try keyDown(15, [.control, .option])),
+            "an empty cache stays empty until something calls start()")
+    }
+
+    /// Our own running application, as the workspace reports it.
+    private static let ourselves = NSRunningApplication.current
 }
