@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `make bump` redraws the README screenshot, and `make shot` does it on its own. The
+  picture carries the version in the window header, so it was only ever right until the
+  next release — and because re-taking it was a separate thing to remember, it once went
+  five releases stale. The release workflow skips the redraw: it bumps in a working copy
+  it never commits.
+
+## [2.11.2] — 2026-10-05
+
+### Changed
+
 - The one piece of untested logic left in the app is tested: rebuilding the hotkey
   monitors when SmartDock comes forward, which is what makes hotkeys start working after
   Accessibility is granted. It had no test because it listened on a process-wide

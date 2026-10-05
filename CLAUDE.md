@@ -159,7 +159,8 @@ make build / test / app / run / clean          # swift build -c release · swift
 make format / lint / coverage                  # swift-format apply · check (CI gates) · llvm-cov table
 make appintents / appintents-check             # generate Metadata.appintents · verify every intent reached it
 make entitlements-check / sdef-check           # bundle carries the entitlements file · .sdef classes exist (both in app)
-make bump V=1.2.3 / version-check / release    # version everywhere · verify refs · build + zip + gh release (clean tree)
+make bump V=1.2.3 / version-check / release    # version everywhere (+ redraws the screenshot) · verify refs · build + zip + gh release
+make shot                                      # redraw assets/settings.png at the current version
 make changelog-check / release-notes           # this version's notes exist · print them (the release body)
 make install / fix                             # copy to /Applications · xattr -cr + codesign
 make doctor / outdated / actions-check / logs  # env check · toolchain versions · Actions vs latest · live log
@@ -175,10 +176,13 @@ is the only thing that knows all of them. `release.yml` calls `make bump` rather
 re-implementing it; add a fifth place to `bump` and `version-check` and CI follows.
 
 **The README screenshot carries the version**, drawn from `Bundle.main.shortVersion` into
-the window header, so re-shoot it with `ShotTool` **after** `make bump` — a picture taken
-before it ships showing the version that came before. Its appearance is pinned to light in
-`ShotTool` rather than left to the machine — the same shot came out dark one evening and
-light the next morning.
+the window header, so `bump` redraws it — `make shot` on its own does the same. It used to
+be a separate thing to remember and went five releases stale. `bump` skips it when `CI` is
+set: the release workflow bumps in a working copy it never commits, so a picture drawn
+there is thrown away, and building the test bundle to draw it would add minutes to every
+release and one more way for one to fail. Its appearance is pinned to light in `ShotTool`
+rather than left to the machine — the same shot came out dark one evening and light the
+next morning.
 
 **Never delete `## [Unreleased]`.** `bump` inserts the new section directly under it, so
 whatever accumulated there becomes the release notes. `version-check` also guards the

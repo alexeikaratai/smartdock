@@ -1,11 +1,11 @@
-.PHONY: help build test clean icon app run sign notarize fix install release bump version-check changelog-check release-notes deps outdated doctor actions-check logs format lint coverage appintents appintents-check entitlements-check sdef-check
+.PHONY: help build test clean icon app run sign notarize fix install release bump shot version-check changelog-check release-notes deps outdated doctor actions-check logs format lint coverage appintents appintents-check entitlements-check sdef-check
 
 .DEFAULT_GOAL := help
 
 # === Config ===
 APP_NAME     := SmartDock
 BUNDLE_ID    := com.smartdock.app
-VERSION      := 2.11.1
+VERSION      := 2.11.2
 BUILD_DIR    := .build/release
 APP_DIR      := build/$(APP_NAME).app
 CONTENTS     := $(APP_DIR)/Contents
@@ -355,6 +355,18 @@ notarize: dmg
 	@echo "✅ Notarized and stapled"
 
 # === Version Bump ===
+# Redraws the README screenshot at the current version.
+#
+# The window header carries `Bundle.main.shortVersion`, so the picture is only right
+# until the next bump — which is why `bump` calls this. Rendering needs the test
+# bundle, since only it can build the real view hierarchy; `ShotTool` is otherwise
+# inert, gated on `SHOT_PATH`.
+shot:
+	@echo "📸 Redrawing assets/settings.png at $(VERSION)..."
+	@SHOT_PATH=assets/settings.png SHOT_VERSION=$(VERSION) \
+		swift test --filter renderTheSettingsWindow > /dev/null
+	@echo "✅ assets/settings.png — v$(VERSION)"
+
 # Usage: make bump V=1.2.3
 #
 # Single entry point for changing the version. Updates every place it is written:
@@ -391,6 +403,16 @@ endif
 		echo "  📝 CHANGELOG: opened section [$(V)]"; \
 	fi
 	@$(MAKE) --no-print-directory version-check
+	@# The screenshot carries the version too, and it went stale for five releases
+	@# because re-taking it was a separate thing to remember. Skipped on CI: the
+	@# release workflow bumps in a working copy it never commits, so a picture drawn
+	@# there is thrown away — and building the test bundle to draw it would add
+	@# minutes to every release and a new way for one to fail.
+	@if [ -n "$$CI" ]; then \
+		echo "  📸 screenshot skipped — CI discards the working copy it draws into"; \
+	else \
+		$(MAKE) --no-print-directory shot; \
+	fi
 	@echo "✅ Version: $(V), Build: $$(sed -n '/CFBundleVersion/{n;s/.*<string>\(.*\)<\/string>.*/\1/p;}' Resources/Info.plist)"
 
 # Verify every version reference matches the Makefile's VERSION.
@@ -535,6 +557,7 @@ help:
 	@echo ""
 	@echo "  Version & Release:"
 	@echo "    make bump V=1.2.3  Bump version everywhere (Makefile, Info.plist, README badge)"
+	@echo "    make shot          Redraw the README screenshot at the current version"
 	@echo "    make version-check Verify all version references agree"
 	@echo "    make changelog-check Verify this version's notes were written (gates releasing)"
 	@echo "    make release-notes    Print this version's CHANGELOG section (the release body)"
