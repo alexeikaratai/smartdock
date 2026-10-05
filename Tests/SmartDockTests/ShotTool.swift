@@ -49,7 +49,11 @@ struct ShotTool {
         let service = SmartDockService(
             displayMonitor: monitor, dockController: dock, prefs: scratch.prefs)
         service.start()
-        let hotkeys = HotkeyManager(service: service, prefs: scratch.prefs)
+        let hotkeys = HotkeyManager(
+            service: service, prefs: scratch.prefs,
+            // Private: the workspace centre is process-wide, and a real activation
+            // mid-suite would have this manager install real event monitors.
+            workspaceEvents: NotificationCenter())
         let settings = SettingsWindow(
             service: service, hotkeyManager: hotkeys, prefs: scratch.prefs,
             decideDraft: { _ in .discard })

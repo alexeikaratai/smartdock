@@ -7,11 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The one piece of untested logic left in the app is tested: rebuilding the hotkey
+  monitors when SmartDock comes forward, which is what makes hotkeys start working after
+  Accessibility is granted. It had no test because it listened on a process-wide
+  notification centre; that is now a parameter, so each test hands over its own and a real
+  activation during a test run can no longer install real event monitors.
+
 ### Fixed
 
 - The README screenshot shows the settings window as it is. It was taken at 2.9.0, before
   the menu bar became a four-position popup, so it still pictured the checkbox that
   replaced — and was itself replaced — two releases ago.
+- The source tree in the README lists every file again. `DockApplyOutcome`, `RateLimiter`
+  and `PendingCommandQueue` were missing from it although the listing ends in a `└──` and
+  so claims to be complete.
 
 ## [2.11.1] — 2026-09-30
 

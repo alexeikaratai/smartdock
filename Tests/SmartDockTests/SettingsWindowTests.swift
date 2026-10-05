@@ -42,7 +42,11 @@ struct SettingsWindowTests {
             monitor.mockExternalCount = externalCount
             service = SmartDockService(displayMonitor: monitor, dockController: dock, prefs: scratch.prefs)
             service.start()
-            hotkeys = HotkeyManager(service: service, prefs: scratch.prefs)
+            hotkeys = HotkeyManager(
+                service: service, prefs: scratch.prefs,
+                // Private: the workspace centre is process-wide, and a real activation
+                // mid-suite would have this manager install real event monitors.
+                workspaceEvents: NotificationCenter())
             let answers = self.answers
             settings = SettingsWindow(
                 service: service, hotkeyManager: hotkeys, prefs: scratch.prefs,

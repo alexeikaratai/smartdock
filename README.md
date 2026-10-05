@@ -168,6 +168,9 @@ Sources/
 │   ├── SmartDockService.swift        # Orchestrator: display state → dock config
 │   ├── URLCommand.swift              # smartdock:// URL parsing
 │   ├── AppleScriptCommand.swift      # dock profile ↔ Apple Event code mapping
+│   ├── DockApplyOutcome.swift        # What an apply actually achieved
+│   ├── RateLimiter.swift             # Hotkey rate limit + notification cooldown
+│   ├── PendingCommandQueue.swift     # Commands that arrive before launch finishes
 │   ├── LogExport.swift               # log show invocation + redaction
 │   ├── DiagnosticReport.swift        # Bug-report snapshot formatting
 │   └── Log.swift                     # Logger API (macOS 14+)

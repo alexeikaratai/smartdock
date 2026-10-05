@@ -19,7 +19,11 @@ struct HotkeyRecorderTests {
         init() {
             service = SmartDockService(
                 displayMonitor: MockDisplayMonitor(), dockController: MockDockController(), prefs: scratch.prefs)
-            manager = HotkeyManager(service: service, prefs: scratch.prefs)
+            manager = HotkeyManager(
+                service: service, prefs: scratch.prefs,
+                // Private: the workspace centre is process-wide, and a real activation
+                // mid-suite would have this manager install real event monitors.
+                workspaceEvents: NotificationCenter())
             recorder = HotkeyRecorder(hotkeyManager: manager, prefs: scratch.prefs)
         }
     }
