@@ -349,7 +349,10 @@ struct AccessibilityWarningResetTests {
                 return recorder.resetSucceeds
             },
             relaunch: { recorder.relaunches += 1 },
-            reportFailure: { recorder.failuresReported.append($0) })
+            reportFailure: { recorder.failuresReported.append($0) },
+            // Stated rather than left to the machine: this process is untrusted here and
+            // trusted on a CI runner, and a granted view builds no contents to click.
+            isGranted: false)
     }
 
     private func button(_ title: String, in view: NSView) -> NSButton? {

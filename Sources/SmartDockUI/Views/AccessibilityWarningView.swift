@@ -44,6 +44,13 @@ final class AccessibilityWarningView: NSView {
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
         isHidden = isGranted()
+
+        // Nothing is built when the permission is already there. A hidden view still
+        // takes up whatever height its contents ask for — Auto Layout does not collapse
+        // it — and the Shortcuts tab pins its rows below this one, so it was left with a
+        // blank band where the banner would have been. With no contents the view asks
+        // for no height, and every host gets that for free.
+        guard !isHidden else { return }
         buildUI()
     }
 
