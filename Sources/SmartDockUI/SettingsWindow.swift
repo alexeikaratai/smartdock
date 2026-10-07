@@ -53,12 +53,20 @@ public final class SettingsWindow: NSObject {
 
     // MARK: - Init
 
+    /// Whether Accessibility is already granted, which decides if the Shortcuts tab
+    /// carries its warning banner. A parameter because the answer differs between this
+    /// machine and a CI runner, and because the tab's layout in the *granted* case —
+    /// where the banner must take no room at all — could not otherwise be measured.
+    private let isAccessibilityGranted: () -> Bool
+
     init(
         service: SmartDockService,
         hotkeyManager: HotkeyManager,
         prefs: UserPreferences = .shared,
-        decideDraft: @escaping @MainActor (Mode) -> DraftDecision = SettingsWindow.askWithAlert
+        decideDraft: @escaping @MainActor (Mode) -> DraftDecision = SettingsWindow.askWithAlert,
+        isAccessibilityGranted: @escaping () -> Bool = { AccessibilityChecker.isGranted }
     ) {
+        self.isAccessibilityGranted = isAccessibilityGranted
         self.service = service
         self.prefs = prefs
         self.decideDraft = decideDraft
@@ -301,7 +309,8 @@ public final class SettingsWindow: NSObject {
         container.addSubview(header)
 
         // Only shown when Accessibility permission is missing
-        let accessibilityWarning = AccessibilityWarningView(prefs: prefs)
+        let accessibilityWarning = AccessibilityWarningView(
+            prefs: prefs, isGranted: isAccessibilityGranted())
         container.addSubview(accessibilityWarning)
 
         var hotkeyLabels: [NSTextField] = []

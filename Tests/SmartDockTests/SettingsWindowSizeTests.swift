@@ -14,7 +14,9 @@ import Testing
 struct SettingsWindowSizeTests {
 
     /// A shown settings window on the Dock tab, sized as asked.
-    private func showDockTab(at size: NSSize) throws -> (SettingsWindow, NSWindow, NSScrollView) {
+    private func showDockTab(at size: NSSize, accessibilityGranted: Bool = false) throws -> (
+        SettingsWindow, NSWindow, NSScrollView
+    ) {
         _ = NSApplication.shared
         let scratch = ScratchPreferences()
         let monitor = MockDisplayMonitor()
@@ -27,7 +29,8 @@ struct SettingsWindowSizeTests {
             workspaceEvents: NotificationCenter())
         let settings = SettingsWindow(
             service: service, hotkeyManager: hotkeys, prefs: scratch.prefs,
-            decideDraft: { _ in .discard })
+            decideDraft: { _ in .discard },
+            isAccessibilityGranted: { accessibilityGranted })
 
         settings.show(tab: .dock)
         let window = try #require(settings.window)
@@ -83,5 +86,50 @@ struct SettingsWindowSizeTests {
             tall — it is \(Int(SettingsWindow.defaultContentSize.height))pt, so the tab \
             scrolls at its default size. Raise `SettingsWindow.defaultContentSize`.
             """)
+    }
+
+    /// With Accessibility granted there is nothing to warn about, and the banner must
+    /// leave no room behind it. Hiding a view does not do that — Auto Layout keeps the
+    /// height its contents ask for — so the tab carried a blank band roughly the size of
+    /// the banner on every machine where the permission was already given.
+    @Test func theShortcutsRowsFollowTheHeaderWhenThereIsNoWarning() throws {
+        let (granted, grantedWindow, _) = try showDockTab(
+            at: SettingsWindow.defaultContentSize, accessibilityGranted: true)
+        defer { granted.window?.close() }
+        granted.show(tab: .shortcuts)
+        grantedWindow.layoutIfNeeded()
+
+        let (warned, warnedWindow, _) = try showDockTab(
+            at: SettingsWindow.defaultContentSize, accessibilityGranted: false)
+        defer { warned.window?.close() }
+        warned.show(tab: .shortcuts)
+        warnedWindow.layoutIfNeeded()
+
+        let gapWithout = try Self.headerToFirstRow(in: granted)
+        let gapWith = try Self.headerToFirstRow(in: warned)
+
+        #expect(gapWith > gapWithout + 40, "the banner should occupy real space when shown")
+        #expect(
+            gapWithout < 30,
+            """
+            \(Int(gapWithout))pt between the header and the first shortcut with no banner \
+            to show — the hidden banner is still holding the space open.
+            """)
+    }
+
+    /// Distance from the bottom of the tab's header label to the top of the first row.
+    ///
+    /// Safe against a window server that refuses the size asked for, the way a CI runner
+    /// does: both views are chained from the container's **top**, so the gap between them
+    /// does not depend on how tall the window ended up. Checked by forcing the window to
+    /// 674, 500, 400 and 300pt — the measurement held at every one.
+    private static func headerToFirstRow(in settings: SettingsWindow) throws -> CGFloat {
+        let container = try #require(settings.shortcutsContainer)
+        let labels = container.subviews.compactMap { $0 as? NSTextField }
+        let header = try #require(
+            labels.first { $0.stringValue.hasPrefix("Configure global") })
+        let firstRow = try #require(labels.first { $0.stringValue == "Toggle Autohide" })
+        // The view is flipped-free AppKit geometry: y grows upwards.
+        return header.frame.minY - firstRow.frame.maxY
     }
 }

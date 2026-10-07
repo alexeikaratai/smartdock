@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.11.3] — 2026-10-06
+
+### Fixed
+
+- The Shortcuts tab no longer has a blank band above the shortcuts. The Accessibility
+  warning is hidden once the permission is granted, but a hidden view still takes up the
+  height its contents ask for, so it went on holding 133pt open for a banner nobody could
+  see. It now builds nothing at all when there is nothing to warn about.
+
 ### Changed
 
 - `make bump` redraws the README screenshot, and `make shot` does it on its own. The

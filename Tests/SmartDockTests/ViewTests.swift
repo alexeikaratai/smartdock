@@ -174,6 +174,21 @@ struct AccessibilityWarningViewTests {
 
         #expect(view.isHidden == granted)
     }
+
+    /// Hiding is not enough: a hidden view keeps whatever height its contents ask for,
+    /// and the Shortcuts tab pins its rows below this one — which left a blank band on
+    /// every machine where Accessibility was already granted.
+    @Test(arguments: [true, false])
+    func theBannerTakesNoHeightWhenThereIsNothingToWarnAbout(granted: Bool) {
+        let view = AccessibilityWarningView(prefs: ScratchPreferences().prefs, isGranted: granted)
+        view.layoutSubtreeIfNeeded()
+
+        if granted {
+            #expect(view.fittingSize.height == 0, "the banner leaves a gap behind it")
+        } else {
+            #expect(view.fittingSize.height > 0, "a warning with no height says nothing")
+        }
+    }
 }
 
 // MARK: - Position Picker & Icons
