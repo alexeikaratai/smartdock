@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.11.4] — 2026-10-12
+
+### Fixed
+
+- SmartDock now calls the permission what your Mac calls it. macOS 27 renamed
+  **Accessibility** to **Device Control and Data Access**, so the Shortcuts tab, both
+  alerts and the README were pointing at a pane under a name it no longer uses. On macOS
+  14–26 the wording is unchanged.
+- Resetting the permission no longer asks for an administrator password. `tccutil reset
+  Accessibility` needs none — it was being run through `do shell script … with
+  administrator privileges`, which demanded one that macOS never wanted.
+- After the permission was reset, System Settings opened on a list SmartDock was not in,
+  so there was nothing to switch on. macOS lists an app only once that app asks, and
+  SmartDock never did — it opened the pane and waited. It now asks first, from the new
+  process, which is the only one the list will accept it from.
+
+### Changed
+
+- The Shortcuts tab now always shows whether the permission is allowed, instead of
+  showing nothing once it is granted. The previous release removed a 133pt blank band by
+  building no banner at all, which left no way to tell from inside SmartDock whether
+  hotkeys were allowed to work — a question that matters because ad-hoc signing
+  invalidates the grant on every update, leaving the checkbox in System Settings switched
+  on while hotkeys silently stop firing. The granted state is one line; the warning and
+  its two buttons still appear only when something is wrong.
+- **Grant Access…** replaces the two buttons that were there before. *Open System
+  Settings* and *Reset Permission* asked you to know which of two problems you had —
+  never granted, or granted and then invalidated by an app update — and nothing on screen
+  could tell you which. One button now covers both: it clears whatever entry is there,
+  restarts SmartDock and opens the list for you to switch it on. The confirmation dialog
+  in front of the old Reset is gone with it; the button says what it does and the line
+  above it says the app restarts.
+- The manual command offered after a failed reset dropped its `sudo`, for the same reason
+  the password prompt went.
+
 ## [2.11.3] — 2026-10-06
 
 ### Fixed

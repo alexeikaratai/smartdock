@@ -159,35 +159,81 @@ struct AboutTabViewTests {
     }
 }
 
-// MARK: - Accessibility Warning
+// MARK: - Accessibility Status
 
-@Suite("Accessibility warning")
+@Suite("Accessibility status")
 @MainActor
-struct AccessibilityWarningViewTests {
+struct AccessibilityStatusViewTests {
 
-    /// Both branches, chosen by the test rather than by the machine: this process is
+    /// Both branches are chosen by the test rather than by the machine: this process is
     /// untrusted here and trusted on a CI runner, so asserting the environment is
     /// asserting nothing.
-    @Test(arguments: [true, false])
-    func theBannerIsHiddenExactlyWhenAccessibilityIsGranted(granted: Bool) {
-        let view = AccessibilityWarningView(prefs: ScratchPreferences().prefs, isGranted: granted)
-
-        #expect(view.isHidden == granted)
+    private func view(granted: Bool) -> AccessibilityStatusView {
+        let view = AccessibilityStatusView(prefs: ScratchPreferences().prefs, isGranted: granted)
+        view.layoutSubtreeIfNeeded()
+        return view
     }
 
-    /// Hiding is not enough: a hidden view keeps whatever height its contents ask for,
-    /// and the Shortcuts tab pins its rows below this one — which left a blank band on
-    /// every machine where Accessibility was already granted.
-    @Test(arguments: [true, false])
-    func theBannerTakesNoHeightWhenThereIsNothingToWarnAbout(granted: Bool) {
-        let view = AccessibilityWarningView(prefs: ScratchPreferences().prefs, isGranted: granted)
-        view.layoutSubtreeIfNeeded()
+    private func labels(in view: NSView) -> [String] {
+        view.subviews.compactMap { ($0 as? NSTextField)?.stringValue }
+    }
 
-        if granted {
-            #expect(view.fittingSize.height == 0, "the banner leaves a gap behind it")
-        } else {
-            #expect(view.fittingSize.height > 0, "a warning with no height says nothing")
-        }
+    private func buttonTitles(in view: NSView) -> [String] {
+        view.subviews.compactMap { ($0 as? NSButton)?.title }
+    }
+
+    /// The pane is named by `AccessibilityChecker.settingName`, never by a literal —
+    /// macOS 27 renamed Accessibility to Device Control and Data Access, and a hard-coded
+    /// word would send people to a pane that no longer uses it. Asserting the literal
+    /// here would only restate the implementation and would fail on the other OS anyway,
+    /// so what is pinned is that the row shows whatever that property says.
+    @Test(arguments: [true, false])
+    func theRowNamesThePermissionTheWaySystemSettingsDoes(granted: Bool) {
+        let labels = labels(in: view(granted: granted))
+
+        #expect(
+            labels.contains(AccessibilityChecker.settingName),
+            "the row shows \(labels) rather than \(AccessibilityChecker.settingName)")
+    }
+
+    @Test(arguments: [true, false])
+    func theRowSaysWhetherThePermissionIsThere(granted: Bool) {
+        let labels = labels(in: view(granted: granted))
+
+        #expect(labels.contains(granted ? "Allowed" : "Not allowed"))
+        #expect(!labels.contains(granted ? "Not allowed" : "Allowed"))
+    }
+
+    /// The fix belongs to the broken case. Offering it while the permission is there
+    /// would invite someone to clear a grant that already works.
+    ///
+    /// One button, not two: "Open System Settings" and "Reset Permission" made the person
+    /// pick between never-granted and gone-stale, a difference nothing on screen could
+    /// tell them, when clearing the entry serves both.
+    @Test(arguments: [true, false])
+    func onlyTheWarningOffersTheFix(granted: Bool) {
+        let titles = buttonTitles(in: view(granted: granted))
+
+        #expect(titles.contains("Grant Access…") == !granted)
+        #expect(titles.count == (granted ? 0 : 1), "the card shows \(titles)")
+    }
+
+    /// The granted state is one row, not a band. This view used to build nothing at all
+    /// in that case — hiding was not enough, since a hidden view keeps whatever height
+    /// its contents ask for, and the Shortcuts tab pins its rows below this one, which
+    /// left 133pt of blank. A row that says something may cost a row; it may not cost
+    /// what the warning costs.
+    @Test func theGrantedRowIsOneLineHigh() {
+        let allowed = view(granted: true).fittingSize.height
+        let warning = view(granted: false).fittingSize.height
+
+        #expect(allowed > 0, "a row with no height says nothing")
+        #expect(
+            allowed <= 24,
+            "the allowed row is \(Int(allowed))pt — that is a band, not a line")
+        #expect(
+            warning > allowed * 2,
+            "the warning (\(Int(warning))pt) should cost visibly more than the row (\(Int(allowed))pt)")
     }
 }
 

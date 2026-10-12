@@ -88,11 +88,12 @@ struct SettingsWindowSizeTests {
             """)
     }
 
-    /// With Accessibility granted there is nothing to warn about, and the banner must
-    /// leave no room behind it. Hiding a view does not do that — Auto Layout keeps the
-    /// height its contents ask for — so the tab carried a blank band roughly the size of
-    /// the banner on every machine where the permission was already given.
-    @Test func theShortcutsRowsFollowTheHeaderWhenThereIsNoWarning() throws {
+    /// With the permission granted the tab shows one status row, not a warning card and
+    /// not a blank band. Hiding the card did not do that — Auto Layout keeps the height a
+    /// hidden view's contents ask for — so the tab carried 133pt of blank on every
+    /// machine where the permission was already given. Building one row instead costs a
+    /// line: 10pt above it, 15pt of row, 12pt below, measured at 41.
+    @Test func theShortcutsRowsFollowTheStatusWhenThereIsNoWarning() throws {
         let (granted, grantedWindow, _) = try showDockTab(
             at: SettingsWindow.defaultContentSize, accessibilityGranted: true)
         defer { granted.window?.close() }
@@ -108,12 +109,12 @@ struct SettingsWindowSizeTests {
         let gapWithout = try Self.headerToFirstRow(in: granted)
         let gapWith = try Self.headerToFirstRow(in: warned)
 
-        #expect(gapWith > gapWithout + 40, "the banner should occupy real space when shown")
+        #expect(gapWith > gapWithout + 40, "the warning should occupy real space when shown")
         #expect(
-            gapWithout < 30,
+            gapWithout < 50,
             """
-            \(Int(gapWithout))pt between the header and the first shortcut with no banner \
-            to show — the hidden banner is still holding the space open.
+            \(Int(gapWithout))pt between the header and the first shortcut with only the \
+            status row to show — a row costs about 41pt, a band costs 133.
             """)
     }
 

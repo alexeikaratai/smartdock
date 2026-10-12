@@ -21,6 +21,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// an Apple Event can launch the app, so either can land here.
     private var commandQueue = PendingCommandQueue()
 
+    /// Outlives `applicationDidFinishLaunching`: the grant is waited for asynchronously.
+    private var grantWatcher: AccessibilityGrantWatcher?
+
     /// Explicit entry point for a menu bar app without storyboard/nib.
     /// The default @main behavior calls NSApplicationMain which expects
     /// a MainMenu.nib — this override sets up the run loop manually.
@@ -65,10 +68,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Watch for binary changes (e.g. Homebrew upgrade) and prompt to relaunch
         updateWatcher.start()
 
-        // If user just did "Reset Permission", guide them through grant flow
-        if UserPreferences.shared.pendingAccessibilityGrant {
-            handlePendingAccessibilityGrant()
-        }
+        // If the person just used "Grant Access…", walk them through the grant. Held in a
+        // property because the wait is asynchronous and the watcher must outlive this call.
+        grantWatcher = AccessibilityGrantWatcher(
+            showSettings: { [weak self] in self?.statusBarController.showSettings(tab: .shortcuts) })
+        grantWatcher?.startIfPending()
 
         // Show onboarding on first launch
         if !UserPreferences.shared.hasSeenOnboarding {
@@ -150,46 +154,4 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         service.stop()
     }
 
-    // MARK: - Pending Accessibility Grant Flow
-
-    /// After "Reset Permission" relaunch:
-    /// 1. Open Settings on Shortcuts tab so user sees the warning
-    /// 2. Open System Settings → Privacy → Accessibility
-    /// 3. Poll AXIsProcessTrusted; auto-relaunch when granted
-    private func handlePendingAccessibilityGrant() {
-        Log.info("Resuming Accessibility grant flow after reset")
-
-        // Open Settings on Shortcuts tab
-        statusBarController.showSettings(tab: .shortcuts)
-
-        // Open System Settings → Accessibility
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-            NSWorkspace.shared.open(url)
-        }
-
-        // Poll for permission grant — when true, clear flag and relaunch.
-        // Timeout: 5 minutes (300 attempts × 1s) so we don't poll forever.
-        schedulePermissionPoll(remainingAttempts: 300)
-    }
-
-    private func schedulePermissionPoll(remainingAttempts: Int) {
-        guard remainingAttempts > 0 else {
-            Log.info("Accessibility grant poll timed out — clearing pending flag")
-            UserPreferences.shared.pendingAccessibilityGrant = false
-            return
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            guard let self else { return }
-            guard UserPreferences.shared.pendingAccessibilityGrant else { return }
-
-            if AccessibilityChecker.isGranted {
-                Log.info("Accessibility granted — relaunching to pick up new permission state")
-                UserPreferences.shared.pendingAccessibilityGrant = false
-                AppRelauncher.relaunch(bundlePath: Bundle.main.bundlePath)
-            } else {
-                self.schedulePermissionPoll(remainingAttempts: remainingAttempts - 1)
-            }
-        }
-    }
 }

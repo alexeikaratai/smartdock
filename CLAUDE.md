@@ -307,6 +307,7 @@ and applies the entitlements through `codesign`. README images are in `assets/`.
 | `AppIntentsSupport.swift` | Four intents + `ShortcutDockProfile` (`AppEnum`), all routing into `performCommand`. `ShortcutCoverage` is a build-time tripwire on `URLCommand`. |
 | `ScriptingSupport.swift` | `NSScriptCommand` subclasses bound by `@objc(SD…Command)` name. Reach `@MainActor` via `MainActor.assumeIsolated` — sound because Apple Events arrive on the main thread. Bad input sets `scriptErrorNumber`/`scriptErrorString` rather than guessing a profile. |
 | `NotificationManager.swift` | `UNUserNotificationCenter` banners on a change of `activeProfile` (from `activeProfileKey`), 3s cooldown; `willPresent` returns `[.banner, .sound]` (required for LSUIElement apps); lazy authorisation, flag cleared on denial. |
+| `AccessibilityGrantWatcher.swift` | The flow after **Grant Access…** relaunches: show the Shortcuts tab, **ask** (what puts SmartDock in the list — `AXIsProcessTrusted` only reads), open the pane, then wait 300×1s for the switch and relaunch. Every outward call and the delay are parameters, so the whole wait is driven from a test; it sat in `App.swift`, outside the test bundle, until the missing ask was found. |
 | `AppUpdateWatcher.swift` / `AppRelauncher.swift` | FS watcher on the executable prompts a relaunch after a Homebrew upgrade; relauncher waits for PID exit (max 5s) then `open -n`, bundle path via env var so nothing is interpolated into the shell. |
 | `OnboardingWindow.swift`, `LaunchAtLogin.swift`, `AccessibilityChecker.swift` | First-launch welcome; `SMAppService` wrapper; `AXIsProcessTrusted` with a first-launch-only prompt (ad-hoc signing resets the grant on every update). |
 
@@ -323,7 +324,39 @@ here), `DockProfileForm` (one control per `DockProperty` behind one `configurati
 exhaustive switch means a new `DockProperty` does not compile until the form has a control
 for it — Dock tab height 630, measured by a test rather than by eye, since the window's
 default size is only right until the next control),
-`AccessibilityWarningView` (Shortcuts-tab banner + `tccutil reset` flow; it builds **no** contents when the permission is already there, because `isHidden` alone leaves the height its contents ask for and the tab pins its rows below it — measured at 133pt of blank band).
+`AccessibilityStatusView` (Shortcuts-tab permission row + `tccutil reset` flow). It builds
+the row in **both** states and the warning card in only one. `isHidden` was not an option —
+a hidden view keeps the height its contents ask for and the tab pins its rows below it,
+measured at 133pt of blank band; building nothing fixed that but left the tab unable to say
+whether hotkeys could work at all, so the granted case is one 41pt line instead. The pane is
+named through `AccessibilityChecker.settingName`, never a literal: **macOS 27 renamed
+Accessibility to "Device Control and Data Access"** — measured in the pane's own
+`SecurityPrivacyExtension` strings, key `ACCESSIBILITY` — while `AXIsProcessTrusted`, the
+`Accessibility` TCC service name and the `Privacy_Accessibility` deep-link anchor all stayed.
+A test pins that the row shows `settingName` rather than a literal; it cannot assert the
+*value*, which differs between the dev machine (27) and CI (26). `settingName` compares
+`ProcessInfo.isOperatingSystemAtLeast` instead of writing `#available(macOS 27, *)`: it
+guards no API, only wording, and releases are built by CI on Xcode 26 while this machine
+carries only Xcode 27 — so the `#available` spelling could not be checked on the toolchain
+that has to compile it. `tccutil` runs through
+`Process` as the person — **no administrator privileges**, measured: `tccutil reset
+Accessibility <id>` succeeds at uid 501, and the `do shell script … with administrator
+privileges` it replaced asked for a password macOS never wanted. `runTccutil` refuses an
+empty bundle ID, since `tccutil reset Accessibility` without one resets every app on the Mac;
+the test mutates the guard's **return**, never the guard, because removing it would run that
+command. **One button, `Grant Access…`** — *Open System Settings* and *Reset Permission* made
+the person pick between never-granted and gone-stale, a difference nothing on screen can show,
+when clearing the entry serves both; it clears, sets `pendingAccessibilityGrant` and relaunches,
+and only on a failed clear does it ask from this process and offer the manual command. No
+confirmation: the button names the act and the line above it says the app restarts.
+**Asking is what puts SmartDock in the list** — `AXIsProcessTrusted()` only reads, so the
+pane used to open on a list with no SmartDock row. `AccessibilityGrantWatcher` runs that
+flow after the relaunch — show the tab, **ask**, open the pane, then wait — and the ask
+comes before the pane because the list has no row until it does. It lived in `App.swift`
+until 2.11.4, in the executable and outside the test bundle, which is exactly how the
+missing ask survived two releases; the delay is a parameter, so a test drives all 300 tries
+without a clock, and `thewaitGivesUpAfterExactlyItsBudget` drains the budget exactly — with
+one spare try it could not tell 300 from 301 and a boundary mutation survived it.
 
 ### Tests (`Tests/SmartDockTests/`)
 

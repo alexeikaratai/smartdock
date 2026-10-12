@@ -5,7 +5,7 @@ import SmartDockCore
 /// Three tabs: Settings (dock config + general), Shortcuts (hotkey bindings), About.
 ///
 /// The self-contained pieces live in their own types: `PositionPicker`,
-/// `AccessibilityWarningView`, `AboutTabView`, `HotkeyRecorder`.
+/// `AccessibilityStatusView`, `AboutTabView`, `HotkeyRecorder`.
 @MainActor
 public final class SettingsWindow: NSObject {
 
@@ -308,10 +308,11 @@ public final class SettingsWindow: NSObject {
         header.textColor = .secondaryLabelColor
         container.addSubview(header)
 
-        // Only shown when Accessibility permission is missing
-        let accessibilityWarning = AccessibilityWarningView(
+        // Always present: one row when the permission is there, the warning card with
+        // its two fixes when it is not.
+        let accessibilityStatus = AccessibilityStatusView(
             prefs: prefs, isGranted: isAccessibilityGranted())
-        container.addSubview(accessibilityWarning)
+        container.addSubview(accessibilityStatus)
 
         var hotkeyLabels: [NSTextField] = []
         for action in HotkeyAction.allCases {
@@ -333,12 +334,12 @@ public final class SettingsWindow: NSObject {
             header.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
             header.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
 
-            accessibilityWarning.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 10),
-            accessibilityWarning.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin - 4),
-            accessibilityWarning.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -(margin - 4)),
+            accessibilityStatus.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 10),
+            accessibilityStatus.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin - 4),
+            accessibilityStatus.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -(margin - 4)),
         ])
 
-        var previousAnchor = accessibilityWarning.bottomAnchor
+        var previousAnchor = accessibilityStatus.bottomAnchor
         for (index, action) in HotkeyAction.allCases.enumerated() {
             let label = hotkeyLabels[index]
             guard let button = hotkeyButtons[action] else { continue }
