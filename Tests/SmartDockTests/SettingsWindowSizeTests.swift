@@ -88,11 +88,12 @@ struct SettingsWindowSizeTests {
             """)
     }
 
-    /// With Accessibility granted there is nothing to warn about, and the banner must
-    /// leave no room behind it. Hiding a view does not do that — Auto Layout keeps the
-    /// height its contents ask for — so the tab carried a blank band roughly the size of
-    /// the banner on every machine where the permission was already given.
-    @Test func theShortcutsRowsFollowTheHeaderWhenThereIsNoWarning() throws {
+    /// With the permission granted the tab shows one status row, not a warning card and
+    /// not a blank band. Hiding the card did not do that — Auto Layout keeps the height a
+    /// hidden view's contents ask for — so the tab carried 133pt of blank on every
+    /// machine where the permission was already given. Building one row instead costs a
+    /// line: 10pt above it, 15pt of row, 12pt below, measured at 41.
+    @Test func theShortcutsRowsFollowTheStatusWhenThereIsNoWarning() throws {
         let (granted, grantedWindow, _) = try showDockTab(
             at: SettingsWindow.defaultContentSize, accessibilityGranted: true)
         defer { granted.window?.close() }
@@ -108,13 +109,57 @@ struct SettingsWindowSizeTests {
         let gapWithout = try Self.headerToFirstRow(in: granted)
         let gapWith = try Self.headerToFirstRow(in: warned)
 
-        #expect(gapWith > gapWithout + 40, "the banner should occupy real space when shown")
+        #expect(gapWith > gapWithout + 40, "the warning should occupy real space when shown")
         #expect(
-            gapWithout < 30,
+            gapWithout < 50,
             """
-            \(Int(gapWithout))pt between the header and the first shortcut with no banner \
-            to show — the hidden banner is still holding the space open.
+            \(Int(gapWithout))pt between the header and the first shortcut with only the \
+            status row to show — a row costs about 41pt, a band costs 133.
             """)
+    }
+
+    /// Coming back from System Settings has to re-read the permission. It was read once
+    /// per window before this: measured with a counting stub, the count stayed at 1 across
+    /// a re-activation, so a row that said *Not allowed* kept saying it over a permission
+    /// granted a moment earlier, and only closing the window cleared it.
+    @Test func comingBackToTheWindowRereadsThePermission() throws {
+        _ = NSApplication.shared
+        let scratch = ScratchPreferences()
+        let service = SmartDockService(
+            displayMonitor: MockDisplayMonitor(), dockController: MockDockController(),
+            prefs: scratch.prefs)
+        let hotkeys = HotkeyManager(
+            service: service, prefs: scratch.prefs, workspaceEvents: NotificationCenter())
+
+        // A permission the test flips, standing in for a trip to System Settings.
+        final class Permission: @unchecked Sendable {
+            var granted = false
+            var reads = 0
+        }
+        let permission = Permission()
+
+        let settings = SettingsWindow(
+            service: service, hotkeyManager: hotkeys, prefs: scratch.prefs,
+            decideDraft: { _ in .discard },
+            isAccessibilityGranted: {
+                permission.reads += 1
+                return permission.granted
+            })
+        settings.show(tab: .shortcuts)
+        defer { settings.window?.close() }
+        let window = try #require(settings.window)
+        let readsWhileBuilding = permission.reads
+
+        permission.granted = true
+        settings.windowDidBecomeKey(Notification(name: NSWindow.didBecomeKeyNotification))
+        window.layoutIfNeeded()
+
+        #expect(
+            permission.reads > readsWhileBuilding,
+            "the window never asked again — it read the permission \(permission.reads) time(s)")
+        let status = try #require(settings.accessibilityStatus)
+        let labels = status.subviews.compactMap { ($0 as? NSTextField)?.stringValue }
+        #expect(labels.contains("Allowed"), "the row still shows \(labels)")
     }
 
     /// Distance from the bottom of the tab's header label to the top of the first row.

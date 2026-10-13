@@ -323,27 +323,27 @@ struct AccessibilityCheckerTests {
     }
 }
 
-// MARK: - Accessibility Banner
+// MARK: - Accessibility Status
 
-@Suite("Accessibility banner")
+@Suite("Accessibility status")
 @MainActor
-struct AccessibilityWarningResetTests {
+struct AccessibilityGrantTests {
 
     @MainActor
     private final class Recorder {
-        var confirms = true
         var resetSucceeds = true
         var opened: [URL] = []
+        var prompts = 0
         var resets: [String] = []
         var relaunches = 0
         var failuresReported: [String] = []
     }
 
-    private func makeView(_ recorder: Recorder, prefs: UserPreferences) -> AccessibilityWarningView {
-        AccessibilityWarningView(
+    private func makeView(_ recorder: Recorder, prefs: UserPreferences) -> AccessibilityStatusView {
+        AccessibilityStatusView(
             prefs: prefs,
             openURL: { recorder.opened.append($0) },
-            confirmReset: { recorder.confirms },
+            promptForTrust: { recorder.prompts += 1 },
             resetPermission: { bundleID in
                 recorder.resets.append(bundleID)
                 return recorder.resetSucceeds
@@ -351,66 +351,58 @@ struct AccessibilityWarningResetTests {
             relaunch: { recorder.relaunches += 1 },
             reportFailure: { recorder.failuresReported.append($0) },
             // Stated rather than left to the machine: this process is untrusted here and
-            // trusted on a CI runner, and a granted view builds no contents to click.
+            // trusted on a CI runner, and a granted view offers no fixes to click.
             isGranted: false)
     }
 
-    private func button(_ title: String, in view: NSView) -> NSButton? {
+    private func grantButton(in view: NSView) -> NSButton? {
         (view.subviews + view.subviews.flatMap(\.subviews)).compactMap { $0 as? NSButton }
-            .first { $0.title.contains(title) }
+            .first { $0.title.contains("Grant Access") }
     }
 
-    @Test func openSystemSettingsGoesToTheAccessibilityPane() throws {
-        let recorder = Recorder()
-        let view = makeView(recorder, prefs: ScratchPreferences().prefs)
-
-        try #require(button("Open", in: view)).performClick(nil)
-
-        #expect(recorder.opened.count == 1)
-        #expect(recorder.opened.first?.absoluteString.contains("Privacy_Accessibility") == true)
-    }
-
-    /// Cancelling leaves everything alone — including the flag that would make the
-    /// next launch watch for a grant that is not coming.
-    @Test func cancellingTheResetChangesNothing() throws {
-        let recorder = Recorder()
-        recorder.confirms = false
-        let scratch = ScratchPreferences()
-        let view = makeView(recorder, prefs: scratch.prefs)
-
-        try #require(button("Reset", in: view)).performClick(nil)
-
-        #expect(recorder.resets.isEmpty)
-        #expect(recorder.relaunches == 0)
-        #expect(!scratch.prefs.pendingAccessibilityGrant)
-    }
-
-    @Test func confirmingResetsThenRelaunches() throws {
+    /// The whole reason one button replaced two: it clears the entry whether or not the
+    /// permission was ever given, since a grant invalidated by an ad-hoc re-signing looks
+    /// exactly like no grant from the outside.
+    @Test func grantingClearsTheEntryThenRelaunches() throws {
         let recorder = Recorder()
         let scratch = ScratchPreferences()
         let view = makeView(recorder, prefs: scratch.prefs)
 
-        try #require(button("Reset", in: view)).performClick(nil)
+        try #require(grantButton(in: view)).performClick(nil)
 
         #expect(recorder.resets.count == 1)
         #expect(recorder.relaunches == 1)
-        #expect(scratch.prefs.pendingAccessibilityGrant, "the next launch opens Shortcuts and waits")
+        #expect(scratch.prefs.pendingAccessibilityGrant, "the next launch asks and watches")
+        #expect(
+            recorder.prompts == 0,
+            "asking from this process is wasted — macOS lists the app for the next one")
     }
 
-    /// The privileged command can be refused at the password prompt. No relaunch
-    /// then — but the flag stays set, because the person may grant it by hand.
-    @Test func afailedResetDoesNotRelaunch() throws {
+    /// When the entry cannot be cleared there is still the never-granted case to serve,
+    /// so this process asks and opens the pane, and the manual command covers the rest.
+    /// Until the ask was added, a failed clear opened a list with nothing to switch on.
+    @Test func agrantThatCannotClearTheEntryStillAsks() throws {
         let recorder = Recorder()
         recorder.resetSucceeds = false
         let scratch = ScratchPreferences()
         let view = makeView(recorder, prefs: scratch.prefs)
 
-        try #require(button("Reset", in: view)).performClick(nil)
+        try #require(grantButton(in: view)).performClick(nil)
 
-        #expect(recorder.resets.count == 1)
         #expect(recorder.relaunches == 0)
+        #expect(recorder.prompts == 1, "without the prompt the pane lists no SmartDock")
+        #expect(recorder.opened.first?.absoluteString.contains("Privacy_Accessibility") == true)
         #expect(recorder.failuresReported.count == 1, "and the manual command is offered")
         #expect(scratch.prefs.pendingAccessibilityGrant)
+    }
+
+    /// `tccutil reset Accessibility` with **no** bundle ID resets the permission for
+    /// every app on the Mac. Nothing in the app can produce an empty one today — the
+    /// call site falls back to a literal — but the real `runTccutil` is the only place
+    /// that ever reaches the tool, so the refusal lives there and is pinned here. This
+    /// runs the shipping implementation: it returns before `tccutil` is ever started.
+    @Test func anEmptyBundleIDNeverReachesTccutil() {
+        #expect(!AccessibilityStatusView.runTccutil(bundleID: ""))
     }
 }
 

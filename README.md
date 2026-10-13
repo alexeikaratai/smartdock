@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.11.3-blue?style=flat-square" alt="Version 2.11.3"/>
+  <img src="https://img.shields.io/badge/version-2.11.5-blue?style=flat-square" alt="Version 2.11.5"/>
   <img src="https://img.shields.io/badge/macOS-14.0%2B-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS 14+"/>
   <img src="https://img.shields.io/badge/Swift-6.2-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 6.2"/>
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License"/>
@@ -59,7 +59,7 @@ On first launch both profiles are your Dock exactly as it is. Nothing changes un
 brew install --cask alexeikaratai/tap/smartdock
 ```
 
-After install, grant Accessibility permission in **System Settings → Privacy & Security → Accessibility**.
+After install, grant the permission in **System Settings → Privacy & Security → Accessibility** — named **Device Control and Data Access** on macOS 27 and later.
 
 ### From GitHub Release
 
@@ -185,6 +185,7 @@ Sources/
     ├── NotificationManager.swift     # macOS banner notifications
     ├── HotkeyManager.swift           # Global keyboard shortcuts (5 actions)
     ├── HotkeyRecorder.swift          # Captures a keystroke into a binding
+    ├── AccessibilityGrantWatcher.swift # Post-relaunch grant flow: ask, open pane, wait
     ├── AppRelauncher.swift           # Safe relaunch — waits for PID exit first
     ├── AppUpdateWatcher.swift        # Detects Homebrew upgrade, prompts relaunch
     ├── LaunchAtLogin.swift           # SMAppService wrapper
@@ -197,7 +198,7 @@ Sources/
         ├── GeneralTabView.swift      # General tab — app behaviour
         ├── DockTabView.swift         # Dock tab — picker, form, buttons, status
         ├── DockProfileForm.swift     # One control per Dock setting, one binding table
-        └── AccessibilityWarningView.swift  # Permission banner & reset flow
+        └── AccessibilityStatusView.swift   # Permission row, warning & reset flow
 ```
 
 ### Key Design Decisions
@@ -246,9 +247,9 @@ SmartDock asks for two separate permissions:
 | Permission | Needed for | When |
 |---|---|---|
 | **Automation** (System Events) | Core dock switching via AppleScript | macOS prompts once, the first time SmartDock changes the Dock |
-| **Accessibility** | Global keyboard shortcuts only | Prompted on first launch — **optional**, everything else works without it |
+| **Accessibility** — *Device Control and Data Access* on macOS 27+ | Global keyboard shortcuts only | Prompted on first launch — **optional**, everything else works without it |
 
-Both live in **System Settings → Privacy & Security**. If hotkeys stop working after a Homebrew update, ad-hoc signing has invalidated the Accessibility grant — use **Settings → Shortcuts → Reset Permission**.
+Both live in **System Settings → Privacy & Security**. SmartDock's Shortcuts tab names the permission the way your macOS does and shows whether it is allowed. If hotkeys stop working after a Homebrew update, ad-hoc signing has invalidated the grant — the tab will say *Not allowed* even while the checkbox looks switched on. **Grant Access…** there fixes both that and a permission never given: it clears whatever entry exists, restarts SmartDock and opens the list for you to switch it on. No administrator password is needed.
 
 ## 🛠️ Requirements
 
