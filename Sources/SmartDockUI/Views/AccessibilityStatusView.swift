@@ -21,7 +21,8 @@ import SmartDockCore
 final class AccessibilityStatusView: NSView {
 
     private let prefs: UserPreferences
-    private let isGranted: Bool
+    /// Settable, because the answer changes under an open window — see `refresh(isGranted:)`.
+    private var isGranted: Bool
     /// Everything this view does leaves the app: opening System Settings, asking for
     /// confirmation, running `tccutil`, relaunching. Each is a parameter so the flow
     /// around them can be tested without doing any of it.
@@ -65,6 +66,28 @@ final class AccessibilityStatusView: NSView {
 
     required init?(coder: NSCoder) {
         fatalError("AccessibilityStatusView is built programmatically — init(coder:) is unavailable")
+    }
+
+    // MARK: - Public
+
+    /// Rebuilds the row for a permission that changed while the window stayed open —
+    /// someone reading *Not allowed*, switching SmartDock on in System Settings and
+    /// coming back. Measured before this existed: the permission was read once per
+    /// window, so the row went on saying *Not allowed* until the window was closed.
+    ///
+    /// The view itself stays put and only its contents are replaced. The Shortcuts tab
+    /// chains its hotkey rows off this view's bottom anchor, so swapping the view for a
+    /// new one would take those constraints with it.
+    func refresh(isGranted: Bool) {
+        guard isGranted != self.isGranted else { return }
+        self.isGranted = isGranted
+
+        for subview in subviews { subview.removeFromSuperview() }
+        // The card's styling belongs to the warning, not to the view, and nothing else
+        // would clear it on the way back to allowed.
+        layer?.backgroundColor = nil
+        layer?.borderWidth = 0
+        buildUI()
     }
 
     // MARK: - Private

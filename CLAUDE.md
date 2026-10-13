@@ -341,7 +341,13 @@ carries only Xcode 27 — so the `#available` spelling could not be checked on t
 that has to compile it. `tccutil` runs through
 `Process` as the person — **no administrator privileges**, measured: `tccutil reset
 Accessibility <id>` succeeds at uid 501, and the `do shell script … with administrator
-privileges` it replaced asked for a password macOS never wanted. `runTccutil` refuses an
+privileges` it replaced asked for a password macOS never wanted. `refresh(isGranted:)` rebuilds the row in place —
+the tab chains its hotkey rows off this view's bottom anchor, so a replacement view would
+take those constraints with it — and `SettingsWindow.windowDidBecomeKey` calls it, since
+the permission was read **once per window** and the tab went on saying *Not allowed* over a
+grant given a moment earlier; measured with a counting stub, which showed one read across a
+re-activation. The warning's card is painted on the view's own layer, so `refresh` clears it
+or the yellow survives into the allowed state. `runTccutil` refuses an
 empty bundle ID, since `tccutil reset Accessibility` without one resets every app on the Mac;
 the test mutates the guard's **return**, never the guard, because removing it would run that
 command. **One button, `Grant Access…`** — *Open System Settings* and *Reset Permission* made

@@ -44,6 +44,8 @@ public final class SettingsWindow: NSObject {
     var settingsScroll: NSScrollView!
     var generalContainer: GeneralTabView!
     var shortcutsContainer: NSView!
+    /// Held so a permission granted while this window stayed open can reach it.
+    var accessibilityStatus: AccessibilityStatusView!
     var aboutContainer: NSView!
 
     // Controls — Settings tab
@@ -309,8 +311,8 @@ public final class SettingsWindow: NSObject {
         container.addSubview(header)
 
         // Always present: one row when the permission is there, the warning card with
-        // its two fixes when it is not.
-        let accessibilityStatus = AccessibilityStatusView(
+        // its fix when it is not.
+        accessibilityStatus = AccessibilityStatusView(
             prefs: prefs, isGranted: isAccessibilityGranted())
         container.addSubview(accessibilityStatus)
 
@@ -543,6 +545,14 @@ public final class SettingsWindow: NSObject {
 // MARK: - NSWindowDelegate
 
 extension SettingsWindow: NSWindowDelegate {
+    /// Back from System Settings, where the person may have just switched SmartDock on.
+    /// The permission was read once per window before this, so the Shortcuts tab went on
+    /// saying *Not allowed* over a permission that had been granted a moment earlier —
+    /// measured, and only closing the window cleared it.
+    public func windowDidBecomeKey(_ notification: Notification) {
+        accessibilityStatus?.refresh(isGranted: isAccessibilityGranted())
+    }
+
     /// Closing used to drop a draft without a word, while every other exit applied
     /// it — inconsistent in both directions. Now it asks, and Cancel keeps the window.
     public func windowShouldClose(_ sender: NSWindow) -> Bool {

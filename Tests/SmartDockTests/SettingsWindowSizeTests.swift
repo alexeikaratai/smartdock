@@ -118,6 +118,50 @@ struct SettingsWindowSizeTests {
             """)
     }
 
+    /// Coming back from System Settings has to re-read the permission. It was read once
+    /// per window before this: measured with a counting stub, the count stayed at 1 across
+    /// a re-activation, so a row that said *Not allowed* kept saying it over a permission
+    /// granted a moment earlier, and only closing the window cleared it.
+    @Test func comingBackToTheWindowRereadsThePermission() throws {
+        _ = NSApplication.shared
+        let scratch = ScratchPreferences()
+        let service = SmartDockService(
+            displayMonitor: MockDisplayMonitor(), dockController: MockDockController(),
+            prefs: scratch.prefs)
+        let hotkeys = HotkeyManager(
+            service: service, prefs: scratch.prefs, workspaceEvents: NotificationCenter())
+
+        // A permission the test flips, standing in for a trip to System Settings.
+        final class Permission: @unchecked Sendable {
+            var granted = false
+            var reads = 0
+        }
+        let permission = Permission()
+
+        let settings = SettingsWindow(
+            service: service, hotkeyManager: hotkeys, prefs: scratch.prefs,
+            decideDraft: { _ in .discard },
+            isAccessibilityGranted: {
+                permission.reads += 1
+                return permission.granted
+            })
+        settings.show(tab: .shortcuts)
+        defer { settings.window?.close() }
+        let window = try #require(settings.window)
+        let readsWhileBuilding = permission.reads
+
+        permission.granted = true
+        settings.windowDidBecomeKey(Notification(name: NSWindow.didBecomeKeyNotification))
+        window.layoutIfNeeded()
+
+        #expect(
+            permission.reads > readsWhileBuilding,
+            "the window never asked again — it read the permission \(permission.reads) time(s)")
+        let status = try #require(settings.accessibilityStatus)
+        let labels = status.subviews.compactMap { ($0 as? NSTextField)?.stringValue }
+        #expect(labels.contains("Allowed"), "the row still shows \(labels)")
+    }
+
     /// Distance from the bottom of the tab's header label to the top of the first row.
     ///
     /// Safe against a window server that refuses the size asked for, the way a CI runner

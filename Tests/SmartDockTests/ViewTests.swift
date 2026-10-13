@@ -218,6 +218,37 @@ struct AccessibilityStatusViewTests {
         #expect(titles.count == (granted ? 0 : 1), "the card shows \(titles)")
     }
 
+    /// The permission can change under an open window — someone reads *Not allowed*,
+    /// switches SmartDock on in System Settings and comes back. Measured before this
+    /// existed: the row went on saying *Not allowed*, and only closing the window
+    /// cleared it.
+    @Test(arguments: [true, false])
+    func therowFollowsAPermissionThatChangedUnderIt(startsGranted: Bool) {
+        let view = view(granted: startsGranted)
+
+        view.refresh(isGranted: !startsGranted)
+        view.layoutSubtreeIfNeeded()
+
+        let labels = labels(in: view)
+        #expect(labels.contains(startsGranted ? "Not allowed" : "Allowed"))
+        #expect(!labels.contains(startsGranted ? "Allowed" : "Not allowed"))
+        #expect(
+            buttonTitles(in: view).contains("Grant Access…") == startsGranted,
+            "the fix should appear with the warning and leave with it")
+    }
+
+    /// Going back to allowed has to take the card with it: the yellow sits on the view's
+    /// own layer, so nothing else would ever clear it.
+    @Test func thecardLeavesNoYellowBehindWhenThePermissionArrives() {
+        let view = view(granted: false)
+        view.refresh(isGranted: true)
+        view.layoutSubtreeIfNeeded()
+
+        #expect(view.layer?.backgroundColor == nil, "the warning's card is still painted")
+        #expect(view.layer?.borderWidth == 0)
+        #expect(view.fittingSize.height <= 24, "and it is a row again, not a card")
+    }
+
     /// The granted state is one row, not a band. This view used to build nothing at all
     /// in that case — hiding was not enough, since a hidden view keeps whatever height
     /// its contents ask for, and the Shortcuts tab pins its rows below this one, which

@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.11.4] — 2026-10-12
+## [2.11.5] — 2026-10-13
 
 ### Fixed
 
@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Resetting the permission no longer asks for an administrator password. `tccutil reset
   Accessibility` needs none — it was being run through `do shell script … with
   administrator privileges`, which demanded one that macOS never wanted.
+- The Shortcuts tab kept saying *Not allowed* after the permission had been granted.
+  It read the permission once when the window was built and never again, so switching
+  SmartDock on in System Settings and coming back to the open window changed nothing
+  on screen — only closing the window did. It now re-reads whenever the window comes
+  forward, which is exactly when you are back from System Settings.
 - After the permission was reset, System Settings opened on a list SmartDock was not in,
   so there was nothing to switch on. macOS lists an app only once that app asks, and
   SmartDock never did — it opened the pane and waited. It now asks first, from the new
