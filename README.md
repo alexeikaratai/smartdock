@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.11.5-blue?style=flat-square" alt="Version 2.11.5"/>
+  <img src="https://img.shields.io/badge/version-3.0.0-blue?style=flat-square" alt="Version 3.0.0"/>
   <img src="https://img.shields.io/badge/macOS-14.0%2B-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS 14+"/>
   <img src="https://img.shields.io/badge/Swift-6.2-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 6.2"/>
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License"/>
@@ -40,7 +40,7 @@ On first launch both profiles are your Dock exactly as it is. Nothing changes un
 | 🔗 | **URL scheme** | `smartdock://` commands for Raycast, Alfred, Shortcuts.app and shell scripts |
 | 🩺 | **Diagnostics** | Copy Diagnostic Info + Export Logs — both scrubbed of anything identifying |
 | 📜 | **AppleScript** | Scriptable from Script Editor, `osascript`, Automator and Shortcuts |
-| 🎨 | **Glass UI** | Tabbed settings window (Dock / General / Shortcuts / About) with `NSVisualEffectView` |
+| 🎨 | **Native settings UI** | SwiftUI tabs (Dock / General / Shortcuts / About) in a glass window — switches and grouped forms, as System Settings does it |
 | 🚀 | **Launch at Login** | Native `SMAppService` integration |
 | 🛡️ | **Smooth transitions** | Per-property AppleScript — no Dock restart needed |
 | 👋 | **Onboarding** | Welcome screen on first launch |
@@ -89,7 +89,7 @@ can drive it — Raycast, Alfred, Shortcuts.app, or a plain shell script:
 ```bash
 open smartdock://refresh            # re-apply the config for the current display setup
 open smartdock://switch/external    # force the External Monitor profile
-open smartdock://switch/builtin     # force the Built-in Only profile
+open smartdock://switch/builtin     # force the Built-in Display profile
 open smartdock://toggle-autohide    # flip auto-hide on the active profile
 open smartdock://settings           # open the Settings window
 ```
@@ -130,7 +130,7 @@ SmartDock ships a scripting dictionary — open it in Script Editor with
 tell application "SmartDock"
     refresh              -- re-apply the config for the current display setup
     switch to external   -- force the External Monitor profile
-    switch to builtin    -- force the Built-in Only profile
+    switch to builtin    -- force the Built-in Display profile
     toggle autohide      -- flip auto-hide on the active profile
     show settings        -- open the Settings window
 end tell
@@ -178,27 +178,33 @@ Sources/
 │   ├── App.swift                     # @main entry, manual NSApplication run loop
 │   ├── ScriptingSupport.swift        # NSScriptCommand subclasses for the sdef
 │   └── AppIntentsSupport.swift       # App Intents for Shortcuts.app and Spotlight
-└── SmartDockUI/                      # AppKit layer as a library, so it can be tested
+└── SmartDockUI/                    # The UI layer as a library, so it can be tested
     ├── StatusBarController.swift     # Menu bar icon & dropdown with SF Symbol icons
-    ├── SettingsWindow.swift          # Tabbed glass window (Dock / General / Shortcuts / About)
-    ├── OnboardingWindow.swift        # First-launch welcome screen
+    ├── SettingsWindow.swift          # The window: glass, header, tabs, draft rules
+    ├── OnboardingWindow.swift        # First-launch welcome window
     ├── NotificationManager.swift     # macOS banner notifications
     ├── HotkeyManager.swift           # Global keyboard shortcuts (5 actions)
     ├── HotkeyRecorder.swift          # Captures a keystroke into a binding
-    ├── AccessibilityGrantWatcher.swift # Post-relaunch grant flow: ask, open pane, wait
     ├── AppRelauncher.swift           # Safe relaunch — waits for PID exit first
     ├── AppUpdateWatcher.swift        # Detects Homebrew upgrade, prompts relaunch
+    ├── AccessibilityGrantWatcher.swift # Post-relaunch grant flow: ask, open pane, wait
     ├── LaunchAtLogin.swift           # SMAppService wrapper
-    ├── AccessibilityChecker.swift    # First-launch Accessibility prompt
-    └── Views/                        # Self-contained UI pieces
-        ├── UI.swift                  # Shared control & glass window factories
-        ├── PositionIcon.swift        # Cached dock-position thumbnails
-        ├── PositionPicker.swift      # Position button row
-        ├── AboutTabView.swift        # About tab contents
-        ├── GeneralTabView.swift      # General tab — app behaviour
-        ├── DockTabView.swift         # Dock tab — picker, form, buttons, status
-        ├── DockProfileForm.swift     # One control per Dock setting, one binding table
-        └── AccessibilityStatusView.swift   # Permission row, warning & reset flow
+    ├── AccessibilityChecker.swift    # Permission state and what System Settings calls it
+    ├── Models/                       # Observable state behind the SwiftUI tabs
+    │   ├── DockTabModel.swift        # Dock tab: draft, dirty state, refusal, status
+    │   ├── GeneralSettingsModel.swift  # General tab: app behaviour
+    │   ├── ShortcutsModel.swift      # Shortcuts tab: recording state, row titles
+    │   ├── AccessibilityStatusModel.swift # Permission state and Grant Access
+    │   └── AboutModel.swift          # Diagnostics, log export, links
+    └── Views/                        # SwiftUI, plus what still needs AppKit
+        ├── DockTabContent.swift      # Dock tab — one grouped Form
+        ├── DockProfileFormContent.swift # One control per DockProperty
+        ├── GeneralTabContent.swift   # General tab — switches in a grouped Form
+        ├── ShortcutsTabContent.swift # Permission row + the five bindings
+        ├── AboutTabContent.swift     # About tab contents
+        ├── OnboardingContent.swift   # Welcome screen contents
+        ├── UI.swift                  # Glass window & label factories (AppKit)
+        └── PositionIcon.swift        # Cached dock-position thumbnail for the header
 ```
 
 ### Key Design Decisions

@@ -20,7 +20,7 @@ public final class AccessibilityGrantWatcher {
 
     /// 300 tries a second apart — five minutes, after which the flag is dropped rather
     /// than left to make every future launch reopen Settings.
-    public static let attemptBudget = 300
+    static let attemptBudget = 300
 
     private static let accessibilityPaneURL =
         "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"

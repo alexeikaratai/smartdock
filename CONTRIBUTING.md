@@ -79,15 +79,18 @@ substantial change.
 Three targets. **`SmartDockCore`** holds logic with no UI: configuration values,
 display monitoring, dock control, URL parsing, diagnostics. **`SmartDockUI`** is the
 AppKit layer as a library — menu bar, windows, views, hotkeys, notifications — so the
-test bundle can build a view and read it back. **`SmartDock`** is the executable and
+test bundle can build the window and the models behind its tabs. **`SmartDock`** is the executable and
 holds only what must carry the app's own module name: `@main`, the App Intents (their
 identifiers are module-qualified) and the `@objc` scripting command classes.
 Dependencies flow one way: the app imports UI and Core, UI imports Core, never the
 reverse. External dependencies are consumed through protocols (`DisplayMonitoring`,
 `DockControlling`) so tests can inject mocks.
 
-**Put logic in Core whenever you can**, and a view's state behind a value you can set
-and read — `DockProfileForm.configuration` is the shape to copy.
+**Put logic in Core whenever you can**, and whatever is left in a tab behind an
+`@Observable` model in `SmartDockUI/Models/` — `GeneralSettingsModel` is the shape to
+copy. The tabs are SwiftUI, which cannot be clicked from a test and which this package
+will not add a view-inspection dependency to reach, so a view that held behaviour would
+hold untested behaviour. A model is tested without building a view at all.
 
 ## Testing
 

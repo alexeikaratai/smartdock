@@ -317,7 +317,7 @@ struct SettingsWindowTests {
     @Test func escapeClosesTheWindowUnlessRecording() throws {
         let f = Fixture()
         f.settings.show(tab: .shortcuts)
-        f.settings.hotkeyRecorder.start(.refreshNow, in: NSButton())
+        f.settings.hotkeyRecorder.start(.refreshNow)
 
         let passedThrough = f.settings.handleKey(try keyDown(53, [], "\u{1B}")) != nil
         #expect(passedThrough, "Escape belongs to the recorder while recording")
@@ -347,7 +347,7 @@ struct SettingsWindowTests {
     @Test func leavingTheShortcutsTabCancelsARecording() {
         let f = Fixture()
         f.settings.show(tab: .shortcuts)
-        f.settings.hotkeyRecorder.start(.refreshNow, in: NSButton())
+        f.settings.hotkeyRecorder.start(.refreshNow)
 
         f.settings.show(tab: .dock)
 
@@ -355,30 +355,118 @@ struct SettingsWindowTests {
         f.close()
     }
 
-    @Test func hotkeyButtonsShowTheirBindings() {
+    /// The rows read their titles from stored bindings, and re-read them when the
+    /// recorder finishes. The bindings live in `UserPreferences`, which is not
+    /// observable, so nothing refreshes on its own.
+    @Test func therowsShowTheirBindings() {
         let f = Fixture()
         f.scratch.prefs.setHotkey(
-            HotkeyBinding(keyCode: 15, modifiers: NSEvent.ModifierFlags.control.rawValue, displayName: "R"),
+            HotkeyBinding(
+                keyCode: 15, modifiers: NSEvent.ModifierFlags.control.rawValue, displayName: "R"),
             for: HotkeyAction.refreshNow.rawValue)
 
         f.settings.show(tab: .shortcuts)
 
-        #expect(f.settings.hotkeyButtons[.refreshNow]?.title.hasSuffix("R") == true)
-        #expect(f.settings.hotkeyButtons[.openSettings]?.title == "Click to set")
+        #expect(f.settings.shortcutsModel.title(for: .refreshNow).hasSuffix("R"))
+        #expect(f.settings.shortcutsModel.title(for: .openSettings) == "Click to set")
         f.close()
     }
 
-    @Test func aHotkeyButtonStartsAndStopsRecording() throws {
+    /// Only the row being recorded says it is listening, and a second request stops the
+    /// first: two recorders at once would each consume the same keystroke.
+    @Test func onlyTherowBeingRecordedSaysSo() {
         let f = Fixture()
         f.settings.show(tab: .shortcuts)
-        let button = try #require(f.settings.hotkeyButtons[.refreshNow])
 
-        button.performClick(nil)
+        f.settings.shortcutsModel.record(.refreshNow)
         #expect(f.settings.hotkeyRecorder.isRecording)
-        #expect(button.title == "Press shortcut...")
+        #expect(f.settings.shortcutsModel.title(for: .refreshNow) == "Press shortcut\u{2026}")
+        #expect(f.settings.shortcutsModel.title(for: .openSettings) == "Click to set")
 
-        button.performClick(nil)
-        #expect(!f.settings.hotkeyRecorder.isRecording, "a second click cancels")
+        f.settings.shortcutsModel.record(.openSettings)
+        #expect(f.settings.shortcutsModel.title(for: .refreshNow) == "Click to set")
+        #expect(f.settings.shortcutsModel.title(for: .openSettings) == "Press shortcut\u{2026}")
+
+        f.settings.shortcutsModel.stopRecording()
+        #expect(!f.settings.hotkeyRecorder.isRecording)
+        f.close()
+    }
+
+    /// Choosing the other profile has to move the picker. An `NSSegmentedControl` moved
+    /// itself on the click and the host only put it back when it refused; a SwiftUI
+    /// `Picker` moves for nobody, so the host has to. Without this the form showed the
+    /// built-in profile while the picker still claimed External, and switching back
+    /// appeared to do nothing.
+    @Test func acceptingAprofileSwitchMovesThePicker() {
+        let f = Fixture()
+        f.settings.show(tab: .dock)
+        #expect(f.settings.dockTab.selectedMode == .external)
+
+        f.settings.dockTab.requestMode(.builtin)
+
+        #expect(f.settings.selectedMode == .builtin, "the window did not change profile")
+        #expect(f.settings.dockTab.selectedMode == .builtin, "the picker stayed where it was")
+
+        f.settings.dockTab.requestMode(.external)
+
+        #expect(f.settings.selectedMode == .external, "switching back did nothing")
+        #expect(f.settings.dockTab.selectedMode == .external)
+        f.close()
+    }
+
+    /// And the form follows the picker: each profile's own settings, not the other's.
+    @Test func switchingProfileShowsThatProfilesSettings() {
+        let f = Fixture()
+        f.scratch.prefs.externalConfig = DockConfiguration(autohide: true, position: .left)
+        f.scratch.prefs.builtinConfig = DockConfiguration(autohide: false, position: .right)
+        f.settings.show(tab: .dock)
+
+        f.settings.dockTab.requestMode(.builtin)
+        #expect(f.settings.dockTab.configuration.position == .right)
+        #expect(!f.settings.dockTab.configuration.autohide)
+
+        f.settings.dockTab.requestMode(.external)
+        #expect(f.settings.dockTab.configuration.position == .left)
+        #expect(f.settings.dockTab.configuration.autohide)
+        f.close()
+    }
+
+    /// The segments come from `Tab.allCases`, not from a literal beside it. There were
+    /// two lists for one set of tabs — a fifth could have appeared in the enum and not
+    /// in the control, or the two could have fallen out of order, and nothing would
+    /// have said so.
+    @Test func thesegmentsAreTheTabs() {
+        let f = Fixture()
+        f.settings.show(tab: .dock)
+
+        let labels = (0..<f.settings.tabControl.segmentCount).map {
+            f.settings.tabControl.label(forSegment: $0) ?? ""
+        }
+
+        // The words, written down once. Comparing the control against
+        // `allCases.map(\.title)` alone proves only that the two are wired together —
+        // swap two titles in the enum and both sides swap with it, which is exactly
+        // what a mutation showed.
+        #expect(labels == ["Dock", "General", "Shortcuts", "About"], "the control reads \(labels)")
+        #expect(
+            labels == SettingsWindow.Tab.allCases.map(\.title),
+            "the control and the enum disagree")
+        f.close()
+    }
+
+    /// A segment's position **is** its `rawValue` — `tabChanged` reads the selected
+    /// index straight back into a `Tab`, so an enum reordered without the control
+    /// would open the wrong page.
+    @Test func eachsegmentIndexIsItsTab() {
+        let f = Fixture()
+        f.settings.show(tab: .dock)
+
+        for tab in SettingsWindow.Tab.allCases {
+            f.settings.tabControl.selectedSegment = tab.rawValue
+            _ = f.settings.tabControl.target?.perform(
+                f.settings.tabControl.action!, with: f.settings.tabControl)
+            #expect(f.settings.currentTab == tab, "segment \(tab.rawValue) opened \(f.settings.currentTab)")
+        }
         f.close()
     }
 }

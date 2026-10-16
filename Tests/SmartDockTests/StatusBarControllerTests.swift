@@ -312,4 +312,49 @@ struct StatusBarControllerTests {
         #expect(f.menu.settingsWindow.currentTab == .about)
         f.menu.settingsWindow.window?.close()
     }
+
+    // MARK: - Shape
+
+    /// The menu's running order, separators included. Nothing pinned it before: the
+    /// sections could be swapped — `addServiceSection` and `addProfileSection` traded
+    /// places as a check — and the whole suite stayed green while the menu came out in a
+    /// different order. A refactor is exactly when that goes wrong silently, so the shape
+    /// is written down here and compared whole rather than item by item.
+    @Test func themenuIsBuiltInThisOrder() throws {
+        let f = Fixture()
+        let menu = try #require(f.menu.statusItem.menu)
+
+        let shape = menu.items.map { $0.isSeparatorItem ? "—" : $0.wording }
+
+        #expect(
+            shape == [
+                "SmartDock v\(Bundle.main.shortVersion)",
+                "Status: External monitor connected",
+                "",  // the refusal line, hidden until macOS turns something down
+                "—",
+                "Disable",
+                "Refresh Now",
+                "—",
+                DockProfile.external.displayName,
+                DockProfile.builtin.displayName,
+                "Dock Position",
+                "Hide Dock",
+                "—",
+                "Settings…",
+                "Shortcuts…",
+                "About SmartDock",
+                "—",
+                "Quit SmartDock",
+            ],
+            "the menu reads \(shape)")
+    }
+
+    /// Every position the Dock has, in the submenu, driven by `allCases` — a fourth
+    /// would appear without this file changing.
+    @Test func thepositionSubmenuOffersEveryPosition() throws {
+        let f = Fixture()
+        let submenu = try #require(f.menu.positionMenuItem.submenu)
+
+        #expect(submenu.items.map(\.wording) == DockPosition.allCases.map(\.displayName))
+    }
 }

@@ -36,14 +36,14 @@ struct HotkeyRecorderTests {
                 keyCode: keyCode))
     }
 
-    @Test func recordingPausesDispatchAndNamesTheButton() {
+    @Test func recordingPausesDispatchAndNamesTheAction() {
         let f = Fixture()
 
-        f.recorder.start(.refreshNow, in: f.button)
+        f.recorder.start(.refreshNow)
 
         #expect(f.recorder.isRecording)
         #expect(f.manager.isRecording, "a recorded key must not fire its own action")
-        #expect(f.button.title == "Press shortcut...")
+        #expect(f.recorder.recordingAction == .refreshNow, "the row has to know which one is listening")
         f.recorder.stop()
     }
 
@@ -51,7 +51,7 @@ struct HotkeyRecorderTests {
         let f = Fixture()
         var finished = 0
         f.recorder.onFinish = { finished += 1 }
-        f.recorder.start(.refreshNow, in: f.button)
+        f.recorder.start(.refreshNow)
 
         f.recorder.handleRecordedKey(try keyDown(15, [.control, .option]))
 
@@ -65,7 +65,7 @@ struct HotkeyRecorderTests {
     /// Shift alone would swallow ordinary typing, so it does not count.
     @Test func aKeystrokeWithoutARealModifierIsIgnored() throws {
         let f = Fixture()
-        f.recorder.start(.refreshNow, in: f.button)
+        f.recorder.start(.refreshNow)
 
         f.recorder.handleRecordedKey(try keyDown(15, [.shift]))
 
@@ -79,7 +79,7 @@ struct HotkeyRecorderTests {
         f.scratch.prefs.setHotkey(
             HotkeyBinding(keyCode: 15, modifiers: NSEvent.ModifierFlags.control.rawValue, displayName: "R"),
             for: HotkeyAction.refreshNow.rawValue)
-        f.recorder.start(.refreshNow, in: f.button)
+        f.recorder.start(.refreshNow)
 
         f.recorder.handleRecordedKey(try keyDown(53, [], "\u{1B}"))
 
@@ -104,5 +104,40 @@ struct HotkeyRecorderTests {
             for: HotkeyAction.refreshNow.rawValue)
 
         #expect(HotkeyRecorder.displayTitle(for: .refreshNow, in: f.scratch.prefs).hasSuffix("R"))
+    }
+
+    /// Exactly one monitor at a time. A second `start` without a `stop` used to leave the
+    /// first one installed: the row titles looked right while two monitors each swallowed
+    /// the same keystroke, and the orphan outlived the tab that asked for it. Nothing
+    /// could see it until installing the monitor became a parameter.
+    @Test func asecondRecordingReplacesTheFirstMonitor() {
+        let scratch = ScratchPreferences()
+        let service = SmartDockService(
+            displayMonitor: MockDisplayMonitor(), dockController: MockDockController(),
+            prefs: scratch.prefs)
+        let manager = HotkeyManager(
+            service: service, prefs: scratch.prefs, workspaceEvents: NotificationCenter())
+        final class Monitors: @unchecked Sendable {
+            var installed = 0
+            var removed = 0
+            var live: Int { installed - removed }
+        }
+        let monitors = Monitors()
+        let recorder = HotkeyRecorder(
+            hotkeyManager: manager, prefs: scratch.prefs,
+            installMonitor: { _ in
+                monitors.installed += 1
+                return monitors.installed as NSNumber
+            },
+            removeMonitor: { _ in monitors.removed += 1 })
+
+        recorder.start(.refreshNow)
+        recorder.start(.openSettings)
+
+        #expect(monitors.live == 1, "\(monitors.live) monitors are installed, each eating the keystroke")
+        #expect(recorder.recordingAction == .openSettings)
+
+        recorder.stop()
+        #expect(monitors.live == 0, "a monitor outlived the recording")
     }
 }

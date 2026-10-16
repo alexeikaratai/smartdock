@@ -339,9 +339,12 @@ struct AccessibilityGrantTests {
         var failuresReported: [String] = []
     }
 
-    private func makeView(_ recorder: Recorder, prefs: UserPreferences) -> AccessibilityStatusView {
-        AccessibilityStatusView(
+    private func makeModel(_ recorder: Recorder, prefs: UserPreferences) -> AccessibilityStatusModel {
+        AccessibilityStatusModel(
             prefs: prefs,
+            // Stated rather than left to the machine: this process is untrusted here and
+            // trusted on a CI runner.
+            isGranted: { false },
             openURL: { recorder.opened.append($0) },
             promptForTrust: { recorder.prompts += 1 },
             resetPermission: { bundleID in
@@ -349,26 +352,16 @@ struct AccessibilityGrantTests {
                 return recorder.resetSucceeds
             },
             relaunch: { recorder.relaunches += 1 },
-            reportFailure: { recorder.failuresReported.append($0) },
-            // Stated rather than left to the machine: this process is untrusted here and
-            // trusted on a CI runner, and a granted view offers no fixes to click.
-            isGranted: false)
-    }
-
-    private func grantButton(in view: NSView) -> NSButton? {
-        (view.subviews + view.subviews.flatMap(\.subviews)).compactMap { $0 as? NSButton }
-            .first { $0.title.contains("Grant Access") }
+            reportFailure: { recorder.failuresReported.append($0) })
     }
 
     /// The whole reason one button replaced two: it clears the entry whether or not the
     /// permission was ever given, since a grant invalidated by an ad-hoc re-signing looks
     /// exactly like no grant from the outside.
-    @Test func grantingClearsTheEntryThenRelaunches() throws {
+    @Test func grantingClearsTheEntryThenRelaunches() {
         let recorder = Recorder()
         let scratch = ScratchPreferences()
-        let view = makeView(recorder, prefs: scratch.prefs)
-
-        try #require(grantButton(in: view)).performClick(nil)
+        makeModel(recorder, prefs: scratch.prefs).grantAccess()
 
         #expect(recorder.resets.count == 1)
         #expect(recorder.relaunches == 1)
@@ -381,13 +374,11 @@ struct AccessibilityGrantTests {
     /// When the entry cannot be cleared there is still the never-granted case to serve,
     /// so this process asks and opens the pane, and the manual command covers the rest.
     /// Until the ask was added, a failed clear opened a list with nothing to switch on.
-    @Test func agrantThatCannotClearTheEntryStillAsks() throws {
+    @Test func agrantThatCannotClearTheEntryStillAsks() {
         let recorder = Recorder()
         recorder.resetSucceeds = false
         let scratch = ScratchPreferences()
-        let view = makeView(recorder, prefs: scratch.prefs)
-
-        try #require(grantButton(in: view)).performClick(nil)
+        makeModel(recorder, prefs: scratch.prefs).grantAccess()
 
         #expect(recorder.relaunches == 0)
         #expect(recorder.prompts == 1, "without the prompt the pane lists no SmartDock")
@@ -402,15 +393,18 @@ struct AccessibilityGrantTests {
     /// that ever reaches the tool, so the refusal lives there and is pinned here. This
     /// runs the shipping implementation: it returns before `tccutil` is ever started.
     @Test func anEmptyBundleIDNeverReachesTccutil() {
-        #expect(!AccessibilityStatusView.runTccutil(bundleID: ""))
+        #expect(!AccessibilityStatusModel.runTccutil(bundleID: ""))
     }
 }
 
-// MARK: - About Tab Links & Export
+// MARK: - About Links & Export
 
-@Suite("About tab links")
+/// The About tab's two outward jobs. Asserted on the model: the view is SwiftUI and has
+/// no buttons to click, and `await model.exportLogs()` is a plain await rather than a
+/// click followed by `waitUntil`.
+@Suite("About links")
 @MainActor
-struct AboutTabLinkTests {
+struct AboutLinkTests {
 
     @MainActor
     private final class Recorder {
@@ -419,31 +413,36 @@ struct AboutTabLinkTests {
         var saved: [String] = []
     }
 
-    private func makeView(_ recorder: Recorder) -> AboutTabView {
+    private func makeModel(_ recorder: Recorder) -> AboutModel {
         let scratch = ScratchPreferences()
         let service = SmartDockService(
-            displayMonitor: MockDisplayMonitor(), dockController: MockDockController(), prefs: scratch.prefs)
-        return AboutTabView(
+            displayMonitor: MockDisplayMonitor(), dockController: MockDockController(),
+            prefs: scratch.prefs)
+        return AboutModel(
             service: service, prefs: scratch.prefs,
             openURL: { recorder.opened.append($0) },
             collectLog: { await MainActor.run { recorder.log } },
-            saveLog: { recorder.saved.append($0) })
+            saveLog: { recorder.saved.append($0) },
+            copyToPasteboard: { _ in },
+            afterConfirmation: { _ in })
     }
 
-    private func button(_ title: String, in view: NSView) -> NSButton? {
-        (view.subviews + view.subviews.flatMap(\.subviews)).compactMap { $0 as? NSButton }
-            .first { $0.title.contains(title) }
-    }
-
-    @Test(arguments: [("GitHub", "github.com"), ("Changelog", "releases")])
-    func linksPointWhereTheySay(title: String, expected: String) throws {
+    @Test func thelinkToTheRepositoryPointsAtIt() {
         let recorder = Recorder()
-        let view = makeView(recorder)
 
-        try #require(button(title, in: view)).performClick(nil)
+        makeModel(recorder).openRepository()
 
         #expect(recorder.opened.count == 1)
-        #expect(recorder.opened.first?.absoluteString.contains(expected) == true, "\(recorder.opened)")
+        #expect(recorder.opened.first?.absoluteString.contains("github.com") == true)
+    }
+
+    @Test func thelinkToTheChangelogPointsAtTheReleases() {
+        let recorder = Recorder()
+
+        makeModel(recorder).openReleases()
+
+        #expect(recorder.opened.count == 1)
+        #expect(recorder.opened.first?.absoluteString.contains("releases") == true)
     }
 
     /// The write behind the save panel: the panel needs a person, the write does not.
@@ -452,54 +451,48 @@ struct AboutTabLinkTests {
             .appendingPathComponent("smartdock-export-test.txt")
         defer { try? FileManager.default.removeItem(at: url) }
 
-        AboutTabView.write("two lines\nof log", to: url)
+        AboutModel.write("two lines\nof log", to: url)
 
         #expect(try String(contentsOf: url, encoding: .utf8) == "two lines\nof log")
     }
 
     /// An unwritable destination is logged, not crashed on.
     @Test func anUnwritableDestinationIsSurvived() {
-        AboutTabView.write("x", to: URL(fileURLWithPath: "/no/such/dir/export.txt"))
+        AboutModel.write("x", to: URL(fileURLWithPath: "/no/such/dir/export.txt"))
     }
 
-    /// The button says what it is doing and comes back afterwards, so a slow log
-    /// read does not look like a dead window.
-    @Test func exportingCollectsThenOffersToSave() async throws {
+    /// The tab says what it is doing and stops saying it afterwards, so a slow log read
+    /// does not look like a dead window.
+    @Test func exportingCollectsThenOffersToSave() async {
         let recorder = Recorder()
-        let view = makeView(recorder)
-        let exportButton = try #require(button("Export", in: view))
+        let model = makeModel(recorder)
 
-        exportButton.performClick(nil)
-        try await waitUntil { !recorder.saved.isEmpty }
+        await model.exportLogs()
 
         #expect(recorder.saved == ["collected log"])
-        #expect(exportButton.isEnabled)
-        #expect(exportButton.title.hasPrefix("Export Logs"))
+        #expect(!model.isCollectingLog)
     }
 
-    /// Nothing to export: the button still comes back, and no empty file is offered.
-    @Test func anEmptyLogIsNotOfferedForSaving() async throws {
+    /// Nothing to export: no empty file is offered, and the tab stops collecting.
+    @Test func anEmptyLogIsNotOfferedForSaving() async {
         let recorder = Recorder()
         recorder.log = ""
-        let view = makeView(recorder)
-        let exportButton = try #require(button("Export", in: view))
+        let model = makeModel(recorder)
 
-        exportButton.performClick(nil)
-        try await waitUntil { exportButton.isEnabled }
+        await model.exportLogs()
 
         #expect(recorder.saved.isEmpty)
-        #expect(exportButton.title.hasPrefix("Export Logs"))
+        #expect(!model.isCollectingLog)
     }
 
-    @Test func afailedCollectionIsNotOfferedEither() async throws {
+    @Test func afailedCollectionIsNotOfferedEither() async {
         let recorder = Recorder()
         recorder.log = nil
-        let view = makeView(recorder)
-        let exportButton = try #require(button("Export", in: view))
+        let model = makeModel(recorder)
 
-        exportButton.performClick(nil)
-        try await waitUntil { exportButton.isEnabled }
+        await model.exportLogs()
 
         #expect(recorder.saved.isEmpty)
+        #expect(!model.isCollectingLog)
     }
 }
