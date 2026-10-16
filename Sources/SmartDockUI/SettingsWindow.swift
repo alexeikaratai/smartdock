@@ -1,5 +1,6 @@
 import Cocoa
 import SmartDockCore
+import SwiftUI
 
 /// Settings window for SmartDock.
 /// Three tabs: Settings (dock config + general), Shortcuts (hotkey bindings), About.
@@ -13,14 +14,26 @@ public final class SettingsWindow: NSObject {
 
     /// Raw values are the segment indices of `tabControl` — the two are read off each
     /// other in `selectTab` and `tabChanged`, so they have to stay in the same order.
-    public enum Tab: Int, Sendable {
+    public enum Tab: Int, Sendable, CaseIterable {
         case dock = 0
         case general = 1
         case shortcuts = 2
         case about = 3
+
+        /// The segment's words. They used to be a literal array beside this enum —
+        /// two lists for one set of tabs, and `allCases` now drives the control, so a
+        /// fifth tab cannot appear in one and not the other.
+        var title: String {
+            switch self {
+            case .dock: "Dock"
+            case .general: "General"
+            case .shortcuts: "Shortcuts"
+            case .about: "About"
+            }
+        }
     }
 
-    typealias Mode = DockTabView.Mode
+    typealias Mode = DockTabModel.Mode
 
     // MARK: - Properties
 
@@ -39,19 +52,33 @@ public final class SettingsWindow: NSObject {
 
     // Controls — Top-level
     private var headerIconView: NSImageView!
+    /// Held because the layout pass places them; nothing else reads either one.
+    private var headerNameLabel: NSTextField!
+    private var headerVersionLabel: NSTextField!
+    /// The gutter every top-level row shares.
+    private static let margin: CGFloat = 24
     var tabControl: NSSegmentedControl!
-    var dockTab: DockTabView!
+    /// The Dock tab is SwiftUI inside an `NSHostingView`; the model carries the
+    /// state the window reads and writes, and the hosting view does not own it.
+    var dockTab: DockTabModel!
+    var dockContainer: NSView!
     var settingsScroll: NSScrollView!
-    var generalContainer: GeneralTabView!
+    /// The General tab is SwiftUI inside an `NSHostingView`; the model is held
+    /// separately because the hosting view does not own it.
+    var generalModel: GeneralSettingsModel!
+    var generalContainer: NSView!
+    /// The Shortcuts tab is SwiftUI inside an `NSHostingView`.
+    var shortcutsModel: ShortcutsModel!
+    var accessibilityStatus: AccessibilityStatusModel!
     var shortcutsContainer: NSView!
-    /// Held so a permission granted while this window stayed open can reach it.
-    var accessibilityStatus: AccessibilityStatusView!
+    /// The About tab is SwiftUI inside an `NSHostingView`; the model is held
+    /// separately because the hosting view does not own it.
+    var aboutModel: AboutModel!
     var aboutContainer: NSView!
 
     // Controls — Settings tab
 
     // Controls — Shortcuts tab
-    var hotkeyButtons: [HotkeyAction: NSButton] = [:]
 
     // MARK: - Init
 
@@ -59,14 +86,14 @@ public final class SettingsWindow: NSObject {
     /// carries its warning banner. A parameter because the answer differs between this
     /// machine and a CI runner, and because the tab's layout in the *granted* case —
     /// where the banner must take no room at all — could not otherwise be measured.
-    private let isAccessibilityGranted: () -> Bool
+    private let isAccessibilityGranted: @MainActor () -> Bool
 
     init(
         service: SmartDockService,
         hotkeyManager: HotkeyManager,
         prefs: UserPreferences = .shared,
         decideDraft: @escaping @MainActor (Mode) -> DraftDecision = SettingsWindow.askWithAlert,
-        isAccessibilityGranted: @escaping () -> Bool = { AccessibilityChecker.isGranted }
+        isAccessibilityGranted: @escaping @MainActor () -> Bool = { AccessibilityChecker.isGranted }
     ) {
         self.isAccessibilityGranted = isAccessibilityGranted
         self.service = service
@@ -151,10 +178,17 @@ public final class SettingsWindow: NSObject {
     /// above them taking another 120. The scroll view on the Dock tab stays as the safety net for
     /// a shrunk window — it is not a substitute for a size that fits.
     ///
+    /// 800 since the profile picker became two tiles: a tile carries an icon above a
+    /// name where a segment carried words. The Dock tab measures **660** and so needs
+    /// 780; the extra 20 is deliberate. The window sat at **2pt** of spare height before
+    /// this, and the very next control did not fit. The maximum below is 900, so there is
+    /// room; a 13-inch laptop has about 900pt of usable height, which is why the maximum
+    /// is where it is.
+    ///
     /// `theDockTabFitsTheDefaultWindowWithoutScrolling` measures it rather than trusting
     /// this comment: the 600 above went stale the moment a checkbox was added, and
     /// nothing failed.
-    static let defaultContentSize = NSSize(width: 420, height: 750)
+    static let defaultContentSize = NSSize(width: 420, height: 800)
 
     private func makeWindow() -> NSWindow {
         let (w, contentView) = UI.glassWindow(
@@ -177,27 +211,35 @@ public final class SettingsWindow: NSObject {
 
     // MARK: - UI Construction
 
+    /// The window's chrome, in the order it is read: header, tabs, the four tab
+    /// containers, then the layout that places them. It was one 151-line function.
     private func buildUI(in container: NSView) {
-        let margin: CGFloat = 24
+        buildHeader(in: container)
+        buildTabControl(in: container)
+        buildTabs(in: container)
+        activateLayout(in: container)
+    }
 
-        // --- Header ---
+    /// Icon, name and version — the only part of the window that is not a tab.
+    private func buildHeader(in container: NSView) {
         headerIconView = NSImageView()
         headerIconView.translatesAutoresizingMaskIntoConstraints = false
         headerIconView.imageAlignment = .alignCenter
         container.addSubview(headerIconView)
 
-        let nameLabel = UI.label("SmartDock", font: .systemFont(ofSize: 18, weight: .semibold))
-        container.addSubview(nameLabel)
+        headerNameLabel = UI.label("SmartDock", font: .systemFont(ofSize: 18, weight: .semibold))
+        container.addSubview(headerNameLabel)
 
-        let versionLabel = UI.label(
-            "v\(Bundle.main.shortVersion) · Made with \u{2764} by Alex Karatai",
+        headerVersionLabel = UI.label(
+            "v\(Bundle.main.shortVersion) \u{00B7} Made with \u{2764} by Alex Karatai",
             font: .systemFont(ofSize: 11))
-        versionLabel.textColor = .tertiaryLabelColor
-        container.addSubview(versionLabel)
+        headerVersionLabel.textColor = .tertiaryLabelColor
+        container.addSubview(headerVersionLabel)
+    }
 
-        // --- Tab Control ---
+    private func buildTabControl(in container: NSView) {
         tabControl = NSSegmentedControl(
-            labels: ["Dock", "General", "Shortcuts", "About"],
+            labels: Tab.allCases.map(\.title),
             trackingMode: .selectOne,
             target: self,
             action: #selector(tabChanged)
@@ -206,23 +248,36 @@ public final class SettingsWindow: NSObject {
         tabControl.selectedSegment = 0
         tabControl.segmentStyle = .automatic
         container.addSubview(tabControl)
+    }
 
-        // --- Containers ---
-        // Dock is the one tab whose content can outgrow the window, and the only
-        // one that can be scrolled: `DockTabView` defines its height from the inside
-        // (its status line is pinned to its bottom), while Shortcuts and About end in
-        // `lessThanOrEqualTo` and rely on the window stretching them — inside a
-        // scroll view their height would be undefined.
-        //
-        // Without this the container was pinned top and sides but never to the
-        // bottom, so anything past the window edge was quietly clipped. No constraint
-        // conflicted, so Auto Layout never said a word about it.
-        dockTab = DockTabView()
+    /// The four tabs. Each is a model the window keeps and a SwiftUI view hosted in an
+    /// `NSHostingView`; only the Dock tab gets a scroll view, as the safety net for a
+    /// window shrunk below its default.
+    private func buildTabs(in container: NSView) {
+        buildDockTab(in: container)
+
+        generalModel = GeneralSettingsModel(service: service, prefs: prefs)
+        generalContainer = addHiddenTab(GeneralTabContent(model: generalModel), to: container)
+
+        accessibilityStatus = AccessibilityStatusModel(
+            prefs: prefs, isGranted: isAccessibilityGranted)
+        shortcutsModel = ShortcutsModel(
+            recorder: hotkeyRecorder, accessibility: accessibilityStatus, prefs: prefs)
+        shortcutsContainer = addHiddenTab(ShortcutsTabContent(model: shortcutsModel), to: container)
+
+        aboutModel = AboutModel(service: service, prefs: prefs)
+        aboutContainer = addHiddenTab(AboutTabContent(model: aboutModel), to: container)
+    }
+
+    /// The Dock tab and the callbacks that make its intents reach this window. It owns
+    /// no behaviour: every button there asks, and the draft rules answer from here.
+    private func buildDockTab(in container: NSView) {
+        dockTab = DockTabModel()
         dockTab.onModeChange = { [weak self] mode in self?.modeChanged(to: mode) }
         dockTab.onEdited = { [weak self] in
             guard let self else { return }
-            self.headerIconView.image = PositionIcon.image(for: self.dockTab.configuration.position, selected: true)
-            self.markDirty()
+            headerIconView.image = PositionIcon.image(for: dockTab.configuration.position, selected: true)
+            markDirty()
         }
         dockTab.onApply = { [weak self] in self?.saveAndApply() }
         dockTab.onDiscard = { [weak self] in self?.discardChanges() }
@@ -234,43 +289,40 @@ public final class SettingsWindow: NSObject {
         settingsScroll.hasVerticalScroller = true
         settingsScroll.autohidesScrollers = true
         settingsScroll.drawsBackground = false
-        settingsScroll.documentView = dockTab
+
+        let host = NSHostingView(rootView: DockTabContent(model: dockTab))
+        host.translatesAutoresizingMaskIntoConstraints = false
+        dockContainer = host
+        settingsScroll.documentView = host
         container.addSubview(settingsScroll)
+    }
 
-        generalContainer = GeneralTabView(service: service, prefs: prefs)
-        generalContainer.isHidden = true
-        container.addSubview(generalContainer)
+    /// One SwiftUI tab, hosted and hidden until its segment is picked.
+    private func addHiddenTab(_ content: some View, to container: NSView) -> NSView {
+        let host = NSHostingView(rootView: content)
+        host.translatesAutoresizingMaskIntoConstraints = false
+        host.isHidden = true
+        container.addSubview(host)
+        return host
+    }
 
-        shortcutsContainer = NSView()
-        shortcutsContainer.translatesAutoresizingMaskIntoConstraints = false
-        shortcutsContainer.isHidden = true
-        container.addSubview(shortcutsContainer)
-
-        aboutContainer = AboutTabView(service: service, prefs: prefs)
-        aboutContainer.isHidden = true
-        container.addSubview(aboutContainer)
-
-        // --- Build tab contents ---
-        buildShortcutsTab(in: shortcutsContainer)
-
-        // --- Top-level layout ---
+    private func activateLayout(in container: NSView) {
         NSLayoutConstraint.activate([
             headerIconView.topAnchor.constraint(equalTo: container.topAnchor, constant: 28),
-            headerIconView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
+            headerIconView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: Self.margin),
             headerIconView.widthAnchor.constraint(equalToConstant: 36),
             headerIconView.heightAnchor.constraint(equalToConstant: 36),
 
-            nameLabel.centerYAnchor.constraint(equalTo: headerIconView.centerYAnchor, constant: -8),
-            nameLabel.leadingAnchor.constraint(equalTo: headerIconView.trailingAnchor, constant: 10),
+            headerNameLabel.centerYAnchor.constraint(equalTo: headerIconView.centerYAnchor, constant: -8),
+            headerNameLabel.leadingAnchor.constraint(equalTo: headerIconView.trailingAnchor, constant: 10),
 
-            versionLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 1),
-            versionLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
+            headerVersionLabel.topAnchor.constraint(equalTo: headerNameLabel.bottomAnchor, constant: 1),
+            headerVersionLabel.leadingAnchor.constraint(equalTo: headerNameLabel.leadingAnchor),
 
             tabControl.topAnchor.constraint(equalTo: headerIconView.bottomAnchor, constant: 18),
-            tabControl.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
-            tabControl.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -margin),
+            tabControl.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: Self.margin),
+            tabControl.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -Self.margin),
 
-            // All containers share same frame below tab control
             settingsScroll.topAnchor.constraint(equalTo: tabControl.bottomAnchor, constant: 14),
             settingsScroll.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             settingsScroll.trailingAnchor.constraint(equalTo: container.trailingAnchor),
@@ -279,87 +331,42 @@ public final class SettingsWindow: NSObject {
             // Width tied to the clip view so the tab never scrolls sideways; height
             // is left to the content, which is what gives the scroller something to
             // scroll when the card grows.
-            dockTab.topAnchor.constraint(equalTo: settingsScroll.contentView.topAnchor),
-            dockTab.leadingAnchor.constraint(
-                equalTo: settingsScroll.contentView.leadingAnchor),
-            dockTab.trailingAnchor.constraint(
-                equalTo: settingsScroll.contentView.trailingAnchor),
-            dockTab.widthAnchor.constraint(
-                equalTo: settingsScroll.contentView.widthAnchor),
-
-            generalContainer.topAnchor.constraint(equalTo: tabControl.bottomAnchor, constant: 14),
-            generalContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            generalContainer.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-
-            shortcutsContainer.topAnchor.constraint(equalTo: tabControl.bottomAnchor, constant: 14),
-            shortcutsContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            shortcutsContainer.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-
-            aboutContainer.topAnchor.constraint(equalTo: tabControl.bottomAnchor, constant: 14),
-            aboutContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            aboutContainer.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            dockContainer.topAnchor.constraint(equalTo: settingsScroll.contentView.topAnchor),
+            dockContainer.leadingAnchor.constraint(equalTo: settingsScroll.contentView.leadingAnchor),
+            dockContainer.trailingAnchor.constraint(equalTo: settingsScroll.contentView.trailingAnchor),
+            dockContainer.widthAnchor.constraint(equalTo: settingsScroll.contentView.widthAnchor),
         ])
+
+        // The other three share one shape, so they share one loop. Spelled out three
+        // times before, comment and all — and a list repeated is a list that drifts.
+        //
+        // Pinned at the **bottom** as well as the top: a hosting view left to its own
+        // `fittingSize` came up short of what SwiftUI actually drew, and the last line
+        // of the tab was clipped against a frame that ended above it. With no scroll
+        // view on these three, that line was simply unreachable.
+        for tab in [generalContainer, shortcutsContainer, aboutContainer] {
+            guard let tab else { continue }
+            NSLayoutConstraint.activate([
+                tab.topAnchor.constraint(equalTo: tabControl.bottomAnchor, constant: 14),
+                tab.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+                tab.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+                tab.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            ])
+        }
     }
 
     // MARK: - Shortcuts Tab
 
-    private func buildShortcutsTab(in container: NSView) {
-        let margin: CGFloat = 24
-
-        let header = UI.label("Configure global keyboard shortcuts.", font: .systemFont(ofSize: 12))
-        header.textColor = .secondaryLabelColor
-        container.addSubview(header)
-
-        // Always present: one row when the permission is there, the warning card with
-        // its fix when it is not.
-        accessibilityStatus = AccessibilityStatusView(
-            prefs: prefs, isGranted: isAccessibilityGranted())
-        container.addSubview(accessibilityStatus)
-
-        var hotkeyLabels: [NSTextField] = []
-        for action in HotkeyAction.allCases {
-            let label = UI.label(action.displayName, font: .systemFont(ofSize: 13))
-            container.addSubview(label)
-            hotkeyLabels.append(label)
-
-            let button = makeHotkeyButton(for: action)
-            container.addSubview(button)
-            hotkeyButtons[action] = button
+    /// The view that holds a tab's contents. Only the Dock tab sits in a scroll view;
+    /// the other three are pinned straight into the window, so a test needs to measure
+    /// them to know whether what they hold can be reached at all.
+    func container(for tab: Tab) -> NSView? {
+        switch tab {
+        case .dock: dockContainer
+        case .general: generalContainer
+        case .shortcuts: shortcutsContainer
+        case .about: aboutContainer
         }
-
-        let hint = UI.label("Click to record, Esc to clear", font: .systemFont(ofSize: 10))
-        hint.textColor = .tertiaryLabelColor
-        container.addSubview(hint)
-
-        // Layout
-        NSLayoutConstraint.activate([
-            header.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
-            header.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
-
-            accessibilityStatus.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 10),
-            accessibilityStatus.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin - 4),
-            accessibilityStatus.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -(margin - 4)),
-        ])
-
-        var previousAnchor = accessibilityStatus.bottomAnchor
-        for (index, action) in HotkeyAction.allCases.enumerated() {
-            let label = hotkeyLabels[index]
-            guard let button = hotkeyButtons[action] else { continue }
-            NSLayoutConstraint.activate([
-                label.topAnchor.constraint(equalTo: previousAnchor, constant: 12),
-                label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
-                button.centerYAnchor.constraint(equalTo: label.centerYAnchor),
-                button.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -margin),
-                button.widthAnchor.constraint(equalToConstant: 120),
-            ])
-            previousAnchor = label.bottomAnchor
-        }
-
-        NSLayoutConstraint.activate([
-            hint.topAnchor.constraint(equalTo: previousAnchor, constant: 10),
-            hint.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: margin),
-            hint.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor, constant: -8),
-        ])
     }
 
     // MARK: - Tab Switching
@@ -376,7 +383,8 @@ public final class SettingsWindow: NSObject {
 
         // Cancel hotkey recording if leaving Shortcuts
         if currentTab == .shortcuts && tab != .shortcuts && hotkeyRecorder.isRecording {
-            hotkeyRecorder.stop()
+            // Through the model, so the row stops saying it is listening too.
+            shortcutsModel.stopRecording()
         }
 
         currentTab = tab
@@ -405,6 +413,11 @@ public final class SettingsWindow: NSObject {
             }
         }
         selectedMode = target
+        // The segment has to be moved here. An `NSSegmentedControl` moved itself on the
+        // click and the host only put it *back* when it refused; a SwiftUI `Picker` bound
+        // through `requestMode` moves for nobody until this line runs, so without it the
+        // form showed one profile while the picker claimed the other.
+        dockTab.selectedMode = target
         loadCurrentMode()
         markClean()
     }
@@ -445,15 +458,6 @@ public final class SettingsWindow: NSObject {
         prefs[selectedMode.profile] = service.dockController.readSystemConfig()
         loadCurrentMode()
         markClean()
-    }
-
-    @objc private func hotkeyButtonClicked(_ sender: NSButton) {
-        guard sender.tag >= 0, sender.tag < HotkeyAction.allCases.count else { return }
-        if hotkeyRecorder.isRecording {
-            hotkeyRecorder.stop()
-            return
-        }
-        hotkeyRecorder.start(HotkeyAction.allCases[sender.tag], in: sender)
     }
 
     /// Display state changed — refresh Settings UI.
@@ -525,20 +529,10 @@ public final class SettingsWindow: NSObject {
         dockTab.refusalNotice = service.dockController.lastApplyOutcome?.refusalNotice
     }
 
-    private func makeHotkeyButton(for action: HotkeyAction) -> NSButton {
-        let button = UI.smallButton(
-            HotkeyRecorder.displayTitle(for: action, in: prefs),
-            target: self,
-            action: #selector(hotkeyButtonClicked)
-        )
-        button.tag = HotkeyAction.allCases.firstIndex(of: action) ?? 0
-        return button
-    }
-
+    /// The recorder finished on its own, having stored or cleared a binding — the
+    /// rows re-read their titles from `UserPreferences`, which is not observable.
     private func updateHotkeyButtons() {
-        for action in HotkeyAction.allCases {
-            hotkeyButtons[action]?.title = HotkeyRecorder.displayTitle(for: action, in: prefs)
-        }
+        shortcutsModel?.recordingFinished()
     }
 }
 
@@ -550,7 +544,7 @@ extension SettingsWindow: NSWindowDelegate {
     /// saying *Not allowed* over a permission that had been granted a moment earlier —
     /// measured, and only closing the window cleared it.
     public func windowDidBecomeKey(_ notification: Notification) {
-        accessibilityStatus?.refresh(isGranted: isAccessibilityGranted())
+        accessibilityStatus?.refresh()
     }
 
     /// Closing used to drop a draft without a word, while every other exit applied
@@ -567,7 +561,7 @@ extension SettingsWindow: NSWindowDelegate {
     }
 
     public func windowWillClose(_ notification: Notification) {
-        if hotkeyRecorder.isRecording { hotkeyRecorder.stop() }
+        if hotkeyRecorder.isRecording { shortcutsModel?.stopRecording() }
         if let monitor = keyMonitor {
             NSEvent.removeMonitor(monitor)
             keyMonitor = nil

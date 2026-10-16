@@ -26,7 +26,7 @@ public enum AccessibilityChecker {
     /// Xcode 27, so that spelling could not be checked where it has to hold. Nothing is
     /// being guarded here anyway — no API changed, only the wording — so a plain version
     /// comparison says what is meant and compiles under either toolchain.
-    public static var settingName: String {
+    static var settingName: String {
         let renamed = OperatingSystemVersion(majorVersion: 27, minorVersion: 0, patchVersion: 0)
         guard ProcessInfo.processInfo.isOperatingSystemAtLeast(renamed) else {
             return "Accessibility"

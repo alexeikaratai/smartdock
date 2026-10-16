@@ -8,25 +8,36 @@ import Testing
 // and read back; the actions that would leave the test process — opening a URL,
 // registering a login item, resetting a permission — are the ones left alone.
 
-// MARK: - General Tab
+// MARK: - General Settings
 
-@Suite("General tab")
+/// The General tab's behaviour, asserted on the model rather than on controls. The tab
+/// itself is SwiftUI now and holds nothing to test: every switch reads and writes this
+/// type. Nothing here builds a view or a window, which is why the suite runs in
+/// milliseconds where clicking real checkboxes took seconds.
+@Suite("General settings")
 @MainActor
-struct GeneralTabViewTests {
+struct GeneralSettingsModelTests {
 
     /// A login item that records instead of registering — the real one would put
     /// `xctest` in the developer's Login Items.
     @MainActor
     final class FakeLoginItem: LoginItemRegistering {
         var isRegistered = false
+        /// Refusing is how macOS declines a registration, and the model has to follow
+        /// what the system reports rather than what was asked for.
+        var refuses = false
         private(set) var changes = 0
 
+        struct Refused: Error {}
+
         func register() throws {
+            if refuses { throw Refused() }
             changes += 1
             isRegistered = true
         }
 
         func unregister() throws {
+            if refuses { throw Refused() }
             changes += 1
             isRegistered = false
         }
@@ -38,7 +49,11 @@ struct GeneralTabViewTests {
         let dock = MockDockController()
         let loginItem = FakeLoginItem()
         let service: SmartDockService
-        let view: GeneralTabView
+        /// Private, because the centre is process-wide and the model both listens on it
+        /// and posts to it — a shared one would have every parallel suite join in.
+        let events = NotificationCenter()
+        let model: GeneralSettingsModel
+        let quits = Tally()
 
         init() {
             service = SmartDockService(
@@ -46,270 +61,273 @@ struct GeneralTabViewTests {
             service.start()
             scratch.prefs.notificationsEnabled = true
             scratch.prefs.syncFromSystemEnabled = false
-            view = GeneralTabView(
+            let quits = self.quits
+            model = GeneralSettingsModel(
                 service: service, prefs: scratch.prefs,
-                launchAtLogin: LaunchAtLogin(service: loginItem))
+                launchAtLogin: LaunchAtLogin(service: loginItem),
+                events: events,
+                quitApp: { MainActor.assumeIsolated { quits.count += 1 } })
         }
     }
 
-    @Test func checkboxesShowTheStoredFlags() {
+    @Test func theSwitchesShowTheStoredFlags() {
         let f = Fixture()
 
-        #expect(f.view.notificationsCheckbox.state == .on)
-        #expect(f.view.syncFromSystemCheckbox.state == .off)
-        #expect(f.view.launchAtLoginCheckbox.state == .off, "the fake login item is not registered")
+        #expect(f.model.notificationsEnabled)
+        #expect(!f.model.syncsFromSystem)
+        #expect(!f.model.launchesAtLogin, "the fake login item is not registered")
     }
 
-    @Test func togglingLaunchAtLoginRegistersAndFollowsTheResult() {
+    @Test func turningOnLaunchAtLoginRegistersAndFollowsTheResult() {
         let f = Fixture()
 
-        f.view.launchAtLoginCheckbox.performClick(nil)
+        f.model.setLaunchAtLogin(true)
 
         #expect(f.loginItem.isRegistered)
-        #expect(f.view.launchAtLoginCheckbox.state == .on)
+        #expect(f.model.launchesAtLogin)
 
-        f.view.launchAtLoginCheckbox.performClick(nil)
+        f.model.setLaunchAtLogin(false)
 
         #expect(!f.loginItem.isRegistered)
-        #expect(f.view.launchAtLoginCheckbox.state == .off)
+        #expect(!f.model.launchesAtLogin)
     }
 
-    @Test func togglingSyncWritesTheFlag() {
+    /// macOS can decline to register the login item. The switch must stay where it was
+    /// rather than show what was asked for — which is why the model reads the result
+    /// back instead of binding straight into a settable property.
+    @Test func arefusedRegistrationLeavesTheSwitchAlone() {
+        let f = Fixture()
+        f.loginItem.refuses = true
+
+        f.model.setLaunchAtLogin(true)
+
+        #expect(!f.model.launchesAtLogin, "the switch claims a login item that was refused")
+        #expect(!f.loginItem.isRegistered)
+    }
+
+    /// Setting a switch to what it already shows must not reach the system: toggling a
+    /// registered login item "on" would unregister it.
+    @Test func settingAswitchToWhatItAlreadyShowsDoesNothing() {
+        let f = Fixture()
+        f.model.setLaunchAtLogin(true)
+        let changes = f.loginItem.changes
+
+        f.model.setLaunchAtLogin(true)
+
+        #expect(f.loginItem.changes == changes, "the login item was touched again")
+        #expect(f.model.launchesAtLogin)
+    }
+
+    @Test func turningOnSyncWritesTheFlag() {
         let f = Fixture()
 
-        f.view.syncFromSystemCheckbox.performClick(nil)
+        f.model.setSyncFromSystem(true)
 
         #expect(f.scratch.prefs.syncFromSystemEnabled)
+        #expect(f.model.syncsFromSystem)
     }
 
-    /// Ticking notifications also asks for authorisation — that is the manager's
-    /// job, reached through a notification so the view never touches `UNUserNotificationCenter`.
-    @Test func tickingNotificationsWritesTheFlagAndAsksForAuthorisation() {
+    /// Turning notifications on also asks for authorisation — that is the manager's job,
+    /// reached through a notification so this never touches `UNUserNotificationCenter`.
+    @Test func turningOnNotificationsWritesTheFlagAndAsksForAuthorisation() {
         let f = Fixture()
-        f.scratch.prefs.notificationsEnabled = false
-        f.view.notificationsCheckbox.state = .off
+        f.model.setNotifications(false)
         let asked = Tally()
-        let token = NotificationCenter.default.addObserver(
+        let token = f.events.addObserver(
             forName: .smartDockRequestNotificationAuth, object: nil, queue: .main
         ) { _ in MainActor.assumeIsolated { asked.count += 1 } }
-        defer { NotificationCenter.default.removeObserver(token) }
+        defer { f.events.removeObserver(token) }
 
-        f.view.notificationsCheckbox.performClick(nil)
+        f.model.setNotifications(true)
 
         #expect(f.scratch.prefs.notificationsEnabled)
         #expect(asked.count == 1)
     }
 
-    /// Authorisation refused after the box was ticked turns the flag off; the box follows.
-    @Test func aRefusedAuthorisationUnticksTheBox() {
+    /// Turning them **off** asks for nothing — a request there would prompt someone who
+    /// just said they did not want banners.
+    @Test func turningNotificationsOffAsksForNothing() {
         let f = Fixture()
-        #expect(f.view.notificationsCheckbox.state == .on)
+        let asked = Tally()
+        let token = f.events.addObserver(
+            forName: .smartDockRequestNotificationAuth, object: nil, queue: .main
+        ) { _ in MainActor.assumeIsolated { asked.count += 1 } }
+        defer { f.events.removeObserver(token) }
+
+        f.model.setNotifications(false)
+
+        #expect(!f.scratch.prefs.notificationsEnabled)
+        #expect(asked.count == 0)
+    }
+
+    /// Authorisation refused after the switch was turned on puts the flag back off; the
+    /// switch follows.
+    @Test func arefusedAuthorisationTurnsTheSwitchBackOff() {
+        let f = Fixture()
+        #expect(f.model.notificationsEnabled)
 
         f.scratch.prefs.notificationsEnabled = false
-        NotificationCenter.default.post(name: .smartDockNotificationPermissionChanged, object: nil)
+        f.events.post(name: .smartDockNotificationPermissionChanged, object: nil)
 
-        #expect(f.view.notificationsCheckbox.state == .off)
+        #expect(!f.model.notificationsEnabled)
     }
 
     @Test func refreshNowReappliesTheProfile() {
         let f = Fixture()
         let applies = f.dock.applyCallCount
 
-        f.view.refreshButton.performClick(nil)
+        f.model.refreshNow()
 
         #expect(f.dock.applyCallCount == applies + 1)
     }
+
+    /// Quitting goes through a parameter: the real `NSApp.terminate` would take the
+    /// suite with it.
+    @Test func quitAsksTheAppToTerminate() {
+        let f = Fixture()
+
+        f.model.quit()
+
+        #expect(f.quits.count == 1)
+    }
 }
 
-// MARK: - About Tab
+// MARK: - About
 
-@Suite("About tab")
+/// The About tab's behaviour, on the model. The clipboard and the confirmation delay are
+/// parameters now: the old tests wrote to `NSPasteboard.general`, replacing whatever the
+/// person running them had copied, and waited a real 1.5 seconds to watch a button title
+/// change back.
+@Suite("About")
 @MainActor
-struct AboutTabViewTests {
+struct AboutModelTests {
 
-    @Test func copyDiagnosticInfoPutsTheReportOnThePasteboard() {
+    @MainActor
+    private final class Recorder {
+        var copied: [String] = []
+        /// Work handed to the confirmation delay, run by the test rather than a clock.
+        var pending: [@MainActor () -> Void] = []
+    }
+
+    private func makeModel(_ recorder: Recorder) -> AboutModel {
         let scratch = ScratchPreferences()
         let service = SmartDockService(
-            displayMonitor: MockDisplayMonitor(), dockController: MockDockController(), prefs: scratch.prefs)
+            displayMonitor: MockDisplayMonitor(), dockController: MockDockController(),
+            prefs: scratch.prefs)
         service.start()
-        let view = AboutTabView(service: service, prefs: scratch.prefs)
-        NSPasteboard.general.clearContents()
+        return AboutModel(
+            service: service, prefs: scratch.prefs, appVersion: "9.9.9",
+            openURL: { _ in },
+            collectLog: { nil },
+            saveLog: { _ in },
+            copyToPasteboard: { recorder.copied.append($0) },
+            afterConfirmation: { recorder.pending.append($0) })
+    }
 
-        view.copyButton.performClick(nil)
+    @Test func copyDiagnosticInfoHandsOverTheWholeReport() throws {
+        let recorder = Recorder()
+        let model = makeModel(recorder)
 
-        let copied = NSPasteboard.general.string(forType: .string) ?? ""
+        model.copyDiagnostics()
+
+        let copied = try #require(recorder.copied.first)
         #expect(copied.contains("**SmartDock"))
         #expect(copied.contains("Active profile:"))
         #expect(copied.contains("**Profiles**"))
-        #expect(view.copyButton.title.hasPrefix("Copied"))
+        #expect(model.hasCopied, "the button should confirm in place")
     }
 
-    /// The confirmation is temporary — the button goes back to inviting a copy,
-    /// or a second bug report would be filed from a button that still says "Copied".
-    @Test func theCopyConfirmationFadesBackToTheInvitation() async throws {
-        let scratch = ScratchPreferences()
-        let service = SmartDockService(
-            displayMonitor: MockDisplayMonitor(), dockController: MockDockController(), prefs: scratch.prefs)
-        let view = AboutTabView(service: service, prefs: scratch.prefs)
+    /// The confirmation is temporary — the button goes back to inviting a copy, or a
+    /// second bug report is filed from a button that still says "Copied".
+    @Test func theCopyConfirmationFadesBackToTheInvitation() throws {
+        let recorder = Recorder()
+        let model = makeModel(recorder)
 
-        view.copyButton.performClick(nil)
-        try await waitUntil { view.copyButton.title == "Copy Diagnostic Info" }
+        model.copyDiagnostics()
+        #expect(model.hasCopied)
+        // Named first: invoking a `#require` result in place crashed swift-frontend
+        // outright, which is the same family as the shadowing trap in CLAUDE.md —
+        // the compiler has opinions about what happens inside a macro expansion.
+        let confirmationFaded = try #require(recorder.pending.first)
+        confirmationFaded()
 
-        #expect(view.copyButton.title == "Copy Diagnostic Info")
+        #expect(!model.hasCopied)
+    }
+
+    /// Nothing identifying may reach an issue tracker — the same promise
+    /// `DiagnosticReportTests` makes, checked again at the point it is handed over.
+    @Test func theCopiedReportNamesNobody() throws {
+        let recorder = Recorder()
+        let model = makeModel(recorder)
+
+        model.copyDiagnostics()
+
+        let copied = try #require(recorder.copied.first)
+        #expect(!copied.contains(NSUserName()))
+        #expect(!copied.contains(NSHomeDirectory()))
     }
 }
 
 // MARK: - Accessibility Status
 
+/// The permission row's state. The row itself is SwiftUI now — what it draws from this
+/// model is pinned by `ShortcutsTabContent`; what the model says is pinned here.
 @Suite("Accessibility status")
 @MainActor
-struct AccessibilityStatusViewTests {
+struct AccessibilityStatusModelTests {
 
     /// Both branches are chosen by the test rather than by the machine: this process is
     /// untrusted here and trusted on a CI runner, so asserting the environment is
     /// asserting nothing.
-    private func view(granted: Bool) -> AccessibilityStatusView {
-        let view = AccessibilityStatusView(prefs: ScratchPreferences().prefs, isGranted: granted)
-        view.layoutSubtreeIfNeeded()
-        return view
-    }
-
-    private func labels(in view: NSView) -> [String] {
-        view.subviews.compactMap { ($0 as? NSTextField)?.stringValue }
-    }
-
-    private func buttonTitles(in view: NSView) -> [String] {
-        view.subviews.compactMap { ($0 as? NSButton)?.title }
+    private func model(granted: Bool) -> AccessibilityStatusModel {
+        AccessibilityStatusModel(
+            prefs: ScratchPreferences().prefs,
+            isGranted: { granted },
+            openURL: { _ in }, promptForTrust: {},
+            resetPermission: { _ in true }, relaunch: {}, reportFailure: { _ in })
     }
 
     /// The pane is named by `AccessibilityChecker.settingName`, never by a literal —
     /// macOS 27 renamed Accessibility to Device Control and Data Access, and a hard-coded
-    /// word would send people to a pane that no longer uses it. Asserting the literal
-    /// here would only restate the implementation and would fail on the other OS anyway,
-    /// so what is pinned is that the row shows whatever that property says.
+    /// word would send people to a pane that no longer uses it. Asserting the literal here
+    /// would only restate the implementation and would fail on the other OS anyway.
     @Test(arguments: [true, false])
-    func theRowNamesThePermissionTheWaySystemSettingsDoes(granted: Bool) {
-        let labels = labels(in: view(granted: granted))
-
-        #expect(
-            labels.contains(AccessibilityChecker.settingName),
-            "the row shows \(labels) rather than \(AccessibilityChecker.settingName)")
+    func themodelNamesThePermissionTheWaySystemSettingsDoes(granted: Bool) {
+        #expect(model(granted: granted).settingName == AccessibilityChecker.settingName)
     }
 
     @Test(arguments: [true, false])
-    func theRowSaysWhetherThePermissionIsThere(granted: Bool) {
-        let labels = labels(in: view(granted: granted))
-
-        #expect(labels.contains(granted ? "Allowed" : "Not allowed"))
-        #expect(!labels.contains(granted ? "Not allowed" : "Allowed"))
-    }
-
-    /// The fix belongs to the broken case. Offering it while the permission is there
-    /// would invite someone to clear a grant that already works.
-    ///
-    /// One button, not two: "Open System Settings" and "Reset Permission" made the person
-    /// pick between never-granted and gone-stale, a difference nothing on screen could
-    /// tell them, when clearing the entry serves both.
-    @Test(arguments: [true, false])
-    func onlyTheWarningOffersTheFix(granted: Bool) {
-        let titles = buttonTitles(in: view(granted: granted))
-
-        #expect(titles.contains("Grant Access…") == !granted)
-        #expect(titles.count == (granted ? 0 : 1), "the card shows \(titles)")
+    func themodelSaysWhetherThePermissionIsThere(granted: Bool) {
+        #expect(model(granted: granted).isGranted == granted)
     }
 
     /// The permission can change under an open window — someone reads *Not allowed*,
-    /// switches SmartDock on in System Settings and comes back. Measured before this
-    /// existed: the row went on saying *Not allowed*, and only closing the window
-    /// cleared it.
-    @Test(arguments: [true, false])
-    func therowFollowsAPermissionThatChangedUnderIt(startsGranted: Bool) {
-        let view = view(granted: startsGranted)
+    /// switches SmartDock on in System Settings and comes back. Measured before
+    /// `refresh()` existed: the row went on saying *Not allowed*, and only closing the
+    /// window cleared it.
+    @Test func themodelFollowsApermissionThatChangedUnderIt() {
+        final class Permission: @unchecked Sendable { var granted = false }
+        let permission = Permission()
+        let model = AccessibilityStatusModel(
+            prefs: ScratchPreferences().prefs,
+            isGranted: { permission.granted },
+            openURL: { _ in }, promptForTrust: {},
+            resetPermission: { _ in true }, relaunch: {}, reportFailure: { _ in })
 
-        view.refresh(isGranted: !startsGranted)
-        view.layoutSubtreeIfNeeded()
+        #expect(!model.isGranted)
+        permission.granted = true
+        #expect(!model.isGranted, "nothing should change until the window comes forward")
 
-        let labels = labels(in: view)
-        #expect(labels.contains(startsGranted ? "Not allowed" : "Allowed"))
-        #expect(!labels.contains(startsGranted ? "Allowed" : "Not allowed"))
-        #expect(
-            buttonTitles(in: view).contains("Grant Access…") == startsGranted,
-            "the fix should appear with the warning and leave with it")
-    }
-
-    /// Going back to allowed has to take the card with it: the yellow sits on the view's
-    /// own layer, so nothing else would ever clear it.
-    @Test func thecardLeavesNoYellowBehindWhenThePermissionArrives() {
-        let view = view(granted: false)
-        view.refresh(isGranted: true)
-        view.layoutSubtreeIfNeeded()
-
-        #expect(view.layer?.backgroundColor == nil, "the warning's card is still painted")
-        #expect(view.layer?.borderWidth == 0)
-        #expect(view.fittingSize.height <= 24, "and it is a row again, not a card")
-    }
-
-    /// The granted state is one row, not a band. This view used to build nothing at all
-    /// in that case — hiding was not enough, since a hidden view keeps whatever height
-    /// its contents ask for, and the Shortcuts tab pins its rows below this one, which
-    /// left 133pt of blank. A row that says something may cost a row; it may not cost
-    /// what the warning costs.
-    @Test func theGrantedRowIsOneLineHigh() {
-        let allowed = view(granted: true).fittingSize.height
-        let warning = view(granted: false).fittingSize.height
-
-        #expect(allowed > 0, "a row with no height says nothing")
-        #expect(
-            allowed <= 24,
-            "the allowed row is \(Int(allowed))pt — that is a band, not a line")
-        #expect(
-            warning > allowed * 2,
-            "the warning (\(Int(warning))pt) should cost visibly more than the row (\(Int(allowed))pt)")
+        model.refresh()
+        #expect(model.isGranted)
     }
 }
 
-// MARK: - Position Picker & Icons
+// MARK: - Position Icons
 
-@Suite("Position picker")
-@MainActor
-struct PositionPickerTests {
-
-    private func button(for position: DockPosition, in picker: PositionPicker) -> NSButton? {
-        picker.arrangedSubviews.compactMap { $0 as? NSButton }.first {
-            $0.tag == DockPosition.allCases.firstIndex(of: position)
-        }
-    }
-
-    @Test func oneButtonPerPosition() {
-        let picker = PositionPicker()
-
-        #expect(picker.arrangedSubviews.compactMap { $0 as? NSButton }.count == DockPosition.allCases.count)
-    }
-
-    @Test(arguments: DockPosition.allCases)
-    func tappingAButtonSelectsAndReports(position: DockPosition) throws {
-        let picker = PositionPicker()
-        var reported: [DockPosition] = []
-        picker.onSelectionChange = { reported.append($0) }
-
-        try #require(button(for: position, in: picker)).performClick(nil)
-
-        #expect(picker.selectedPosition == position)
-        #expect(reported == [position])
-    }
-
-    /// A programmatic load must not read as a tap — the host would mark a draft dirty.
-    @Test func settingTheSelectionDoesNotReport() {
-        let picker = PositionPicker()
-        var reported = 0
-        picker.onSelectionChange = { _ in reported += 1 }
-
-        picker.selectedPosition = .right
-
-        #expect(picker.selectedPosition == .right)
-        #expect(reported == 0)
-    }
-}
+/// `PositionPicker` is gone: the Dock tab's position control is a SwiftUI segmented
+/// picker now, drawn from SF Symbols, and `DockProfileFormContentTests` pins those.
+/// `PositionIcon` stays — the Settings window's header still draws one.
 
 @Suite("Position icons")
 @MainActor
@@ -344,30 +362,12 @@ struct UIFactoryTests {
         #expect(!label.translatesAutoresizingMaskIntoConstraints)
     }
 
-    @Test func checkboxAndButtonCarryTheirAction() {
-        let target = NSObject()
-        let checkbox = UI.checkbox("Tick", target: target, action: #selector(NSObject.description as () -> String))
-        let button = UI.smallButton("Go", target: target, action: #selector(NSObject.description as () -> String))
+    // `checkboxAndButtonCarryTheirAction` and `scaleSliderSpansTheDockScale` lived here.
+    // Their factories are gone: every control they built is a SwiftUI `Toggle`, `Button`
+    // or `Slider` now. What is left of `UI` is the window chrome the settings and
+    // onboarding windows still put their hosting views inside.
 
-        #expect(checkbox.title == "Tick" && checkbox.target === target)
-        #expect(button.title == "Go" && button.target === target)
-    }
-
-    /// Sliders cover the 0–1 scale the Dock uses and report continuously, so the
-    /// pixel label can follow the thumb.
-    @Test func scaleSliderSpansTheDockScale() {
-        let slider = UI.scaleSlider(
-            value: 0.5, target: NSObject(), action: #selector(NSObject.description as () -> String))
-
-        #expect(slider.minValue == 0 && slider.maxValue == 1)
-        #expect(slider.doubleValue == 0.5)
-        #expect(slider.isContinuous)
-    }
-
-    @Test func glassCardAndWindowAreBuiltToBeFilled() {
-        let card = UI.glassCard()
-        #expect(card.material == .popover)
-
+    @Test func theGlassWindowIsBuiltToBeFilled() {
         let (window, content) = UI.glassWindow(
             title: "T", size: NSSize(width: 300, height: 200), styleMask: [.titled])
         #expect(window.title == "T")
@@ -382,7 +382,9 @@ struct UIFactoryTests {
 @MainActor
 struct OnboardingWindowTests {
 
-    @Test func getStartedFinishesAndRemembers() throws {
+    /// What the button does, rather than the button. It is SwiftUI now, so there is no
+    /// `NSButton` to click — `OnboardingContent` holds nothing but the call.
+    @Test func getStartedFinishesAndRemembers() {
         _ = NSApplication.shared
         let scratch = ScratchPreferences()
         let onboarding = OnboardingWindow(prefs: scratch.prefs)
@@ -390,14 +392,25 @@ struct OnboardingWindowTests {
         onboarding.onComplete = { completed += 1 }
 
         onboarding.show()
-        let startButton = try #require(
-            onboarding.window?.contentView?.descendants.compactMap { $0 as? NSButton }.first {
-                $0.title == "Get Started"
-            })
-        startButton.performClick(nil)
+        onboarding.getStarted()
 
         #expect(completed == 1)
         #expect(scratch.prefs.hasSeenOnboarding)
+    }
+
+    /// The welcome text promises that nothing moves until a profile is edited, and that
+    /// promise is the reason `initializeDefaultsIfNeeded` makes both profiles the Dock
+    /// verbatim. A version that forced auto-hide on one of them shipped once, and the
+    /// first thing the app did was move a Dock nobody had asked it to.
+    @Test func thewelcomePromisesThatNothingMovesOnItsOwn() {
+        let content = OnboardingContent(appVersion: "1.2.3") {}
+        var handedOver = 0
+        let wired = OnboardingContent(appVersion: "1.2.3") { handedOver += 1 }
+
+        wired.onGetStarted()
+
+        #expect(handedOver == 1, "the view holds the call and nothing else")
+        #expect(content.appVersion == "1.2.3")
     }
 }
 

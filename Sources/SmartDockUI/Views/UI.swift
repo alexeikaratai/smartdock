@@ -15,48 +15,6 @@ enum UI {
         return label
     }
 
-    /// Small rounded push button used for secondary actions.
-    static func smallButton(_ title: String, target: AnyObject, action: Selector) -> NSButton {
-        let button = NSButton(title: title, target: target, action: action)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.bezelStyle = .rounded
-        button.controlSize = .small
-        return button
-    }
-
-    /// Checkbox with Auto Layout enabled.
-    static func checkbox(_ title: String, target: AnyObject, action: Selector) -> NSButton {
-        let button = NSButton(checkboxWithTitle: title, target: target, action: action)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        return button
-    }
-
-    /// Continuous slider over the 0.0–1.0 dock size scale.
-    static func scaleSlider(value: Double, target: AnyObject, action: Selector) -> NSSlider {
-        let slider = NSSlider(value: value, minValue: 0, maxValue: 1, target: target, action: action)
-        slider.translatesAutoresizingMaskIntoConstraints = false
-        slider.isContinuous = true
-        return slider
-    }
-
-    /// Translucent rounded card used to group related controls.
-    static func glassCard() -> NSVisualEffectView {
-        let card = NSVisualEffectView()
-        card.translatesAutoresizingMaskIntoConstraints = false
-        card.material = .popover
-        card.blendingMode = .withinWindow
-        card.state = .active
-        card.wantsLayer = true
-        card.layer?.cornerRadius = 12
-        card.layer?.masksToBounds = true
-        card.layer?.borderWidth = 0.5
-        card.layer?.borderColor = NSColor.white.withAlphaComponent(0.15).cgColor
-        return card
-    }
-
-    /// The translucent, title-less window chrome shared by SmartDock's windows.
-    /// Returns the window together with the content view to build UI into —
-    /// the window's own `contentView` is the vibrancy layer behind it.
     static func glassWindow(
         title: String,
         size: NSSize,
@@ -77,7 +35,13 @@ enum UI {
 
         let vibrancy = NSVisualEffectView()
         vibrancy.translatesAutoresizingMaskIntoConstraints = false
-        vibrancy.material = .hudWindow
+        // `.windowBackground`, not `.hudWindow`. A HUD material is meant for small
+        // floating panels and forces a **vibrant dark** appearance whatever the system
+        // is set to. AppKit controls survived that; SwiftUI draws a segmented control's
+        // selected chip through the vibrancy, and it washed out to white-on-white — the
+        // chosen profile became unreadable. This material follows light and dark, which
+        // is also what System Settings uses, and this window is read next to it.
+        vibrancy.material = .windowBackground
         vibrancy.blendingMode = .behindWindow
         vibrancy.state = .active
 

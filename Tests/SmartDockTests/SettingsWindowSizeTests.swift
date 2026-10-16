@@ -65,116 +65,73 @@ struct SettingsWindowSizeTests {
             "header+tabs measure \(atDefault)pt in a full window and \(atSmall)pt in a squeezed one")
     }
 
+    /// Everything fits at the default window size, Apply included. The promise was
+    /// briefly given up during the SwiftUI move: a grouped `Form` measured 858pt against
+    /// the window's 900pt maximum, the tab scrolled and the confirming button sat below
+    /// the fold. Laid out as one compact card it is 605pt — tighter than the 630 the
+    /// AppKit form needed — so the promise is back and this is what keeps it.
     @Test func theDockTabFitsTheDefaultWindowWithoutScrolling() throws {
         let (settings, window, scroll) = try showDockTab(at: SettingsWindow.defaultContentSize)
         defer { settings.window?.close() }
 
         let content = try #require(scroll.documentView).fittingSize.height
-
         // Measured against the size the window *asks* for, not the one it got. A window
         // server can refuse: on a CI runner the content came back 554pt tall however
         // large the window was made, and comparing with the realised height failed there
-        // while passing on a desktop. What survives clamping is everything outside the
-        // scroll view, which `theChromeHeightDoesNotDependOnTheWindowSize` pins.
+        // while passing on a desktop.
         let outside = try chromeHeight(window, scroll)
         let needed = content + outside
+
+        #expect(content > 0, "the tab measures as nothing")
         #expect(
             needed <= SettingsWindow.defaultContentSize.height,
             """
             The Dock tab needs \(Int(content.rounded()))pt and the header another \
             \(Int(outside.rounded()))pt, so the window has to be \(Int(needed.rounded()))pt \
             tall — it is \(Int(SettingsWindow.defaultContentSize.height))pt, so the tab \
-            scrolls at its default size. Raise `SettingsWindow.defaultContentSize`.
+            scrolls and Apply falls below the fold.
             """)
     }
 
-    /// With the permission granted the tab shows one status row, not a warning card and
-    /// not a blank band. Hiding the card did not do that — Auto Layout keeps the height a
-    /// hidden view's contents ask for — so the tab carried 133pt of blank on every
-    /// machine where the permission was already given. Building one row instead costs a
-    /// line: 10pt above it, 15pt of row, 12pt below, measured at 41.
-    @Test func theShortcutsRowsFollowTheStatusWhenThereIsNoWarning() throws {
-        let (granted, grantedWindow, _) = try showDockTab(
-            at: SettingsWindow.defaultContentSize, accessibilityGranted: true)
-        defer { granted.window?.close() }
-        granted.show(tab: .shortcuts)
-        grantedWindow.layoutIfNeeded()
-
-        let (warned, warnedWindow, _) = try showDockTab(
+    /// Only the Dock tab has a scroll view. The other three are pinned straight into the
+    /// window, so content taller than it is simply unreachable — which is a real defect,
+    /// and the one this catches.
+    /// Only the Dock tab has a scroll view. The other three are pinned straight into the
+    /// window, so anything taller than it is simply unreachable.
+    ///
+    /// This measures the **realised** view against what its contents ask for, not
+    /// `fittingSize` against the window. The first version did the latter and passed while
+    /// the Shortcuts tab's last line was visibly clipped: a hosting view's `fittingSize`
+    /// came up short of what SwiftUI drew, so the test and the defect agreed with each
+    /// other and both were wrong.
+    @Test(arguments: [SettingsWindow.Tab.general, .shortcuts, .about])
+    func theOtherTabsAreNotClipped(tab: SettingsWindow.Tab) throws {
+        let (settings, window, _) = try showDockTab(
             at: SettingsWindow.defaultContentSize, accessibilityGranted: false)
-        defer { warned.window?.close() }
-        warned.show(tab: .shortcuts)
-        warnedWindow.layoutIfNeeded()
-
-        let gapWithout = try Self.headerToFirstRow(in: granted)
-        let gapWith = try Self.headerToFirstRow(in: warned)
-
-        #expect(gapWith > gapWithout + 40, "the warning should occupy real space when shown")
-        #expect(
-            gapWithout < 50,
-            """
-            \(Int(gapWithout))pt between the header and the first shortcut with only the \
-            status row to show — a row costs about 41pt, a band costs 133.
-            """)
-    }
-
-    /// Coming back from System Settings has to re-read the permission. It was read once
-    /// per window before this: measured with a counting stub, the count stayed at 1 across
-    /// a re-activation, so a row that said *Not allowed* kept saying it over a permission
-    /// granted a moment earlier, and only closing the window cleared it.
-    @Test func comingBackToTheWindowRereadsThePermission() throws {
-        _ = NSApplication.shared
-        let scratch = ScratchPreferences()
-        let service = SmartDockService(
-            displayMonitor: MockDisplayMonitor(), dockController: MockDockController(),
-            prefs: scratch.prefs)
-        let hotkeys = HotkeyManager(
-            service: service, prefs: scratch.prefs, workspaceEvents: NotificationCenter())
-
-        // A permission the test flips, standing in for a trip to System Settings.
-        final class Permission: @unchecked Sendable {
-            var granted = false
-            var reads = 0
-        }
-        let permission = Permission()
-
-        let settings = SettingsWindow(
-            service: service, hotkeyManager: hotkeys, prefs: scratch.prefs,
-            decideDraft: { _ in .discard },
-            isAccessibilityGranted: {
-                permission.reads += 1
-                return permission.granted
-            })
-        settings.show(tab: .shortcuts)
         defer { settings.window?.close() }
-        let window = try #require(settings.window)
-        let readsWhileBuilding = permission.reads
-
-        permission.granted = true
-        settings.windowDidBecomeKey(Notification(name: NSWindow.didBecomeKeyNotification))
+        settings.show(tab: tab)
         window.layoutIfNeeded()
 
+        let container = try #require(settings.container(for: tab))
+        let parent = try #require(container.superview)
+
+        #expect(container.frame.height > 0, "the \(tab) tab was never laid out")
+        // Pinned to the bottom, which is the whole fix: left to its own `fittingSize` a
+        // hosting view came up short of what SwiftUI drew and the tab's last line was
+        // clipped against a frame that ended above it.
         #expect(
-            permission.reads > readsWhileBuilding,
-            "the window never asked again — it read the permission \(permission.reads) time(s)")
-        let status = try #require(settings.accessibilityStatus)
-        let labels = status.subviews.compactMap { ($0 as? NSTextField)?.stringValue }
-        #expect(labels.contains("Allowed"), "the row still shows \(labels)")
+            abs(container.frame.minY - parent.bounds.minY) < 1,
+            """
+            the \(tab) tab's frame stops \(Int(container.frame.minY - parent.bounds.minY))pt \
+            above the window — with no scroll view, anything below that is unreachable.
+            """)
     }
 
-    /// Distance from the bottom of the tab's header label to the top of the first row.
-    ///
-    /// Safe against a window server that refuses the size asked for, the way a CI runner
-    /// does: both views are chained from the container's **top**, so the gap between them
-    /// does not depend on how tall the window ended up. Checked by forcing the window to
-    /// 674, 500, 400 and 300pt — the measurement held at every one.
-    private static func headerToFirstRow(in settings: SettingsWindow) throws -> CGFloat {
-        let container = try #require(settings.shortcutsContainer)
-        let labels = container.subviews.compactMap { $0 as? NSTextField }
-        let header = try #require(
-            labels.first { $0.stringValue.hasPrefix("Configure global") })
-        let firstRow = try #require(labels.first { $0.stringValue == "Toggle Autohide" })
-        // The view is flipped-free AppKit geometry: y grows upwards.
-        return header.frame.minY - firstRow.frame.maxY
-    }
+    // `theShortcutsRowsFollowTheStatusWhenThereIsNoWarning` lived here. It measured the
+    // gap between the tab's header and its first shortcut row, because a *hidden* AppKit
+    // view keeps the height its contents ask for and left 133pt of blank once the
+    // permission was granted. SwiftUI removes a view an `if` excludes, so there is no
+    // hidden view to hold the space and nothing left to measure —
+    // `theOtherTabsNeedNoScrolling` covers what remains, which is that the tab fits.
+
 }

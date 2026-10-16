@@ -16,8 +16,20 @@ final class HotkeyRecorder {
     /// Whether a keystroke is currently being captured.
     var isRecording: Bool { action != nil }
 
+    /// Which action is being recorded, so the row for it can say so. It used to be told
+    /// by having its `NSButton` handed in and its title overwritten; a SwiftUI row has no
+    /// button to hand over, and a recorder that reaches into a control was the reason the
+    /// two had to be built together at all.
+    private(set) var recordingAction: HotkeyAction?
+
     private let hotkeyManager: HotkeyManager
     private let prefs: UserPreferences
+    /// Installing and removing the key monitor leaves the process, so both are
+    /// parameters — the rule every other outward call here already follows. Until they
+    /// were, a monitor left behind by a second `start` without a `stop` was invisible:
+    /// the titles looked right while two monitors each swallowed the same keystroke.
+    private let installMonitor: @MainActor (HotkeyRecorder) -> Any?
+    private let removeMonitor: @MainActor (Any) -> Void
 
     private var monitor: Any?
     private var action: HotkeyAction?
@@ -27,9 +39,26 @@ final class HotkeyRecorder {
 
     // MARK: - Init
 
-    init(hotkeyManager: HotkeyManager, prefs: UserPreferences = .shared) {
+    init(
+        hotkeyManager: HotkeyManager,
+        prefs: UserPreferences = .shared,
+        // Takes the recorder rather than a handler closure: `NSEvent` is not
+        // `Sendable`, so a closure carrying one across the seam does not compile, while
+        // the monitor calling a method on the recorder does — which is what the inline
+        // version always did.
+        installMonitor: @escaping @MainActor (HotkeyRecorder) -> Any? = { recorder in
+            NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak recorder] event in
+                guard let recorder else { return event }
+                recorder.handleRecordedKey(event)
+                return nil  // consumed — never let a recorded key reach the app
+            }
+        },
+        removeMonitor: @escaping @MainActor (Any) -> Void = { NSEvent.removeMonitor($0) }
+    ) {
         self.prefs = prefs
         self.hotkeyManager = hotkeyManager
+        self.installMonitor = installMonitor
+        self.removeMonitor = removeMonitor
     }
 
     // MARK: - Public
@@ -42,24 +71,24 @@ final class HotkeyRecorder {
         return binding.displayString
     }
 
-    func start(_ action: HotkeyAction, in button: NSButton) {
+    /// Stops whatever was listening first. Two monitors at once each consume the same
+    /// keystroke, and the one left behind outlives the row that asked for it.
+    func start(_ action: HotkeyAction) {
+        if isRecording { stop() }
         self.action = action
+        recordingAction = action
         hotkeyManager.isRecording = true
-        button.title = "Press shortcut..."
 
-        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self else { return event }
-            self.handleRecordedKey(event)
-            return nil  // consumed — never let a recorded key reach the app
-        }
+        monitor = installMonitor(self)
     }
 
     func stop() {
         if let monitor {
-            NSEvent.removeMonitor(monitor)
+            removeMonitor(monitor)
             self.monitor = nil
         }
         action = nil
+        recordingAction = nil
         hotkeyManager.isRecording = false
         hotkeyManager.reloadBindings()
         onFinish?()

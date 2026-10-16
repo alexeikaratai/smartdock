@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] — 2026-10-14
+
+### Changed
+
+- **The Settings window is rebuilt in SwiftUI.** Every tab — Dock, General, Shortcuts,
+  About — and the first-launch welcome are now native grouped forms, with switches in
+  place of checkboxes and section headings in place of a plain column of controls. This
+  is how System Settings presents the same kind of thing, which matters because
+  SmartDock's Dock tab is read against the Dock pane right next to it. Nothing any of
+  them does has changed.
+- **The two profiles are tiles now, not a segmented control.** Each shows what it is for
+  — an external display or a laptop — and the one your displays have put in force is
+  ticked, the same mark the menu bar menu uses for it, while the one you are editing is
+  outlined. Those are two
+  different things: you can edit Built-in while External is what applies. They used to
+  share a single dot in front of a name, which said neither clearly.
+- The window opens 50pt taller to fit the tiles without scrolling.
+- The Dock tab still fits without scrolling, Apply included. The grouped presentation
+  System Settings uses was tried and measured 858pt against a 900pt maximum — it put the
+  confirming button below the fold — so the tab is laid out compactly instead. All four
+  tabs are measured, because three of them have no scroll view and anything that
+  overflows them cannot be reached at all.
+
+### Fixed
+
+- Switching between the two profiles works again. The picker is a SwiftUI control now and
+  does not move on its own, so choosing the other profile left the form showing one
+  profile while the picker still claimed the other — and switching back then did nothing
+  at all.
+- Switching profiles no longer asks about a draft you never made. A slider hands back a
+  value rounded to its own width, so merely drawing the tab counted as an edit: Apply lit
+  up by itself and the next switch put up *Apply changes?* over nothing.
+- The window follows the system's light and dark appearance instead of forcing a dark
+  one. The old material was meant for small floating panels; through it the selected
+  profile's name came out white on white and could not be read.
+- The Shortcuts tab no longer clips its last line. A hosting view left to size itself
+  reported less height than SwiftUI actually drew, so *Click to record, Esc to clear* was
+  cut off against a frame that ended above it.
+- Recording a second shortcut without finishing the first no longer leaves the first key
+  monitor installed, where it went on swallowing keystrokes meant for the app.
+
+
 ## [2.11.5] — 2026-10-13
 
 ### Fixed
@@ -46,6 +88,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   above it says the app restarts.
 - The manual command offered after a failed reset dropped its `sudo`, for the same reason
   the password prompt went.
+- The built-in profile is called **Built-in Display** everywhere. The Settings tiles were
+  the one place still calling it *Built-in Only*, while the menu, the tooltip, the switch
+  banner, the diagnostic report and the Shortcuts action all used the other name.
+- Internal, nothing moves on screen: the menu bar menu and the Settings window were each
+  built by one function of over 150 lines and are now built in named pieces, and three
+  more lists that could drift were collapsed into one apiece — the tab control reads its
+  labels from the tab enum, the three tabs without a scroll view share one set of
+  constraints, and the profile tiles take their names from the profile.
 
 ## [2.11.3] — 2026-10-06
 

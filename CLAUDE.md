@@ -76,8 +76,10 @@ In this order: the suite passes; anything broken is fixed, not skipped; new logi
 intended test fail, restore, re-run. A fixture that leaves a field at its default cannot
 catch that field being dropped. The `SmartDock` target is an executable outside the test
 bundle: say so rather than implying coverage, verify it by running. `SmartDockUI` is in
-the bundle — a view with a settable, readable state (`DockProfileForm.configuration`) is
-tested there; logic still moves into Core when it can. A test that waits for the main
+the bundle, but a **SwiftUI** view cannot be clicked from a test and this package takes no
+view-inspection dependency — so behaviour lives in an `@Observable` model (`Models/`) and
+is tested there, with the view holding nothing to miss; logic still moves into Core when
+it can. A test that waits for the main
 queue waits for the event (`waitUntil`), never a fixed time.
 
 ### 9. Final consistency pass
@@ -121,20 +123,22 @@ nobody had asked it to. Nothing changes until the person edits a profile.
 
 **Break the build rather than write a note.** Agreement between two places is enforced by
 an exhaustive switch where the compiler can reach — `HotkeyAction(URLCommand)`,
-`push(_:of:)`, `ShortcutCoverage.intentType(for:)`, `DockProfileForm.binding(for:)`,
+`push(_:of:)`, `ShortcutCoverage.intentType(for:)`, `DockProfileFormContent.control(for:)`,
 `store(_:of:forKey:)`/`restore(_:into:from:)` — and by a test or make target where it
 cannot: `.sdef` parity, `anEditToEveryPropertyIsReported` (the KVO key list),
 `everyPropertyIsReadFromItsSystemKey` (`readSystemConfig` — its initialiser defaults every
 argument, so a property it forgets to read compiles and returns *our* value),
-`theDockTabFitsTheDefaultWindowWithoutScrolling` (the window's measured height, which a
-new control invalidates),
+`everyDockPropertyIsPlacedInTheForm` (a setting drawn but never placed),
+`theOtherTabsAreNotClipped` (a tab with no scroll view outgrowing the window),
+`themenuIsBuiltInThisOrder` (the menu's whole running order, separators included),
+`thesegmentsAreTheTabs` (the tab control against `Tab.allCases` **and** against the words),
 `appintents-check`, `sdef-check`, `entitlements-check`, `version-check`.
 
 **A list repeated in two places will drift.** `toggleAutohide` rebuilt the config field by
 field and silently reset every setting it had not heard of; a `zip` against a literal list
 quietly stopped checking two properties; the settings form read and wrote through two
-separate lists until `DockProfileForm` put both directions of each field in one
-`binding(for: DockProperty)`; `save`, `load`, `backfillMissingSettings` and `migrateMode`
+separate lists until both directions of each field were put on one line — first in the
+AppKit form's `binding(for: DockProperty)`, now in `DockProfileFormContent.bind(_:_:)`; `save`, `load`, `backfillMissingSettings` and `migrateMode`
 each spelled the same ten settings out by hand until they shared `storageKey`, `store` and
 `restore` — the backfill had drifted to five of the ten, so the next setting added would
 have reached every saved profile as our default, and `load`'s hand-written absent-key rule
@@ -254,6 +258,12 @@ compile on 26.6 over `let button = try #require(button("Export", in: view))`: in
 scope**, least of all inside a macro. Anything a test does that the compiler has opinions
 about — macros, shadowing, inference — is verified by the next CI run, not by the local one.
 
+**Invoking a `#require` result in place crashes swift-frontend.** `try #require(x.first)()`
+— calling the macro's value straight away — segfaults the compiler rather than failing to
+compile, and the only clue is which file it was type-checking. Name it first. Same family as
+the shadowing trap above: inside a macro expansion the compiler has opinions, and a test that
+exercises them is verified by building, never by reading.
+
 **A workflow step creates what it writes into.** `make release-notes > build/notes.md`
 worked on the dev machine and failed on the runner: `build/` is made by `make app`, which
 comes later, and a developer always has one left over from the last build. The step does
@@ -267,8 +277,8 @@ symbols` and an unrelated `SwiftUICore.tbd` warning. `rm -rf .build && swift bui
 ## Architecture
 
 Swift Package (tools 6.2), three targets: **SmartDockCore** (logic, no UI),
-**SmartDockUI** (the AppKit layer as a library, so tests can build a view and read it
-back) and **SmartDock** (the executable: `App.swift`, `AppIntentsSupport.swift`,
+**SmartDockUI** (the UI layer as a library: SwiftUI tabs over `@Observable` models, inside
+AppKit windows and an AppKit menu bar) and **SmartDock** (the executable: `App.swift`, `AppIntentsSupport.swift`,
 `ScriptingSupport.swift` — the three that must carry the app's module name, because
 intent identifiers are module-qualified and the `.sdef` binds `@objc` class names).
 macOS 14+, Swift 6 strict concurrency, zero dependencies. `public` in UI is only what
@@ -300,8 +310,8 @@ and applies the entitlements through `codesign`. README images are in `assets/`.
 | File | Responsibility |
 |---|---|
 | `App.swift` | `@main`, manual `NSApplication` run loop, no nibs. `performCommand` is the single entry for every external input, queueing until managers exist. First-launch-only Accessibility prompt; "Reset Permission" flow polls `AXIsProcessTrusted` and relaunches. `applicationShouldHandleReopen` opens Settings when the app is launched again from `/Applications`. |
-| `StatusBarController.swift` | Menu bar icon + menu: profile items (checkmark on `activeProfile`), **Dock Position** submenu, Hide/Show Dock, Refresh. Every item that moves the Dock goes through `hotkeyManager.perform`; position edits the profile in force via `service.updateActiveProfile` since it has no command. `autoenablesItems = false` so `updateActionAvailability` can grey them while disabled. `updateMenuState` is the one list of state-driven items, called on state change and on every open. Shows `refusalNotice` under the status line. |
-| `SettingsWindow.swift` | Four tabs: **Dock** (`DockTabView`), **General** (`GeneralTabView`), **Shortcuts** (built here), **About** (`AboutTabView`). Keeps what spans the window: tab switching, the draft rules (`isDirty`, `askAboutDraft`), the header icon, the window delegate. Only the Dock tab scrolls — `DockTabView` defines its height from the inside, the others end in `lessThanOrEqualTo`. Default 420×750, measured and guarded by `theDockTabFitsTheDefaultWindowWithoutScrolling`; resizable 380×500–600×900, ⌘0 resets. Leaving the Shortcuts tab cancels a recording in progress. `isAccessibilityGranted` is a parameter: the answer differs between a developer's machine and a CI runner, and the Shortcuts tab's layout in the *granted* case — the one where the banner must take no room — could not be measured otherwise. |
+| `StatusBarController.swift` | Menu bar icon + menu: profile items (checkmark on `activeProfile`), **Dock Position** submenu, Hide/Show Dock, Refresh. Every item that moves the Dock goes through `hotkeyManager.perform`; position edits the profile in force via `service.updateActiveProfile` since it has no command. `autoenablesItems = false` so `updateActionAvailability` can grey them while disabled. `updateMenuState` is the one list of state-driven items, called on state change and on every open. Shows `refusalNotice` under the status line. The menu is built section by section — `addStatusSection`, `addServiceSection`, `addProfileSection`, `addWindowSection`, `addQuitItem` — where it used to be one 162-line function; `themenuIsBuiltInThisOrder` compares the whole running order, separators included, because swapping two sections broke nothing in the suite before it existed. |
+| `SettingsWindow.swift` | The window around four SwiftUI tabs, each in an `NSHostingView`: **Dock** (`DockTabContent`), **General** (`GeneralTabContent`), **Shortcuts** (`ShortcutsTabContent`), **About** (`AboutTabContent`). Keeps what spans the window: tab switching, the draft rules (`isDirty`, `askAboutDraft`), the header icon, the window delegate, and the models the tabs read. Only the Dock tab scrolls, and now it has to — the native grouped form is 858pt against the window's 900pt maximum. The other three are pinned on **all four edges**: a hosting view left to its own `fittingSize` came up short of what SwiftUI drew and clipped the Shortcuts tab's last line, which with no scroll view was unreachable (`theOtherTabsAreNotClipped`). Default 420×**800** (750 until the profile picker became two tiles — a tile carries an icon and a name where a segment carried words). The tab needs 780; the extra 20 is deliberate, because the window sat at **2pt** of headroom before and the next control broke it. Resizable 380×500–600×900, ⌘0 resets. `windowDidBecomeKey` re-reads the Accessibility permission — it was read once per window, so the tab went on saying *Not allowed* over a grant given a moment earlier. Leaving the Shortcuts tab cancels a recording in progress. `isAccessibilityGranted` is a parameter: the answer differs between a developer's machine and a CI runner. Built in named pieces — `buildHeader`, `buildTabControl`, `buildTabs`, `activateLayout` — where it used to be one 151-line function; the three scroll-less tabs share **one** constraint loop rather than three copies of the same block, and the segment labels come from `Tab.allCases.map(\.title)` rather than a literal beside the enum (`thesegmentsAreTheTabs` pins both the words and the agreement). |
 | `HotkeyManager.swift` | Global + local `NSEvent` monitors; `HotkeyAction` enum; 0.3s rate limit; `isRecording` pauses dispatch. `toggleAutohide` uses `with(...)`. Rebuilds the monitors when SmartDock itself comes forward, because `addGlobalMonitorForEvents` ignores an Accessibility grant given after the monitor exists — a silent failure, hotkeys that never start firing. The workspace notification centre is a parameter (`workspaceEvents`) for the same reason `NotificationManager` takes one: it is process-wide, so the handler could not be tested without every parallel suite hearing it, and it went untested for exactly that reason. Each fixture hands over a private centre. |
 | `HotkeyRecorder.swift` | Captures a keystroke into a `HotkeyBinding`; pauses the manager while recording; Escape clears; a ⌘/⌥/⌃ modifier is required — Shift alone is rejected (`HotkeyBinding.hasRequiredModifier`). Display names come from `charactersIgnoringModifiers`, so any keyboard layout works. |
 | `AppIntentsSupport.swift` | Four intents + `ShortcutDockProfile` (`AppEnum`), all routing into `performCommand`. `ShortcutCoverage` is a build-time tripwire on `URLCommand`. |
@@ -311,58 +321,61 @@ and applies the entitlements through `codesign`. README images are in `assets/`.
 | `AppUpdateWatcher.swift` / `AppRelauncher.swift` | FS watcher on the executable prompts a relaunch after a Homebrew upgrade; relauncher waits for PID exit (max 5s) then `open -n`, bundle path via env var so nothing is interpolated into the shell. |
 | `OnboardingWindow.swift`, `LaunchAtLogin.swift`, `AccessibilityChecker.swift` | First-launch welcome; `SMAppService` wrapper; `AXIsProcessTrusted` with a first-launch-only prompt (ad-hoc signing resets the grant on every update). |
 
-### Views (`Sources/SmartDockUI/Views/`)
+### Views & models (`Sources/SmartDockUI/`)
 
-Self-contained pieces; each owns its layout and actions, the host wires callbacks.
-`UI.swift` (shared factories, `glassWindow` returns the view to build into),
-`PositionIcon`/`PositionPicker` (cached thumbnails, `onSelectionChange` fires only on taps),
-`AboutTabView`, `GeneralTabView` (app behaviour, owns the notification-permission observer),
-`DockTabView` (profile picker, form, Use Current / Discard / Apply, refusal notice, Sync
-from System, status — every intent goes to the host as a callback, nothing is applied
-here), `DockProfileForm` (one control per `DockProperty` behind one `configuration` get/set;
-`binding(for: DockProperty)` holds each field's load and store side by side, and its
-exhaustive switch means a new `DockProperty` does not compile until the form has a control
-for it — Dock tab height 630, measured by a test rather than by eye, since the window's
-default size is only right until the next control),
-`AccessibilityStatusView` (Shortcuts-tab permission row + `tccutil reset` flow). It builds
-the row in **both** states and the warning card in only one. `isHidden` was not an option —
-a hidden view keeps the height its contents ask for and the tab pins its rows below it,
-measured at 133pt of blank band; building nothing fixed that but left the tab unable to say
-whether hotkeys could work at all, so the granted case is one 41pt line instead. The pane is
-named through `AccessibilityChecker.settingName`, never a literal: **macOS 27 renamed
-Accessibility to "Device Control and Data Access"** — measured in the pane's own
-`SecurityPrivacyExtension` strings, key `ACCESSIBILITY` — while `AXIsProcessTrusted`, the
-`Accessibility` TCC service name and the `Privacy_Accessibility` deep-link anchor all stayed.
-A test pins that the row shows `settingName` rather than a literal; it cannot assert the
-*value*, which differs between the dev machine (27) and CI (26). `settingName` compares
-`ProcessInfo.isOperatingSystemAtLeast` instead of writing `#available(macOS 27, *)`: it
-guards no API, only wording, and releases are built by CI on Xcode 26 while this machine
-carries only Xcode 27 — so the `#available` spelling could not be checked on the toolchain
-that has to compile it. `tccutil` runs through
-`Process` as the person — **no administrator privileges**, measured: `tccutil reset
-Accessibility <id>` succeeds at uid 501, and the `do shell script … with administrator
-privileges` it replaced asked for a password macOS never wanted. `refresh(isGranted:)` rebuilds the row in place —
-the tab chains its hotkey rows off this view's bottom anchor, so a replacement view would
-take those constraints with it — and `SettingsWindow.windowDidBecomeKey` calls it, since
-the permission was read **once per window** and the tab went on saying *Not allowed* over a
-grant given a moment earlier; measured with a counting stub, which showed one read across a
-re-activation. The warning's card is painted on the view's own layer, so `refresh` clears it
-or the yellow survives into the allowed state. `runTccutil` refuses an
-empty bundle ID, since `tccutil reset Accessibility` without one resets every app on the Mac;
-the test mutates the guard's **return**, never the guard, because removing it would run that
-command. **One button, `Grant Access…`** — *Open System Settings* and *Reset Permission* made
-the person pick between never-granted and gone-stale, a difference nothing on screen can show,
-when clearing the entry serves both; it clears, sets `pendingAccessibilityGrant` and relaunches,
-and only on a failed clear does it ask from this process and offer the manual command. No
-confirmation: the button names the act and the line above it says the app restarts.
-**Asking is what puts SmartDock in the list** — `AXIsProcessTrusted()` only reads, so the
-pane used to open on a list with no SmartDock row. `AccessibilityGrantWatcher` runs that
-flow after the relaunch — show the tab, **ask**, open the pane, then wait — and the ask
-comes before the pane because the list has no row until it does. It lived in `App.swift`
-until 2.11.4, in the executable and outside the test bundle, which is exactly how the
-missing ask survived two releases; the delay is a parameter, so a test drives all 300 tries
-without a clock, and `thewaitGivesUpAfterExactlyItsBudget` drains the budget exactly — with
-one spare try it could not tell 300 from 301 and a boundary mutation survived it.
+**Every tab is SwiftUI; the window around them is not.** `SettingsWindow` keeps the glass,
+the header, the tabs and the draft rules, and puts each tab's contents in an
+`NSHostingView`. The menu bar stays AppKit and always will — `NSStatusItem` has no SwiftUI
+equivalent, and `MenuBarExtra` can carry neither an `attributedTitle` with an
+`NSTextAttachment` nor a tab stop, which is what the whole icon story below rests on.
+
+**Logic lives in a model, never in a view.** A SwiftUI view cannot be clicked from a test,
+and this package takes no view-inspection dependency, so a view that held behaviour would
+hold untested behaviour. `Models/` is where the behaviour is: `DockTabModel`,
+`GeneralSettingsModel`, `ShortcutsModel`, `AccessibilityStatusModel`, `AboutModel`. Each is
+`@Observable`, each reaches every outward call through a parameter, and each is tested
+without building a view.
+
+**Settings are read through explicit setters, not settable properties.** A write can be
+refused — a login item macOS declines, a permission the person says no to — and what the
+switch shows has to be what the system reports, not what was asked for. A settable
+property would need a `didSet` that corrects itself, which is a write inside a write.
+
+`DockProfileFormContent` keeps the tripwire the AppKit form had and adds one: `control(for:)`
+switches **exhaustively** over `DockProperty` so a new setting does not compile until it is
+drawn, and `layout` says where each one goes with `everyDockPropertyIsPlacedInTheForm` failing
+if one is missing. What was **lost**: the AppKit form kept a `FieldBinding` per property that a
+test could drive through real controls, proving each read and write touched the same property.
+A SwiftUI `Binding` cannot be reached without a dependency, so what stands in its place is that
+the two sides sit on one line inside `bind(_:_:)`. Say so rather than implying coverage.
+
+`DockTabContent` is **one compact card**, laid out by hand. `.formStyle(.grouped)` is what
+System Settings uses and was tried first: it measured 858pt against the window's 900pt maximum,
+so the tab scrolled and Apply sat below the fold. A grouped form also draws each section as a
+card, so wrapping it in another was a card inside a card — 190pt on its own. Hairlines between
+the rows were tried too and taken out: a rule between every setting turned eleven of them into
+a ledger. The promise that everything fits without scrolling is back, and
+`theDockTabFitsTheDefaultWindowWithoutScrolling` keeps it.
+
+**The profile picker is two tiles, not a segmented control, because it carries two independent
+facts.** Which profile is being *edited* is the border and tint; which one the displays have put
+*in force* is a **checkmark beside the name** — the mark this app already uses for it, since the
+menu sets `state = .on` on the same profile and AppKit draws that as a checkmark. An "Active now"
+line said the same thing in a second language and cost a third row the other tile had to leave
+blank to stay level. Before either, the two facts shared one string — a ● glued in front of the
+name — and a person editing Built-in while External applied could not tell at a glance. That is
+the same confusion between `activeProfile` and `hasExternalDisplay` the Principles warn about,
+drawn on screen. `DockTabModel.isActive(_:)` and `selectedMode` are separate for the same reason,
+and `editingAprofileIsNotTheSameAsItBeingInForce` pins them apart.
+
+**A hosting view is pinned on all four edges.** Left to its own `fittingSize` it came up short of
+what SwiftUI drew and the Shortcuts tab's last line was clipped against a frame that ended above
+it — with no scroll view there, that line was simply unreachable. `theOtherTabsAreNotClipped`
+measures the realised frame, not `fittingSize`: the first version of that test compared
+`fittingSize` against the window and passed while the clipping was plainly visible.
+
+`UI.swift` is down to the glass window and a label; the control factories went with the controls.
+`PositionIcon` survives because the window header still draws one.
 
 ### Tests (`Tests/SmartDockTests/`)
 
@@ -447,7 +460,11 @@ current profile". `hasExternalDisplay` is only for saying what is plugged in.
 
 **AppKit.** Programmatic Auto Layout, `NSLayoutConstraint.activate([...])`, no nibs.
 `LSUIElement = true`; never call `setActivationPolicy(.accessory)` — it can drop the
-status item at launch. Glass via `NSVisualEffectView` (`.hudWindow` / `.popover`).
+status item at launch. Glass via `NSVisualEffectView` with **`.windowBackground`**, never `.hudWindow`: a HUD
+material is for small floating panels and forces a vibrant **dark** appearance whatever the
+system is set to. AppKit controls survived that; SwiftUI draws a segmented control's selected
+chip through the vibrancy and it washed out to white-on-white, leaving the chosen profile
+unreadable.
 The menu bar icon is drawn programmatically (`makeIcon`, cached per position and visibility)
 with `isTemplate = true`; menu items and windows use SF Symbols directly, no fallback.
 **macOS 26 draws no `NSMenuItem.image` in a status menu, so the icons live in the

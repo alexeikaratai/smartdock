@@ -480,7 +480,7 @@ public final class UserPreferences {
         set { save(newValue, key: "external") }
     }
 
-    // MARK: - Built-in Only Config
+    // MARK: - Built-in Display Config
 
     public var builtinConfig: DockConfiguration {
         get { load(key: "builtin") ?? DockConfiguration(autohide: true) }

@@ -63,6 +63,8 @@ public final class StatusBarController: NSObject {
         buildMenu()
     }
 
+    /// The menu, section by section. It was one 162-line function; each section is now
+    /// named after what it offers, and `buildMenu` reads as the order they appear in.
     private func buildMenu() {
         let menu = NSMenu()
         menu.delegate = self
@@ -72,7 +74,24 @@ public final class StatusBarController: NSObject {
         // disabled explicitly, so nothing relies on the automatic behaviour.
         menu.autoenablesItems = false
 
-        // Title + version
+        addStatusSection(to: menu)
+        menu.addItem(.separator())
+        addServiceSection(to: menu)
+        menu.addItem(.separator())
+        addProfileSection(to: menu)
+        menu.addItem(.separator())
+        addWindowSection(to: menu)
+        menu.addItem(.separator())
+        addQuitItem(to: menu)
+
+        statusItem.menu = menu
+        // The items above are built with placeholder state; reflect the service now
+        // rather than only on the first open, so the menu is right from the start.
+        updateMenuState()
+    }
+
+    /// What SmartDock is and what it is doing — three rows nobody can click.
+    private func addStatusSection(to menu: NSMenu) {
         let version = Bundle.main.shortVersion
         let headerItem = NSMenuItem(title: "SmartDock v\(version)", action: nil, keyEquivalent: "")
         headerItem.isEnabled = false
@@ -82,7 +101,6 @@ public final class StatusBarController: NSObject {
         headerItem.attributedTitle = NSAttributedString(string: "SmartDock v\(version)", attributes: attrs)
         menu.addItem(headerItem)
 
-        // Status
         statusMenuItem = NSMenuItem(title: statusText(), action: nil, keyEquivalent: "")
         statusMenuItem.isEnabled = false
         menu.addItem(statusMenuItem)
@@ -95,10 +113,10 @@ public final class StatusBarController: NSObject {
         refusalMenuItem.isEnabled = false
         refusalMenuItem.isHidden = true
         menu.addItem(refusalMenuItem)
+    }
 
-        menu.addItem(.separator())
-
-        // Enable/disable
+    /// Turning SmartDock off, and making it re-apply.
+    private func addServiceSection(to menu: NSMenu) {
         toggleMenuItem = NSMenuItem(
             title: service.isEnabled ? "Disable" : "Enable",
             action: #selector(toggleService),
@@ -108,7 +126,6 @@ public final class StatusBarController: NSObject {
         setTitle(toggleMenuItem.title, symbol: Symbol.toggle, on: toggleMenuItem)
         menu.addItem(toggleMenuItem)
 
-        // Forced refresh
         refreshMenuItem = NSMenuItem(
             title: "Refresh Now",
             action: #selector(refresh),
@@ -117,12 +134,13 @@ public final class StatusBarController: NSObject {
         refreshMenuItem.target = self
         setTitle("Refresh Now", symbol: Symbol.refresh, on: refreshMenuItem)
         menu.addItem(refreshMenuItem)
+    }
 
-        menu.addItem(.separator())
-
-        // Which profile is in force. A checkmark marks the applied one; picking the
-        // other applies it on request, exactly as the hotkey or a `smartdock://`
-        // URL would — same `HotkeyAction`, same path.
+    /// Which profile is in force, and the two edits that can be made from here.
+    private func addProfileSection(to menu: NSMenu) {
+        // A checkmark marks the applied one; picking the other applies it on request,
+        // exactly as the hotkey or a `smartdock://` URL would — same `HotkeyAction`,
+        // same path.
         for profile in DockProfile.allCases {
             let item = NSMenuItem(
                 title: profile.displayName,
@@ -142,8 +160,26 @@ public final class StatusBarController: NSObject {
         // Edits to the profile in force: position and visibility. Both write the
         // stored profile and apply at once — there is no draft here, unlike the
         // Dock tab in Settings.
+        menu.addItem(makePositionItem())
+
+        // Title and icon follow the Dock's actual state, which is why they are
+        // refreshed every time the menu opens rather than set once.
+        dockVisibilityMenuItem = NSMenuItem(
+            title: dockVisibilityTitle(),
+            action: #selector(toggleDockVisibility),
+            keyEquivalent: "d"
+        )
+        dockVisibilityMenuItem.target = self
+        applyDockVisibilityAppearance()
+        menu.addItem(dockVisibilityMenuItem)
+    }
+
+    /// The Dock Position submenu, built from `DockPosition.allCases` so a fourth
+    /// position would appear without touching this.
+    private func makePositionItem() -> NSMenuItem {
         positionMenuItem = NSMenuItem(title: "Dock Position", action: nil, keyEquivalent: "")
         setTitle("Dock Position", symbol: Symbol.position, on: positionMenuItem)
+
         let positionMenu = NSMenu()
         positionMenu.autoenablesItems = false
         for position in DockPosition.allCases {
@@ -158,22 +194,11 @@ public final class StatusBarController: NSObject {
             positionMenu.addItem(item)
         }
         positionMenuItem.submenu = positionMenu
-        menu.addItem(positionMenuItem)
+        return positionMenuItem
+    }
 
-        // Hide/show the Dock. Title and icon follow the Dock's actual state, which
-        // is why they are refreshed every time the menu opens rather than set once.
-        dockVisibilityMenuItem = NSMenuItem(
-            title: dockVisibilityTitle(),
-            action: #selector(toggleDockVisibility),
-            keyEquivalent: "d"
-        )
-        dockVisibilityMenuItem.target = self
-        applyDockVisibilityAppearance()
-        menu.addItem(dockVisibilityMenuItem)
-
-        menu.addItem(.separator())
-
-        // Settings
+    /// The three rows that open a window.
+    private func addWindowSection(to menu: NSMenu) {
         let settingsItem = NSMenuItem(
             title: "Settings…",
             action: #selector(openSettings),
@@ -188,7 +213,6 @@ public final class StatusBarController: NSObject {
         // spacer of ours on top of it pushed the words a further 40pt to the right.
         menu.addItem(settingsItem)
 
-        // Shortcuts
         let shortcutsItem = NSMenuItem(
             title: "Shortcuts…",
             action: #selector(openShortcuts),
@@ -198,7 +222,6 @@ public final class StatusBarController: NSObject {
         setTitle(shortcutsItem.title, symbol: Symbol.shortcuts, on: shortcutsItem)
         menu.addItem(shortcutsItem)
 
-        // About
         let aboutItem = NSMenuItem(
             title: "About SmartDock",
             action: #selector(openAbout),
@@ -207,10 +230,9 @@ public final class StatusBarController: NSObject {
         aboutItem.target = self
         setTitle(aboutItem.title, symbol: Symbol.about, on: aboutItem)
         menu.addItem(aboutItem)
+    }
 
-        menu.addItem(.separator())
-
-        // Exit
+    private func addQuitItem(to menu: NSMenu) {
         let quitItem = NSMenuItem(
             title: "Quit SmartDock",
             action: #selector(quit),
@@ -219,11 +241,6 @@ public final class StatusBarController: NSObject {
         quitItem.target = self
         setTitle(quitItem.title, symbol: Symbol.quit, on: quitItem)
         menu.addItem(quitItem)
-
-        statusItem.menu = menu
-        // The items above are built with placeholder state; reflect the service now
-        // rather than only on the first open, so the menu is right from the start.
-        updateMenuState()
     }
 
     // MARK: - Menu Item Icons
