@@ -46,11 +46,18 @@ struct GeneralTabContent: View {
     }
 
     /// One place where a read and its write sit side by side, for the same reason
-    /// `DockProfileForm.binding(for:)` exists: two separate lists drift.
+    /// `DockProfileFormContent.bind(_:_:)` exists: two separate lists drift.
+    ///
+    /// `set` is **called** inside a new closure rather than handed to `Binding` as a
+    /// value. Passing it straight through asks the compiler to reabstract a `@MainActor`
+    /// function into a plain one, and the thunk for that crashed swift-frontend's IR
+    /// generation on Xcode 26.6 — the toolchain CI builds with — while Xcode 27 compiled
+    /// it without a word. `DockProfileFormContent.bind` already had this shape and did
+    /// not crash, which is what pointed at the difference.
     private func binding(
         _ value: KeyPath<GeneralSettingsModel, Bool>,
         _ set: @escaping @MainActor (Bool) -> Void
     ) -> Binding<Bool> {
-        Binding(get: { model[keyPath: value] }, set: set)
+        Binding(get: { model[keyPath: value] }, set: { set($0) })
     }
 }

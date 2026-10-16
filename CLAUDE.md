@@ -264,6 +264,17 @@ compile, and the only clue is which file it was type-checking. Name it first. Sa
 the shadowing trap above: inside a macro expansion the compiler has opinions, and a test that
 exercises them is verified by building, never by reading.
 
+**Handing a closure to SwiftUI as a *value* crashed IR generation on Xcode 26.6.**
+`Binding(get: …, set: set)` where `set` is an `@escaping @MainActor (Bool) -> Void`
+parameter: the compiler must reabstract the isolated function into a plain one, and the
+thunk for it (`@$sSbScA_pSgIeAghyg_SbIeAghn_TR`) segfaulted swift-frontend on the toolchain
+**CI builds with**, while Xcode 27 compiled it silently. Call it inside a new closure
+instead — `set: { set($0) }` — which is the shape `DockProfileFormContent.bind` already
+had and the reason that file survived the same build. The same goes for
+`Button(action: someStoredClosure)`. This is the third entry in this section about the
+dev machine and CI disagreeing, and the first one the **type checker** did not catch:
+it got all the way to code generation.
+
 **A workflow step creates what it writes into.** `make release-notes > build/notes.md`
 worked on the dev machine and failed on the runner: `build/` is made by `make app`, which
 comes later, and a developer always has one left over from the last build. The step does
