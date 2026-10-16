@@ -60,7 +60,12 @@ struct OnboardingContent: View {
 
             Spacer(minLength: 24)
 
-            Button("Get Started", action: onGetStarted)
+            // Called inside a closure, not handed over as one: a function value given
+            // straight to a SwiftUI parameter is what crashed IR generation on Xcode
+            // 26.6 in `GeneralTabContent`. This one carries no `@MainActor` and may well
+            // be safe, but it is the same shape and the toolchain that would say so is
+            // not on this machine.
+            Button("Get Started") { onGetStarted() }
                 .controlSize(.large)
                 .keyboardShortcut(.defaultAction)
                 .padding(.bottom, 28)

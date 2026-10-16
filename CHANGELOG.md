@@ -32,6 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Builds on Xcode 26, which is what the release is compiled with. A closure handed to
+  SwiftUI as a value crashed the compiler's code generation there while compiling
+  silently on Xcode 27, so the first build of this release never finished.
 - Switching between the two profiles works again. The picker is a SwiftUI control now and
   does not move on its own, so choosing the other profile left the form showing one
   profile while the picker still claimed the other — and switching back then did nothing
