@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.1] — 2026-10-22
+
 ### Added
 
 - CI now compiles the project on Xcode 27 as well as on Xcode 26.6. The toolchain that
