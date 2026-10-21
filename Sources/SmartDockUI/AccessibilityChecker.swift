@@ -34,18 +34,27 @@ public enum AccessibilityChecker {
         return "Device Control and Data Access"
     }
 
-    /// Prompt the system trust dialog if permission is not granted.
-    /// Only called on first launch — avoids re-prompting after Homebrew updates
-    /// where ad-hoc re-signing resets the permission.
-    public static func promptIfFirstLaunch(prefs: UserPreferences = .shared) {
-        promptIfFirstLaunch(prefs: prefs, isTrusted: { AXIsProcessTrusted() }, prompt: showSystemPrompt)
-    }
-
-    /// `isTrusted` and `prompt` are parameters because the system dialog cannot be
-    /// dismissed from a test — and a test bundle is never trusted, so the granted
-    /// branch would be unreachable otherwise.
-    static func promptIfFirstLaunch(
-        prefs: UserPreferences, isTrusted: () -> Bool, prompt: () -> Void
+    /// Prompt the system trust dialog if permission is not granted. Only called on
+    /// first launch — avoids re-prompting after Homebrew updates where ad-hoc
+    /// re-signing resets the permission.
+    ///
+    /// **One function, not a public wrapper over an internal one.** The wrapper took no
+    /// seams, so the test that exercised it ran the real `AXIsProcessTrustedWithOptions`
+    /// and was kept safe only by the very guard it was testing: break that guard — or
+    /// mutate it — and `swift test` put a system dialog on the screen, where it waits
+    /// for a person who is not watching. With defaults here instead, every caller gets
+    /// the real behaviour and every test can hand over stubs without a second entry
+    /// point to forget about.
+    ///
+    /// `showPrompt` rather than `prompt`: a parameter named after a function in scope is
+    /// the shadowing trap in CLAUDE.md. It defaults to the **public** `prompt()`, spelled
+    /// in full, for two reasons — a default argument of a public function cannot name a
+    /// private one, and it is evaluated at the call site, where the type's own scope is
+    /// not in view.
+    public static func promptIfFirstLaunch(
+        prefs: UserPreferences = .shared,
+        isTrusted: () -> Bool = { AXIsProcessTrusted() },
+        showPrompt: () -> Void = { AccessibilityChecker.prompt() }
     ) {
         guard !prefs.hasPromptedAccessibility else { return }
         guard !isTrusted() else { return }
@@ -53,7 +62,7 @@ public enum AccessibilityChecker {
         prefs.hasPromptedAccessibility = true
         Log.info("First launch — prompting for Accessibility permission")
 
-        prompt()
+        showPrompt()
     }
 
     /// Puts SmartDock in the Accessibility list, where the person only has to switch it

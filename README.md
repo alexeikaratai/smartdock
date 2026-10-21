@@ -9,8 +9,9 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-3.0.0-blue?style=flat-square" alt="Version 3.0.0"/>
+  <img src="https://img.shields.io/badge/version-3.0.1-blue?style=flat-square" alt="Version 3.0.1"/>
   <img src="https://img.shields.io/badge/macOS-14.0%2B-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS 14+"/>
+  <img src="https://img.shields.io/badge/Apple%20silicon-arm64-000000?style=flat-square&logo=apple&logoColor=white" alt="Apple silicon (arm64)"/>
   <img src="https://img.shields.io/badge/Swift-6.2-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 6.2"/>
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License"/>
 </p>
@@ -56,8 +57,13 @@ On first launch both profiles are your Dock exactly as it is. Nothing changes un
 ### From Homebrew
 
 ```bash
-brew install --cask alexeikaratai/tap/smartdock
+brew install --cask alexeikaratai/tap/smartdock   # Apple silicon — prebuilt app
+brew install alexeikaratai/tap/smartdock          # any Mac — builds from source
 ```
+
+The cask ships the released arm64 app, so Homebrew will decline it on an Intel Mac rather
+than install something that cannot open. The formula runs `swift build` and produces a
+native binary either way.
 
 After install, grant the permission in **System Settings → Privacy & Security → Accessibility** — named **Device Control and Data Access** on macOS 27 and later.
 
@@ -260,6 +266,9 @@ Both live in **System Settings → Privacy & Security**. SmartDock's Shortcuts t
 ## 🛠️ Requirements
 
 - macOS 14.0+ (Sonoma) to **run**
+- **Apple silicon** for the released app and the Homebrew cask — both ship a single arm64
+  binary. On an Intel Mac, build from source or use the Homebrew *formula*, which compiles
+  natively wherever it runs.
 - Swift 6.2+ to **build** — the package declares `swift-tools-version: 6.2`
 - Xcode 26+ / matching Command Line Tools (`xcode-select --install`). Swift 6.2 first shipped in Xcode 26, so earlier Xcode versions cannot build this package.
 
