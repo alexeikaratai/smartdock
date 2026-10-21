@@ -281,32 +281,92 @@ struct AccessibilityCheckerTests {
         var prompts = 0
 
         AccessibilityChecker.promptIfFirstLaunch(
-            prefs: scratch.prefs, isTrusted: { false }, prompt: { prompts += 1 })
+            prefs: scratch.prefs, isTrusted: { false }, showPrompt: { prompts += 1 })
 
         #expect(prompts == 1)
         #expect(scratch.prefs.hasPromptedAccessibility, "so a Homebrew update does not prompt again")
     }
 
-    /// The wrapper the app calls, exercised on the path that cannot prompt: already
-    /// asked once, so it returns at the guard before the system dialog.
-    @Test func thepublicEntryPointHonoursTheFlag() {
-        let scratch = ScratchPreferences()
-        scratch.prefs.hasPromptedAccessibility = true
-
-        AccessibilityChecker.promptIfFirstLaunch(prefs: scratch.prefs)
-
-        #expect(scratch.prefs.hasPromptedAccessibility)
-    }
-
+    /// Returns at the **first** guard, before the system is asked anything at all. The
+    /// flag is checked ahead of trust on purpose: a second launch must cost nothing, and
+    /// a test that got past this guard with real seams would put the system's own dialog
+    /// on screen and leave it waiting for nobody.
     @Test func asecondLaunchNeverPrompts() {
         let scratch = ScratchPreferences()
         scratch.prefs.hasPromptedAccessibility = true
         var prompts = 0
+        var trustChecks = 0
 
         AccessibilityChecker.promptIfFirstLaunch(
-            prefs: scratch.prefs, isTrusted: { false }, prompt: { prompts += 1 })
+            prefs: scratch.prefs,
+            isTrusted: {
+                trustChecks += 1
+                return false
+            },
+            showPrompt: { prompts += 1 })
 
         #expect(prompts == 0)
+        #expect(trustChecks == 0, "the flag is checked before the system is")
+    }
+
+    /// **No test may reach a real system dialog.** CLAUDE.md has said so for a while —
+    /// "what the UI suites never do: … prompt for Accessibility" — and one test broke it
+    /// anyway, kept safe only by the guard it was testing. A rule nothing checks is a
+    /// rule that gets broken, so this reads the suite's own source the way
+    /// `AppleScriptCommandTests` reads the shipped `.sdef`: every call to an entry point
+    /// that carries a live system seam must name a stub for it.
+    ///
+    /// The name is **assembled** rather than written out, or this file would match
+    /// itself — which it did on the first run.
+    @Test func notestReachesTheRealAccessibilityPrompt() throws {
+        let entryPoint = "promptIfFirstLaunch" + "("
+        // **Every** seam, not the first one. The version of this test written an hour ago
+        // looked for `isTrusted` alone, and a call that stubs the trust check but leaves
+        // the prompt at its default walks into the real dialog by the shortest path there
+        // is: the guards pass, and the last line of the function asks the system. A
+        // tripwire that covers one of two live seams reads as protection and is not.
+        let stubs = ["isTrusted" + ":", "showPrompt" + ":"]
+        let suite = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        let sources = try FileManager.default
+            .contentsOfDirectory(at: suite, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "swift" }
+
+        var bare: [String] = []
+        for file in sources {
+            let text = try String(contentsOf: file, encoding: .utf8)
+            for call in text.components(separatedBy: entryPoint).dropFirst() {
+                let arguments = Self.argumentList(of: call)
+                let missing = stubs.filter { !arguments.contains($0) }
+                guard !missing.isEmpty else { continue }
+                bare.append("\(file.lastPathComponent) — no \(missing.joined(separator: ", "))")
+            }
+        }
+
+        #expect(
+            bare.isEmpty,
+            """
+            these calls leave a system seam at its real default, so the system's \
+            Accessibility dialog can appear during a test run and wait for a person who \
+            is not watching: \(bare)
+            """)
+    }
+
+    /// The argument list, up to the parenthesis that closes it rather than the first one
+    /// in sight. Scanning to the first `)` ends the call at `ScratchPreferences()` and
+    /// reports the stubs after it as missing — a failure that looks like a false alarm,
+    /// which is how a tripwire gets weakened instead of heeded.
+    private static func argumentList(of call: String) -> String {
+        var arguments = ""
+        var depth = 0
+        for character in call {
+            if character == ")" {
+                guard depth > 0 else { break }
+                depth -= 1
+            }
+            if character == "(" { depth += 1 }
+            arguments.append(character)
+        }
+        return arguments
     }
 
     /// Already granted: nothing to ask for, and the flag stays untouched so a later
@@ -316,7 +376,7 @@ struct AccessibilityCheckerTests {
         var prompts = 0
 
         AccessibilityChecker.promptIfFirstLaunch(
-            prefs: scratch.prefs, isTrusted: { true }, prompt: { prompts += 1 })
+            prefs: scratch.prefs, isTrusted: { true }, showPrompt: { prompts += 1 })
 
         #expect(prompts == 0)
         #expect(!scratch.prefs.hasPromptedAccessibility)

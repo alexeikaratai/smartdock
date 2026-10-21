@@ -204,7 +204,15 @@ finds only definitions.
 
 **`ci.yml`** (push to `main`/`dev`, PRs to `main`): concurrency per branch, SPM cache,
 then `version-check` → `lint` → `coverage` → `swift build -c release` → `make app` +
-`codesign --verify --strict`. Lint runs first so a formatting PR fails in seconds.
+`codesign --verify --strict` — run over a **matrix of two toolchains**: `macos-26` with
+Xcode 26.6, which gates the merge, and `xcode-27` with Xcode 27.1, which cannot
+(`continue-on-error: ${{ matrix.preview }}`) and is there to compile the Swift 6.4 output
+layout the release toolchain never produces. One `toolchain` field per entry drives both the
+`xcode-select` path and the cache key, so those cannot drift. **The cache key had to be
+split**: `runner.os` is `macOS` on both runners, so the single key that was there would hand
+each entry the other's incompatible `.build` and produce a failure with nothing to do with
+the commit. `fail-fast: false`, because the interesting moment is precisely the one where a
+toolchain fails and the other does not. Lint runs first so a formatting PR fails in seconds.
 `coverage` replaces a bare `swift test` so the suite is not compiled twice; its step sets
 `shell: bash` because the default runner shell has no `pipefail` and `| tee` would mask a
 failure. `make app` is the only place `appintents-check`, `entitlements-check` and `sdef-check`
@@ -225,8 +233,41 @@ they passed `--generate-notes`, which produced a bare compare link.
 **`dependabot.yml`**: monthly grouped Actions bumps; no `swift` entry because there are no
 SPM dependencies.
 
-Both workflows set Xcode via `env.XCODE_PATH` at workflow level, never inline. Runner and
-`XCODE_PATH` must agree — check the
+**The release is arm64 only, and the cask says so.** `release.yml` builds on `macos-26`,
+which is an Apple-silicon runner, and `lipo -archs` on the shipped binary reports `arm64`
+alone — measured. The cask therefore carries `depends_on arch: :arm64`: without it Homebrew
+installed happily on an Intel Mac and produced an app that would not open. The **formula**
+deliberately has no such line, because it runs `swift build` from source and yields a native
+binary wherever it runs; that is the Intel path, and the README says so. The `sed` lines that
+rewrite the cask on release touch only `version` and `sha256` — checked by running them
+against a copy — so the architecture line survives every release.
+
+**The formula's `depends_on xcode:` has to track `swift-tools-version`, and nothing can make
+it.** It said `16.0` while the package declared tools `6.2`, which first shipped in Xcode 26:
+Homebrew accepted the install and `swift build` then stopped partway through over tools
+versions — the cask's Intel bug in a second costume, Homebrew taking on work it cannot finish.
+It reads `26.0` now, and `brew info` confirms it as `Build: Xcode >= 26.0`. This is the one
+agreement in the project that is **a note and not a tripwire**, said plainly rather than
+implied: the two halves are in different repositories, so no exhaustive switch reaches it, and
+a make target that compared them would read the developer's `brew` state — passing on CI, where
+the tap is absent, and failing only locally, which is the CI-cannot-follow-the-dev-machine trap
+one section down. Raising the tools version means editing the tap in the same breath.
+
+**Downloads in the tap step are fetched with `curl -f`, into a file.** `curl -sL "$URL" |
+shasum` was there, and on a 404 curl writes GitHub's 9-byte "Not Found" page to stdout and
+exits **0** — measured against a missing asset, which hashes to
+`0019dfc4b32d63c1392aa264aed2253c1e0c2fb09216f8e2cc269bbfb8bb49b5`. That hash would have gone
+into the tap and broken `brew install` for everyone, and the pipe hid it twice over: the step
+sets no `pipefail`. The `grep -qF` check below those lines does **not** catch this — it
+confirms the computed sha reached the file, not that the sha is right. The `sleep 10` that
+stood in for waiting is gone with the pipe: `--retry 10 --retry-delay 3 --retry-all-errors`
+waits only as long as it must and fails loudly when the asset never arrives.
+
+`release.yml` sets Xcode via `env.XCODE_PATH` at workflow level, never inline, which is
+right there because all four of its jobs are `macos-26`. `ci.yml` has no such variable: with
+two runners the **pairing** is the whole point, so each matrix entry carries its own
+`toolchain` and there is no file-wide value that could name a runner and an Xcode which do
+not belong together. Runner and Xcode must agree — check the
 [runner image readme](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md)
 before bumping either. Actions are pinned by major (except `webfactory/ssh-agent`, a 0.x release pinned exactly);
 `make actions-check` compares to latest — never write the
@@ -235,8 +276,11 @@ numbers into this file, they go stale.
 ## Known Build Gotchas
 
 **SPM's output layout moved.** Swift ≤6.3 writes modules to `.build/release/Modules/`;
-Swift 6.4 (Xcode 27) builds through swift-build, `.build/release` becomes a symlink to
-`out/Products/Release`, the module is a bundle directory there, and the test bundle is
+Swift 6.4 (Xcode 27) builds through swift-build, `.build/release` becomes a **relative**
+symlink to `out/Products/Release` — that is `.build/out/…`, inside the build directory and
+not a sibling of it, measured by following the link and looking for a repo-root `out/`,
+which does not exist. It is why `ci.yml` caching `path: .build` still covers the new layout.
+The module is a bundle directory there, and the test bundle is
 named after the target (`SmartDockTests.xctest`) not the package. Anything reaching into
 `.build` by path breaks on one side — `make appintents` passes both `-I` paths,
 `make coverage` locates `*.xctest`. The first break hid its real cause behind twelve
@@ -249,9 +293,21 @@ config fails to load and lint fails on every file. Set to `true` — the value t
 no existing file — and ignored by the Xcode 26 formatter (synthesized `Decodable` skips
 unknown keys, checked against its source), so one config serves both.
 
-**CI cannot follow the dev machine.** No `macos-27` runner image exists and `macos-26` stops
-at Xcode 26.6. Until then CI verifies the old layout and a developer on Xcode 27 the new —
-and a green local suite is not proof. `make coverage` passed on Xcode 27 and failed to
+**CI follows the dev machine on one side only.** The release is still built by `macos-26`,
+which stops at Xcode 26.6, so the toolchain that *ships* the app is not the one a developer
+on Xcode 27 compiles with. What changed is that the other side is no longer unwitnessed:
+there is no `macos-27` label, but an **`xcode-27`** image exists — macOS 27.0.1 carrying
+Xcode 27.0, 27.1 and 27.2 beta, measured against the runner-images repository rather than
+recalled — and `ci.yml`'s matrix pins an entry to **27.1**, the version this machine runs, so
+every push now compiles the Swift 6.4 layout somewhere other than a developer's laptop. That
+entry is `continue-on-error` because the image is marked **preview**, which its own
+announcement defines as software that may be unstable with capacity still being balanced:
+reason to watch a toolchain, not to gate a merge on it. Nothing in the release path moves
+there until the preview label is gone. **A green local suite is still not proof, and now a
+green workflow is not either** — a `continue-on-error` entry can sit red for a week while
+every check reads as passing, so the matrix is worth looking at and not just the tick.
+
+The gap is not theoretical. `make coverage` passed on Xcode 27 and failed to
 compile on 26.6 over `let button = try #require(button("Export", in: view))`: inside a
 `#require` expansion the older compiler resolves the call to the variable being declared
 ("cannot call value of non-function type"). **Never give a local the name of a function in
@@ -398,12 +454,20 @@ its `mockSystemConfig` in step with what it accepted and calls `onApplyVerified`
 the real controller does a second after an apply; until it did, no service test could see
 what happens after the Dock refuses something, and a real toggle bug shipped under a green
 suite. The UI suites build the real
-objects (`@testable import SmartDockUI`): views are clicked with `performClick`, menu
-items fired through `item.target?.perform(item.action!, with: item)`, key handlers fed
+objects (`@testable import SmartDockUI`): the one control a test can still press is the
+window's `NSSegmentedControl`, driven through `tabControl.target?.perform(…)` — nothing is
+clicked with `performClick`, which this file promised for a while after the symbol had left
+the codebase and while the paragraph above said a SwiftUI view cannot be clicked at all.
+Menu items are fired through `item.target?.perform(item.action!, with: item)`, key handlers fed
 `NSEvent.keyEvent(...)`, windows shown for real (`_ = NSApplication.shared` first, so
 `NSApp.activate` has an app). What the UI suites never do: register a login item,
 prompt for Accessibility, open a URL, spawn `tccutil` or `open -n`, or touch
-`UNUserNotificationCenter` — the last one aborts a process without a bundle, which is
+`UNUserNotificationCenter` — and `notestReachesTheRealAccessibilityPrompt` now reads the
+suite's own source to keep the first of those true, because the rule was written here and
+broken anyway: `promptIfFirstLaunch` had a public wrapper with no seams, and the one test
+that called it was kept clear of the system dialog only by the guard it was testing. A
+mutation of that guard put the dialog on screen. There is one function with default
+arguments now, so there is no second entry point to forget — the last one aborts a process without a bundle, which is
 why `NotificationManager` reaches it only through `NotificationPosting` and its tests
 hand it a recorder. Each such suite gives its manager a private `NotificationCenter`:
 the manager listens for any sender, and parallel suites would otherwise hear each

@@ -16,27 +16,62 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  XCODE_PATH: /Applications/Xcode_26.6.app
+# No workflow-level XCODE_PATH here, unlike release.yml. This file runs two
+# toolchains, so a runner and its Xcode are one pair per matrix entry rather than
+# one value for the whole file — which is what "runner and Xcode must agree" was
+# always asking for. `release.yml` keeps the workflow-level variable, because all
+# four of its jobs are macos-26.
 
 jobs:
   test:
-    name: 🧪 Test & Build
-    runs-on: macos-26
+    name: 🧪 ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+
+    # The preview entry cannot fail the workflow. It is here to compile a layout CI
+    # could not reach before, not to gate a merge on an image whose own announcement
+    # warns that software may be unstable and that capacity is still being balanced.
+    continue-on-error: ${{ matrix.preview }}
+
+    strategy:
+      # Without this, the release toolchain failing would cancel the preview entry —
+      # and the moment the two toolchains disagree is exactly when one of them fails.
+      fail-fast: false
+      matrix:
+        include:
+          # `toolchain` drives both the Xcode path and the cache key, so those two
+          # cannot drift apart.
+          - name: Test & Build — Xcode 26.6
+            runner: macos-26
+            toolchain: "26.6"
+            preview: false
+
+          # Swift 6.4 on macOS 27: the SPM output layout the release toolchain does
+          # not produce, and which no CI run compiled until this entry existed. Read
+          # CLAUDE.md before moving the release onto it — `xcode-27` is a preview
+          # image.
+          - name: Test & Build — Xcode 27.1 (preview)
+            runner: xcode-27
+            toolchain: "27.1"
+            preview: true
 
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v7
 
       - name: 🔧 Select Xcode
-        run: sudo xcode-select -s ${{ env.XCODE_PATH }}
+        run: sudo xcode-select -s /Applications/Xcode_${{ matrix.toolchain }}.app
 
+      # The toolchain belongs in the key, not as decoration: Swift ≤6.3 writes
+      # modules to `.build/release/Modules` while 6.4 turns `.build/release` into a
+      # symlink to `.build/out/Products/Release`. `runner.os` is `macOS` on both
+      # runners, so a key without the toolchain would hand each entry the other's
+      # layout and produce a failure that has nothing to do with the commit.
       - name: 📦 Restore SPM cache
         uses: actions/cache@v6
         with:
           path: .build
-          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved', 'Package.swift') }}
-          restore-keys: spm-${{ runner.os }}-
+          key: spm-${{ runner.os }}-${{ matrix.toolchain }}-${{ hashFiles('Package.resolved', 'Package.swift') }}
+          restore-keys: spm-${{ runner.os }}-${{ matrix.toolchain }}-
 
       - name: 🔢 Check version consistency
         run: make version-check
@@ -68,7 +103,7 @@ jobs:
             exit 0
           fi
           {
-            echo '### 📊 Code coverage — SmartDockCore'
+            echo '### 📊 Code coverage — SmartDockCore (Xcode ${{ matrix.toolchain }})'
             echo ''
             echo '```'
             cat coverage.txt

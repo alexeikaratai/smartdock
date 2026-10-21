@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- CI now compiles the project on Xcode 27 as well as on Xcode 26.6. The toolchain that
+  builds releases and the one this project is developed on lay their build output out
+  differently, and CI only ever exercised the release side — so a break on the newer
+  toolchain surfaced when somebody happened to build locally, or not at all. The second
+  matrix entry runs on every push and cannot fail the workflow, because the Xcode 27 runner
+  image is still published as a preview.
+
+### Fixed
+
+- Homebrew no longer installs SmartDock on an Intel Mac, where it could not open. The
+  released app is built for Apple silicon only, and the cask said nothing about it — the
+  install went through and the app simply never started. Homebrew declines it now and says
+  why. Intel Macs can still build from source, or install the Homebrew *formula*, which
+  compiles natively wherever it runs.
+- A release can no longer publish a broken Homebrew tap. If GitHub had not finished
+  serving a freshly uploaded release, the step that records its checksum quietly hashed
+  the "Not Found" page instead and wrote that into the tap, which breaks `brew install`
+  and `brew upgrade` for everyone until it is corrected by hand. The download now fails
+  the release rather than succeeding with the wrong file, and retries instead of guessing
+  how long GitHub needs.
+- The Homebrew *formula* no longer accepts a build it cannot finish. It asked for Xcode
+  16 or newer while the package needs Swift 6.2, which first shipped in Xcode 26, so on a
+  machine in between the install started and then failed partway through `swift build`
+  with a message about tools versions. It now says up front what it needs. This is the
+  path an Intel Mac takes, so it is the path that had to work.
+
 ## [3.0.0] — 2026-10-14
 
 ### Changed

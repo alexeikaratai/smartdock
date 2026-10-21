@@ -163,12 +163,24 @@ jobs:
           ZIP_URL="https://github.com/${REPO}/releases/download/v${VERSION}/SmartDock-${VERSION}.zip"
           TAR_URL="https://github.com/${REPO}/archive/refs/tags/v${VERSION}.tar.gz"
 
-          # Wait for release asset
-          sleep 10
-
-          # Compute checksums
-          ZIP_SHA=$(curl -sL "${ZIP_URL}" | shasum -a 256 | cut -d' ' -f1)
-          TAR_SHA=$(curl -sL "${TAR_URL}" | shasum -a 256 | cut -d' ' -f1)
+          # Download, then hash what landed.
+          #
+          # `curl -sL` without -f was here, piped straight into shasum. On a 404
+          # curl writes GitHub's 9-byte "Not Found" page to stdout and exits **0**,
+          # so the tap would take the hash of that page —
+          # 0019dfc4b32d63c1392aa264aed2253c1e0c2fb09216f8e2cc269bbfb8bb49b5 —
+          # and every `brew install` and `brew upgrade` would fail for everyone.
+          # Measured on a missing asset, not assumed. The pipe hid it twice over:
+          # this step sets no pipefail, so even a non-zero curl was swallowed.
+          #
+          # The `sleep 10` that stood in for waiting goes with it. GitHub can take
+          # longer than ten seconds to serve an asset it has just accepted, and a
+          # fixed wait either guesses right or publishes a broken tap; retries wait
+          # only as long as they have to, and give up loudly.
+          curl -fsSL --retry 10 --retry-delay 3 --retry-all-errors -o release.zip "${ZIP_URL}"
+          curl -fsSL --retry 10 --retry-delay 3 --retry-all-errors -o source.tar.gz "${TAR_URL}"
+          ZIP_SHA=$(shasum -a 256 release.zip | cut -d' ' -f1)
+          TAR_SHA=$(shasum -a 256 source.tar.gz | cut -d' ' -f1)
           echo "Cask SHA256:    ${ZIP_SHA}"
           echo "Formula SHA256: ${TAR_SHA}"
 
