@@ -242,6 +242,17 @@ binary wherever it runs; that is the Intel path, and the README says so. The `se
 rewrite the cask on release touch only `version` and `sha256` — checked by running them
 against a copy — so the architecture line survives every release.
 
+**A change to the tap is pushed before the tag, never after.** The 🍺 Homebrew job does
+`git clone` of the tap and `sed`s the files **as they stand in its default branch** — it does
+not know about work sitting in a local clone. 3.0.1 is the proof: the cask's `arch` guard and
+the formula's Xcode floor were written, reviewed and verified, the tag went up first, the bot
+cloned a tap that had never seen them, rewrote `version`/`sha256` and pushed — so the release
+published a tap still installing on Intel, and the local clone was left three commits behind
+with modifications to the very lines the bot had just changed. Nothing failed and nothing
+warned; the release was green. Recovering it is not a merge: reset the local clone to origin,
+re-apply the change on top of the new base, and check `version`/`sha256` did not travel
+backwards with it. The order is the whole fix — **tap first, then the tag.**
+
 **The formula's `depends_on xcode:` has to track `swift-tools-version`, and nothing can make
 it.** It said `16.0` while the package declared tools `6.2`, which first shipped in Xcode 26:
 Homebrew accepted the install and `swift build` then stopped partway through over tools
