@@ -208,10 +208,11 @@ then `version-check` → `lint` → `coverage` → `swift build -c release` → 
 Xcode 26.6, which gates the merge, and `xcode-27` with Xcode 27.1, which cannot
 (`continue-on-error: ${{ matrix.preview }}`) and is there to compile the Swift 6.4 output
 layout the release toolchain never produces. One `toolchain` field per entry drives both the
-`xcode-select` path and the cache key, so those cannot drift. **The cache key had to be
-split**: `runner.os` is `macOS` on both runners, so the single key that was there would hand
-each entry the other's incompatible `.build` and produce a failure with nothing to do with
-the commit. `fail-fast: false`, because the interesting moment is precisely the one where a
+`xcode-select` path and the cache key, so those cannot drift — what that one field assumes
+about the folder it names is under **CI follows the dev machine on one side only**.
+**The cache key had to be split**: `runner.os` is `macOS` on both runners, so the single key
+that was there would hand each entry the other's incompatible `.build` and produce a failure
+with nothing to do with the commit. `fail-fast: false`, because the interesting moment is precisely the one where a
 toolchain fails and the other does not. Lint runs first so a formatting PR fails in seconds.
 `coverage` replaces a bare `swift test` so the suite is not compiled twice; its step sets
 `shell: bash` because the default runner shell has no `pipefail` and `| tee` would mask a
@@ -284,6 +285,16 @@ before bumping either. Actions are pinned by major (except `webfactory/ssh-agent
 `make actions-check` compares to latest — never write the
 numbers into this file, they go stale.
 
+**`contents: write` is the opposite case: it belongs to the one job that publishes, not to the
+file.** It sat at workflow level, so all four jobs held the right to write the repository while
+exactly one spends the token — `gh release` in 🎉 Release. Measured, not assumed:
+`secrets.GITHUB_TOKEN` appears once in the file, and `TAP_DEPLOY_KEY` is a secret, which a
+`permissions` block does not reach either way. The file-wide default is `contents: read` now
+and Release raises itself; 🍺 Homebrew stays at read because it reaches the tap over its deploy
+key and the assets over public URLs. Downloading the build artifact needs no permission at
+all — a same-run download is scoped to its own run and takes no `github-token`, which
+`actions/download-artifact` requires only for another run or another repository.
+
 ## Known Build Gotchas
 
 **SPM's output layout moved.** Swift ≤6.3 writes modules to `.build/release/Modules/`;
@@ -308,9 +319,17 @@ unknown keys, checked against its source), so one config serves both.
 which stops at Xcode 26.6, so the toolchain that *ships* the app is not the one a developer
 on Xcode 27 compiles with. What changed is that the other side is no longer unwitnessed:
 there is no `macos-27` label, but an **`xcode-27`** image exists — macOS 27.0.1 carrying
-Xcode 27.0, 27.1 and 27.2 beta, measured against the runner-images repository rather than
-recalled — and `ci.yml`'s matrix pins an entry to **27.1**, the version this machine runs, so
-every push now compiles the Swift 6.4 layout somewhere other than a developer's laptop. That
+Xcode 27.0, 27.1 and 27.2 RC with 27.1 as its default, measured against the runner-images
+repository rather than recalled — and `ci.yml`'s matrix pins an entry to **27.1**, the version
+this machine runs, so every push now compiles the Swift 6.4 layout somewhere other than a
+developer's laptop. What an entry pins is the **toolchain**, never the OS: this machine has
+since moved to macOS 27.2 while the image stays on 27.0.1, and nothing in the matrix has to
+follow it. **The pin cannot simply be moved to 27.2 either** — `ci.yml` builds the path as
+`/Applications/Xcode_${{ matrix.toolchain }}.app` out of the one `toolchain` field, while the
+image keeps the release candidate at `Xcode_27.2_Release_Candidate.app`, so a 27.2 entry would
+fail in `xcode-select` before compiling a line, with the version number looking perfectly
+right. Measured on the image readme. The folder loses that suffix when 27.2 ships final; until
+then such an entry has to carry the path and not the version. The 27.1
 entry is `continue-on-error` because the image is marked **preview**, which its own
 announcement defines as software that may be unstable with capacity still being balanced:
 reason to watch a toolchain, not to gate a merge on it. Nothing in the release path moves

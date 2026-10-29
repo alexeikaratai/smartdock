@@ -5,8 +5,11 @@ on:
     tags:
       - 'v*'
 
+# Read by default, write only where it is used. Three of the four jobs never touch
+# GITHUB_TOKEN at all: Test and Build only check out, and Homebrew reaches the tap
+# over its own deploy key and the release assets over public URLs.
 permissions:
-  contents: write
+  contents: read
 
 env:
   XCODE_PATH: /Applications/Xcode_26.6.app
@@ -107,6 +110,13 @@ jobs:
     name: 🎉 Release
     runs-on: macos-26
     needs: build
+
+    # The one job that uses the token, and the only one raised above the workflow's
+    # read default: `gh release` writes. Downloading the artifact needs nothing — a
+    # same-run download is scoped to its own run and takes no `github-token`, which
+    # the action requires only for another run or another repository.
+    permissions:
+      contents: write
 
     steps:
       - name: 🏷️ Extract version

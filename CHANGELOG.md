@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- The release workflow no longer hands every job the right to write to the repository. The
+  write access belongs to the single job that publishes the GitHub release, but it was
+  declared for the whole file, so the jobs that only run tests, build the app and update the
+  Homebrew tap all carried it without ever using it. The file now grants read access by
+  default and that one job raises its own. `ci.yml` was narrowed the same way in 2.1.0; this
+  is the other workflow.
+
 ## [3.0.1] — 2026-10-22
 
 ### Added
