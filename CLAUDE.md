@@ -320,16 +320,24 @@ which stops at Xcode 26.6, so the toolchain that *ships* the app is not the one 
 on Xcode 27 compiles with. What changed is that the other side is no longer unwitnessed:
 there is no `macos-27` label, but an **`xcode-27`** image exists — macOS 27.0.1 carrying
 Xcode 27.0, 27.1 and 27.2 RC with 27.1 as its default, measured against the runner-images
-repository rather than recalled — and `ci.yml`'s matrix pins an entry to **27.1**, the version
-this machine runs, so every push now compiles the Swift 6.4 layout somewhere other than a
-developer's laptop. What an entry pins is the **toolchain**, never the OS: this machine has
-since moved to macOS 27.2 while the image stays on 27.0.1, and nothing in the matrix has to
-follow it. **The pin cannot simply be moved to 27.2 either** — `ci.yml` builds the path as
-`/Applications/Xcode_${{ matrix.toolchain }}.app` out of the one `toolchain` field, while the
-image keeps the release candidate at `Xcode_27.2_Release_Candidate.app`, so a 27.2 entry would
-fail in `xcode-select` before compiling a line, with the version number looking perfectly
-right. Measured on the image readme. The folder loses that suffix when 27.2 ships final; until
-then such an entry has to carry the path and not the version. The 27.1
+repository rather than recalled — and `ci.yml`'s matrix pins an entry to **27.1**, so every
+push compiles the Swift 6.4 layout somewhere other than a developer's laptop. What an entry
+pins is the **toolchain**, never the OS: this machine has since moved to macOS 27.2 while the
+image stays on 27.0.1, and nothing in the matrix has to follow it. The toolchain is the other
+matter — this machine moved to Xcode **27.2** (27B52, Swift 6.4.2) days after that pin was
+written, so 27.1 is no longer the version a developer here compiles with.
+
+**A 27.2 entry is possible, and an earlier version of this paragraph said it was not.** It
+claimed `xcode-select` would fail, because the image keeps that Xcode at
+`Xcode_27.2_Release_Candidate.app` while `ci.yml` builds the path as
+`/Applications/Xcode_${{ matrix.toolchain }}.app` out of the one `toolchain` field. That was
+wrong, and wrong in the way this file keeps warning about: the readme lists **symlinks** beside
+each path — `Xcode_27.2.app` among them — so the version-shaped path resolves, and the first
+reading had simply not asked about them. What a 27.2 entry selects is the **release candidate,
+27B48**, while 27.2 shipped final as **27B52** on 29 October 2026 and the image (version
+20261026) was cut three days earlier. The pin stays at 27.1 until the image rebuilds, and
+staying costs little: 27.1 carries Swift 6.4 and 27.2 carries 6.4.2, so the output layout this
+entry exists to witness is the same on both. The 27.1
 entry is `continue-on-error` because the image is marked **preview**, which its own
 announcement defines as software that may be unstable with capacity still being balanced:
 reason to watch a toolchain, not to gate a merge on it. Nothing in the release path moves
