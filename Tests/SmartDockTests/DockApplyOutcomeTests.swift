@@ -163,6 +163,7 @@ struct DockApplyOutcomeTests {
         .showsIndicators: "app indicators",
         .minimizesToApplication: "minimize into application",
         .menuBarAutoHide: "menu bar auto-hide",
+        .doubleClickBehavior: "title bar double-click",
     ]
 
     @Test(arguments: DockProperty.allCases)

@@ -86,7 +86,7 @@ struct DockSystemConfigTests {
     /// while everything else is in the Dock's.
     @Test(arguments: DockProperty.allCases)
     func everyPropertyIsReadFromItsSystemKey(property: DockProperty) {
-        let (store, _, centre, controller) = makeSubjectWithBothMenuBarDomains()
+        let (store, global, centre, controller) = makeSubjectWithBothMenuBarDomains()
         // The magnified size is deliberately not diffed while magnification is off,
         // exactly as its slider is disabled in System Settings.
         store.set(true, forKey: "magnification")
@@ -105,6 +105,10 @@ struct DockSystemConfigTests {
             case .showsIndicators: (store, "show-process-indicators", false)
             case .minimizesToApplication: (store, "minimize-to-application", true)
             case .menuBarAutoHide: (centre, "AutoHideMenuBarOption", MenuBarAutoHide.always.optionValue)
+            // The global domain's second key, and the one case where the stored string
+            // is not the enum's own raw value — `systemValue` is what macOS writes.
+            case .doubleClickBehavior:
+                (global, DockController.doubleClickKey, DoubleClickBehavior.minimize.systemValue)
             }
         edit.domain.set(edit.value, forKey: edit.key)
 
@@ -188,6 +192,103 @@ struct DockSystemConfigTests {
         #expect(
             scripts().contains { $0.contains("set autohide menu bar to false") },
             "the hiding half was left contradicting the popup: \(scripts())")
+    }
+
+    // MARK: - Title Bar Double-Click
+
+    /// The stored strings, pinned to literals. Two of the four do not match the case
+    /// name — the popup's "Zoom" is stored as `Maximize` and "Do Nothing" as `None` —
+    /// so deriving them from `rawValue` would write values macOS does not recognise.
+    /// Measured from the strings the Desktop & Dock pane carries.
+    @Test func theStoredDoubleClickStringsAreTheOnesMacOSWrites() {
+        #expect(DoubleClickBehavior.fill.systemValue == "Fill")
+        #expect(DoubleClickBehavior.zoom.systemValue == "Maximize")
+        #expect(DoubleClickBehavior.minimize.systemValue == "Minimize")
+        #expect(DoubleClickBehavior.doNothing.systemValue == "None")
+
+        for behavior in DoubleClickBehavior.allCases {
+            #expect(DoubleClickBehavior(systemValue: behavior.systemValue) == behavior)
+        }
+        #expect(
+            Set(DoubleClickBehavior.allCases.map(\.systemValue)).count
+                == DoubleClickBehavior.allCases.count)
+    }
+
+    /// `nil` here is what sends the apply down the direct-write path, so it is the
+    /// whole reason that path exists. The scripting dictionary's enumeration knows
+    /// three words; `Fill` arrived with window tiling and never reached it.
+    @Test func onlyFillHasNoScriptingWord() {
+        #expect(DoubleClickBehavior.fill.scriptValue == nil)
+        #expect(DoubleClickBehavior.zoom.scriptValue == "zoom")
+        #expect(DoubleClickBehavior.minimize.scriptValue == "minimize")
+        #expect(DoubleClickBehavior.doNothing.scriptValue == "off")
+    }
+
+    /// A value a later macOS invents must leave the default standing rather than be
+    /// reported as something it is not — the same rule as an unknown orientation.
+    @Test func anUnknownDoubleClickValueLeavesTheDefaultStanding() {
+        let (_, global, _, controller) = makeSubjectWithBothMenuBarDomains()
+
+        global.set("Tile", forKey: DockController.doubleClickKey)
+
+        #expect(controller.readSystemConfig().doubleClickBehavior == .doNothing)
+    }
+
+    /// An account that has never touched the setting has no key, and macOS then does
+    /// nothing at all on a double-click. Measured by deleting it and trying: the first
+    /// guess here was `Fill`, which is what the machine *stored*, and that is a
+    /// different question — a default taken from a developer's own Mac would have told
+    /// every untouched install it had a setting it does not have.
+    @Test func anUntouchedAccountDoesNothingOnDoubleClick() {
+        let (_, _, _, controller) = makeSubjectWithBothMenuBarDomains()
+
+        #expect(controller.readSystemConfig().doubleClickBehavior == .doNothing)
+    }
+
+    /// The companion `aDefaultConfigAsksTheDockForNothing` cannot see this one, and the
+    /// gap arrived with the direct-write path: `Fill` is applied by writing the domain
+    /// rather than by running a script, so a struct default disagreeing with what an
+    /// untouched Mac reports would push a redundant write straight past a tripwire that
+    /// only watches AppleScript. This watches the domain.
+    @Test func aDefaultConfigWritesNothingIntoTheGlobalDomainEither() {
+        let (_, global, _, controller, scripts) = makeSubjectRecordingScripts()
+
+        controller.apply(DockConfiguration())
+
+        #expect(
+            global.object(forKey: DockController.doubleClickKey) == nil,
+            "a default config wrote the double-click key it should have left alone")
+        #expect(scripts().isEmpty, "\(scripts())")
+    }
+
+    /// No AppleScript can name `Fill`, so it goes into the domain directly. Asking
+    /// System Events for it would either error or quietly set something else.
+    @Test func fillIsWrittenStraightIntoTheDomain() {
+        let (_, global, _, controller, scripts) = makeSubjectRecordingScripts()
+        // Starting anywhere but Fill, or there is no difference to apply at all.
+        global.set(DoubleClickBehavior.minimize.systemValue, forKey: DockController.doubleClickKey)
+
+        controller.apply(DockConfiguration(doubleClickBehavior: .fill))
+
+        #expect(
+            global.object(forKey: DockController.doubleClickKey) as? String
+                == DoubleClickBehavior.fill.systemValue)
+        #expect(
+            !scripts().contains { $0.contains("double click behavior") },
+            "nothing should ask the dictionary for a word it does not have: \(scripts())")
+    }
+
+    /// The three it can name take the ordinary route, so they keep the read-back and
+    /// the refusal reporting every other setting has. The script word is `zoom` while
+    /// the stored string is `Maximize`: two different vocabularies for one setting.
+    @Test func theBehavioursWithAWordGoThroughSystemEvents() {
+        let (_, _, _, controller, scripts) = makeSubjectRecordingScripts()
+
+        controller.apply(DockConfiguration(doubleClickBehavior: .zoom))
+
+        #expect(
+            scripts().contains { $0.contains("set double click behavior to zoom") },
+            "\(scripts())")
     }
 
     // MARK: - Booleans

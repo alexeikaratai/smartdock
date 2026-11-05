@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A twelfth Dock setting: what a double-click on a window's title bar does — Fill, Zoom,
+  Minimize or Do Nothing — stored per profile like the rest. It is the last Dock preference
+  macOS exposes that SmartDock did not manage.
+- All four behaviours are offered, not the three AppleScript knows about. The scripting
+  dictionary names `minimize`, `zoom` and `off`, while macOS itself also holds `Fill`, which
+  arrived with window tiling. Offering only the three would have meant silently downgrading
+  the setting of anyone already using Fill, so Fill is written to its preference directly and
+  the other three keep the ordinary route, with its read-back and its refusal reporting.
+- The Settings window is 40pt taller by default, so the twelfth setting and the Apply button
+  still fit without scrolling.
+
+### Fixed
+
+- A Dock setting changed in System Settings could be ignored. Incoming changes are compared
+  against what SmartDock last applied, to tell someone else's edit from the echo of its own,
+  and that comparison was a second hand-written list of properties which had fallen out of
+  step with the first. A property missing from it made a real edit look like an echo, so the
+  edit was dropped without a word and the next apply pushed the old value back over it. The
+  comparison now asks the list that decides what to apply, so there is no second list to
+  drift.
+
 ### Security
 
 - The release workflow no longer hands every job the right to write to the repository. The

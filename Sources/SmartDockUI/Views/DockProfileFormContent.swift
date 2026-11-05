@@ -38,10 +38,11 @@ struct DockProfileFormContent: View {
         .minimizeEffect, .animatesLaunch, .showsRecents, .showsIndicators,
         .minimizesToApplication,
         .menuBarAutoHide,
+        .doubleClickBehavior,
     ]
 
     /// One inset card, and **no hairlines between the rows**. They were tried: a rule
-    /// between every setting turned eleven of them into a ledger and added noise rather
+    /// between every setting turned twelve of them into a ledger and added noise rather
     /// than structure, and the row spacing already separates them. Built by hand rather
     /// than with `.formStyle(.grouped)` because that style's own section padding is what
     /// measured 858pt here, against the window's 900pt maximum.
@@ -108,6 +109,19 @@ struct DockProfileFormContent: View {
             // of the four and read back the wrong one of them.
             pickerRow("Menu Bar", bind(\.menuBarAutoHide) { $0.with(menuBarAutoHide: $1) }) {
                 ForEach(MenuBarAutoHide.allCases, id: \.self) { Text($0.displayName).tag($0) }
+            }
+
+        case .doubleClickBehavior:
+            // Four behaviours, though System Events can only name three of them — which
+            // is the controller's problem, not the form's. Drawn from the enum so the
+            // list cannot drift from what can be applied.
+            pickerRow(
+                "Double-click Title Bar",
+                bind(\.doubleClickBehavior) { $0.with(doubleClickBehavior: $1) }
+            ) {
+                ForEach(DoubleClickBehavior.allCases, id: \.self) {
+                    Text($0.displayName).tag($0)
+                }
             }
         }
     }

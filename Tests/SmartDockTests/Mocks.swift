@@ -105,6 +105,8 @@ final class MockDockController: DockControlling {
             case .minimizesToApplication:
                 result.with(minimizesToApplication: previous.minimizesToApplication)
             case .menuBarAutoHide: result.with(menuBarAutoHide: previous.menuBarAutoHide)
+            case .doubleClickBehavior:
+                result.with(doubleClickBehavior: previous.doubleClickBehavior)
             }
         }
     }

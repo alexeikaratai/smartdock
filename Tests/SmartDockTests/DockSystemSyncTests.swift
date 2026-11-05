@@ -143,6 +143,8 @@ struct DockSystemSyncTests {
             case .showsIndicators: (store, "show-process-indicators", false)
             case .minimizesToApplication: (store, "minimize-to-application", true)
             case .menuBarAutoHide: (global, "_HIHideMenuBar", true)
+            case .doubleClickBehavior:
+                (global, DockController.doubleClickKey, DoubleClickBehavior.minimize.systemValue)
             }
         edit.domain.set(edit.value, forKey: edit.key)
         try await waitForReport(in: log)

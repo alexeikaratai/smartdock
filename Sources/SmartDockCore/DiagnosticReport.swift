@@ -141,6 +141,8 @@ public struct DiagnosticReport: Sendable {
             config.minimizesToApplication ? "minimize into app" : "minimize to Dock"
         case .menuBarAutoHide:
             "menu bar \(config.menuBarAutoHide.displayName.lowercased())"
+        case .doubleClickBehavior:
+            "double-click \(config.doubleClickBehavior.displayName.lowercased())"
         }
     }
 }

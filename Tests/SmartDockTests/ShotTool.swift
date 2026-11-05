@@ -40,7 +40,11 @@ struct ShotTool {
             animatesLaunch: true,
             showsRecents: false,
             showsIndicators: true,
-            minimizesToApplication: false)
+            minimizesToApplication: false,
+            // Chosen rather than left at the default, like every other value here: the
+            // default is "Do Nothing", which in a screenshot reads as a setting that
+            // does nothing rather than one with four choices.
+            doubleClickBehavior: .fill)
         scratch.prefs.builtinConfig = DockConfiguration(autohide: true, position: .left)
 
         let monitor = MockDisplayMonitor()

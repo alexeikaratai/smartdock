@@ -178,17 +178,19 @@ public final class SettingsWindow: NSObject {
     /// above them taking another 120. The scroll view on the Dock tab stays as the safety net for
     /// a shrunk window — it is not a substitute for a size that fits.
     ///
-    /// 800 since the profile picker became two tiles: a tile carries an icon above a
-    /// name where a segment carried words. The Dock tab measures **660** and so needs
-    /// 780; the extra 20 is deliberate. The window sat at **2pt** of spare height before
-    /// this, and the very next control did not fit. The maximum below is 900, so there is
+    /// 840 since the title bar double-click setting became the twelfth row (800 when the
+    /// profile picker became two tiles, since a tile carries an icon above a name where a
+    /// segment carried words). The Dock tab measures **698** and so needs 818; the extra
+    /// 22 is deliberate. The window sat at **2pt** of spare height two settings ago and
+    /// the very next control did not fit, which is why a margin is kept rather than the
+    /// default being set to exactly what fits. The maximum below is 900, so there is
     /// room; a 13-inch laptop has about 900pt of usable height, which is why the maximum
     /// is where it is.
     ///
     /// `theDockTabFitsTheDefaultWindowWithoutScrolling` measures it rather than trusting
     /// this comment: the 600 above went stale the moment a checkbox was added, and
     /// nothing failed.
-    static let defaultContentSize = NSSize(width: 420, height: 800)
+    static let defaultContentSize = NSSize(width: 420, height: 840)
 
     private func makeWindow() -> NSWindow {
         let (w, contentView) = UI.glassWindow(

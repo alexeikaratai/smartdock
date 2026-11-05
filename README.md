@@ -34,6 +34,7 @@ On first launch both profiles are your Dock exactly as it is. Nothing changes un
 | 🔘 | **Recents & indicators** | Recent apps section and open-app indicators — per mode |
 | 👁️ | **Autohide toggle** | Show/hide Dock per mode — [except while an app is fullscreen](#-known-limitations) |
 | 📏 | **Menu bar** | All four macOS positions — Always, On Desktop Only, In Full Screen Only, Never — per mode |
+| 🖱️ | **Title bar double-click** | Fill, Zoom, Minimize or Do Nothing — all four, including the one AppleScript cannot name — per mode |
 | ⚡ | **Instant detection** | Event-driven via `CGDisplayRegisterReconfigurationCallback` — no polling |
 | 🔄 | **System sync** | Auto-imports Dock changes from System Settings via KVO |
 | 🔔 | **Notifications** | macOS banner when profile switches (optional) |

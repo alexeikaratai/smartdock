@@ -50,6 +50,11 @@ public final class DockController: DockControlling {
     /// not track each other — measured: writing either left the other untouched.
     public static let controlCentreDomain = "com.apple.controlcenter"
 
+    /// Where the title bar double-click behaviour lives — the global domain again, but
+    /// a second key in it, so it is spelled once and shared by the read, the write and
+    /// the observer rather than typed out three times.
+    public static let doubleClickKey = "AppleActionOnDoubleClick"
+
     public var onExternalConfigChanged: ((DockConfiguration) -> Void)?
 
     /// Last config we applied via AppleScript — used to distinguish our own
@@ -191,6 +196,18 @@ public final class DockController: DockControlling {
                 globalStore?.bool(forKey: "_HIHideMenuBar") == true ? .always : .inFullScreen
             }
 
+        // The same domain, a second key. A value we do not recognise is treated as an
+        // absent one — a behaviour from a later macOS than this build knows must leave
+        // the default standing rather than be reported as something it is not.
+        //
+        // Absent means `doNothing`, measured with the key deleted: a double-click on a
+        // title bar then does nothing. Reporting `Fill` here instead — the value that
+        // machine happened to store — would have shown every untouched Mac a setting
+        // it does not have.
+        let doubleClick =
+            globalStore.flatMap { $0.string(forKey: Self.doubleClickKey) }
+            .flatMap(DoubleClickBehavior.init(systemValue:)) ?? .doNothing
+
         return DockConfiguration(
             autohide: d.bool(forKey: "autohide"),
             position: DockPosition(rawValue: orientationRaw) ?? .bottom,
@@ -202,7 +219,8 @@ public final class DockController: DockControlling {
             showsRecents: recents,
             showsIndicators: indicators,
             minimizesToApplication: minimizes,
-            menuBarAutoHide: menuBar
+            menuBarAutoHide: menuBar,
+            doubleClickBehavior: doubleClick
         )
     }
 
@@ -300,6 +318,8 @@ public final class DockController: DockControlling {
         case .showsIndicators: return applyShowIndicators(config.showsIndicators)
         case .minimizesToApplication: return applyMinimizeToApplication(config.minimizesToApplication)
         case .menuBarAutoHide: return applyMenuBarAutoHide(config.menuBarAutoHide)
+        case .doubleClickBehavior:
+            return applyDoubleClickBehavior(config.doubleClickBehavior)
         }
     }
 
@@ -472,6 +492,41 @@ public final class DockController: DockControlling {
             """)
     }
 
+    /// Two paths, because the scripting dictionary is short of a value the system can
+    /// hold.
+    ///
+    /// Three of the four behaviours have a word in `double click behavior`, so they go
+    /// the way every other setting goes and are read back and reported with them.
+    /// `Fill` has no word, so it is written into the global domain directly — the same
+    /// half-and-half `applyMenuBarAutoHide` makes, and sound here for the same reason:
+    /// no process has to be restarted for AppKit to see this key, which is what rules
+    /// the trick out for `mineffect`.
+    ///
+    /// Said plainly rather than left to be discovered: a direct write reports no
+    /// refusal. `DockApplyOutcome` can only speak for what passed through System
+    /// Events, so choosing `Fill` gives up the refusal notice the other three keep.
+    /// The read-back a second later still catches it not landing.
+    private func applyDoubleClickBehavior(_ behavior: DoubleClickBehavior) -> Bool {
+        guard let scriptValue = behavior.scriptValue else {
+            guard let store = openGlobalDefaults() else {
+                Log.error(
+                    "Cannot open \(globalSuiteName) — \(behavior.displayName) not applied")
+                return false
+            }
+            store.set(behavior.systemValue, forKey: Self.doubleClickKey)
+            return true
+        }
+
+        return runAppleScript(
+            """
+            tell application "System Events"
+                tell dock preferences
+                    set double click behavior to \(scriptValue)
+                end tell
+            end tell
+            """)
+    }
+
     private func applyLaunchAnimation(_ animates: Bool) -> Bool {
         runAppleScript(
             """
@@ -576,7 +631,7 @@ private final class DockPrefsObserver: NSObject {
 
     /// `NSGlobalDomain`'s share — just the menu bar, which is not the Dock's setting
     /// even though System Events files it under `dock preferences`.
-    static let globalKeys = ["_HIHideMenuBar"]
+    static let globalKeys = ["_HIHideMenuBar", DockController.doubleClickKey]
 
     /// Control Centre's share — the half System Settings shows.
     static let controlCentreKeys = ["AutoHideMenuBarOption"]

@@ -68,8 +68,10 @@ struct SettingsWindowSizeTests {
     /// Everything fits at the default window size, Apply included. The promise was
     /// briefly given up during the SwiftUI move: a grouped `Form` measured 858pt against
     /// the window's 900pt maximum, the tab scrolled and the confirming button sat below
-    /// the fold. Laid out as one compact card it is 605pt — tighter than the 630 the
-    /// AppKit form needed — so the promise is back and this is what keeps it.
+    /// the fold. Laid out as one compact card it is 698pt — against the 858 a grouped
+    /// form wanted for eleven rows, where this holds twelve — so the promise is back and
+    /// this is what keeps it. The figure here read 605 while the real measurement was
+    /// 660, which is the reason the number is asserted and not trusted from a comment.
     @Test func theDockTabFitsTheDefaultWindowWithoutScrolling() throws {
         let (settings, window, scroll) = try showDockTab(at: SettingsWindow.defaultContentSize)
         defer { settings.window?.close() }

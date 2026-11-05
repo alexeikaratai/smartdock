@@ -93,6 +93,80 @@ public enum MenuBarAutoHide: String, CaseIterable, Sendable {
     }
 }
 
+// MARK: - Double-Click Behaviour
+
+/// What a double-click on a window's title bar does — "Double-click a window's title
+/// bar to" in System Settings.
+///
+/// The odd one out twice over, and in a different way from `MenuBarAutoHide`. It is
+/// stored outside `com.apple.dock`, in the global domain, under
+/// `AppleActionOnDoubleClick`; and the scripting dictionary is **behind the system**.
+/// System Events' `double click behavior` enumeration knows three values —
+/// `minimize`, `zoom`, `off` — while the stored key carries a fourth, `Fill`, which
+/// arrived with window tiling and never reached the dictionary. Measured, not
+/// recalled: `Minimize`, `Maximize`, `Fill` and `None` are the four strings the
+/// Desktop & Dock settings pane carries, and this machine held `Fill` — a value no
+/// AppleScript can name.
+///
+/// So `Fill` is written straight into its domain and the other three go through
+/// System Events, the same split `applyMenuBarAutoHide` already makes. This is
+/// **not** the hidden `suck` effect that `MinimizeEffect` above refuses: `mineffect`
+/// belongs to the Dock, where writing behind its back means restarting it, while this
+/// key is read by AppKit in each application and needs no process restarted. The
+/// distinction is the whole reason one is supported and the other is not.
+public enum DoubleClickBehavior: String, CaseIterable, Sendable {
+    case fill
+    case zoom
+    case minimize
+    /// Not `none`: that name collides with `Optional.none`, so `with(...)`'s optional
+    /// parameter could not tell "do nothing" from "leave unchanged".
+    case doNothing
+
+    /// How System Settings words it.
+    public var displayName: String {
+        switch self {
+        case .fill: return "Fill"
+        case .zoom: return "Zoom"
+        case .minimize: return "Minimize"
+        case .doNothing: return "Do Nothing"
+        }
+    }
+
+    /// The string `AppleActionOnDoubleClick` carries.
+    ///
+    /// Spelled out rather than derived from the case name, because two of the four do
+    /// not match: what the popup calls "Zoom" the system stores as `Maximize`, and
+    /// "Do Nothing" is `None`.
+    public var systemValue: String {
+        switch self {
+        case .fill: return "Fill"
+        case .zoom: return "Maximize"
+        case .minimize: return "Minimize"
+        case .doNothing: return "None"
+        }
+    }
+
+    /// What System Events calls this, or `nil` where it has no word for it.
+    ///
+    /// `nil` is not a failure — it is the signal to write the domain directly, and the
+    /// reason `applyDoubleClickBehavior` has two paths at all.
+    public var scriptValue: String? {
+        switch self {
+        case .fill: return nil
+        case .zoom: return "zoom"
+        case .minimize: return "minimize"
+        case .doNothing: return "off"
+        }
+    }
+
+    public init?(systemValue: String) {
+        guard let match = Self.allCases.first(where: { $0.systemValue == systemValue }) else {
+            return nil
+        }
+        self = match
+    }
+}
+
 // MARK: - Dock Configuration
 
 /// Full set of Dock preferences for a given mode (external / built-in).
@@ -126,6 +200,18 @@ public struct DockConfiguration: Equatable, Sendable {
     /// why the controller opens two further domains and watches them. `inFullScreen` is
     /// the default: measured on an account that had never touched the setting.
     public let menuBarAutoHide: MenuBarAutoHide
+    /// "Double-click a window's title bar to" — `double click behavior` in System
+    /// Events, `AppleActionOnDoubleClick` in the global domain. The third store this
+    /// app reaches outside `com.apple.dock`, and the only setting whose scripting
+    /// enumeration is missing a value the system can hold.
+    ///
+    /// `doNothing` is the default, and it was measured rather than assumed: with
+    /// `AppleActionOnDoubleClick` deleted, a double-click on a title bar does nothing
+    /// at all. The machine this was found on *held* `Fill`, which is a different
+    /// question and the one a first guess answers wrongly — a struct default copied
+    /// from whatever the developer's Mac happens to store is not the absent-key
+    /// default, and the two disagreed here.
+    public let doubleClickBehavior: DoubleClickBehavior
 
     public init(
         autohide: Bool = false,
@@ -138,7 +224,8 @@ public struct DockConfiguration: Equatable, Sendable {
         showsRecents: Bool = true,
         showsIndicators: Bool = true,
         minimizesToApplication: Bool = false,
-        menuBarAutoHide: MenuBarAutoHide = .inFullScreen
+        menuBarAutoHide: MenuBarAutoHide = .inFullScreen,
+        doubleClickBehavior: DoubleClickBehavior = .doNothing
     ) {
         self.autohide = autohide
         self.position = position
@@ -151,6 +238,7 @@ public struct DockConfiguration: Equatable, Sendable {
         self.showsIndicators = showsIndicators
         self.minimizesToApplication = minimizesToApplication
         self.menuBarAutoHide = menuBarAutoHide
+        self.doubleClickBehavior = doubleClickBehavior
     }
 
     /// A copy with some properties replaced and the rest carried over.
@@ -172,7 +260,8 @@ public struct DockConfiguration: Equatable, Sendable {
         showsRecents: Bool? = nil,
         showsIndicators: Bool? = nil,
         minimizesToApplication: Bool? = nil,
-        menuBarAutoHide: MenuBarAutoHide? = nil
+        menuBarAutoHide: MenuBarAutoHide? = nil,
+        doubleClickBehavior: DoubleClickBehavior? = nil
     ) -> DockConfiguration {
         DockConfiguration(
             autohide: autohide ?? self.autohide,
@@ -185,7 +274,8 @@ public struct DockConfiguration: Equatable, Sendable {
             showsRecents: showsRecents ?? self.showsRecents,
             showsIndicators: showsIndicators ?? self.showsIndicators,
             minimizesToApplication: minimizesToApplication ?? self.minimizesToApplication,
-            menuBarAutoHide: menuBarAutoHide ?? self.menuBarAutoHide
+            menuBarAutoHide: menuBarAutoHide ?? self.menuBarAutoHide,
+            doubleClickBehavior: doubleClickBehavior ?? self.doubleClickBehavior
         )
     }
 
@@ -212,25 +302,18 @@ public struct DockConfiguration: Equatable, Sendable {
 
     /// Compare with tolerance for size fields.
     /// Used by system sync to detect real changes vs rounding noise.
+    ///
+    /// Asks `differences(from:)` rather than comparing the fields itself. It used to
+    /// spell out nine equalities, the size tolerance and the magnification guard —
+    /// a second copy of the list `differences` already holds, which `sizeTolerance`
+    /// above says must agree with it *exactly*. It drifted the day a twelfth property
+    /// arrived: `doubleClickBehavior` reached the diff and not this list, so the
+    /// observer took a real System Settings edit for SmartDock's own echo and dropped
+    /// it, and the next apply would have pushed the profile's old value back over it.
+    /// Nothing warned — the note saying the two must agree was the only guard, and a
+    /// note cannot fail a build. One list now, so there is nothing left to drift.
     public func approximatelyEquals(_ other: DockConfiguration) -> Bool {
-        guard autohide == other.autohide,
-            position == other.position,
-            magnification == other.magnification,
-            minimizeEffect == other.minimizeEffect,
-            animatesLaunch == other.animatesLaunch,
-            showsRecents == other.showsRecents,
-            showsIndicators == other.showsIndicators,
-            minimizesToApplication == other.minimizesToApplication,
-            menuBarAutoHide == other.menuBarAutoHide,
-            abs(iconSize - other.iconSize) <= Self.sizeTolerance
-        else { return false }
-
-        // Magnified size is invisible while magnification is off, and `differences`
-        // deliberately never applies it then. Comparing it here anyway would report
-        // our own no-op as an external change — and the stored profile would be
-        // overwritten with whatever the system happened to hold.
-        guard magnification else { return true }
-        return abs(magnificationSize - other.magnificationSize) <= Self.sizeTolerance
+        differences(from: other).isEmpty
     }
 }
 
@@ -253,6 +336,7 @@ public enum DockProperty: String, CaseIterable, Sendable {
     case showsIndicators
     case minimizesToApplication
     case menuBarAutoHide
+    case doubleClickBehavior
 
     /// How to name this setting to a person. The raw values are camelCase keys
     /// meant for logs and diagnostics; `iconSize` in a menu would read as a typo.
@@ -269,6 +353,7 @@ public enum DockProperty: String, CaseIterable, Sendable {
         case .showsIndicators: return "app indicators"
         case .minimizesToApplication: return "minimize into application"
         case .menuBarAutoHide: return "menu bar auto-hide"
+        case .doubleClickBehavior: return "title bar double-click"
         }
     }
 }
@@ -309,6 +394,9 @@ public extension DockConfiguration {
             changed.append(.minimizesToApplication)
         }
         if menuBarAutoHide != current.menuBarAutoHide { changed.append(.menuBarAutoHide) }
+        if doubleClickBehavior != current.doubleClickBehavior {
+            changed.append(.doubleClickBehavior)
+        }
 
         return changed
     }
@@ -327,6 +415,8 @@ public extension DockConfiguration {
         case .showsIndicators: return "showsIndicators=\(showsIndicators)"
         case .minimizesToApplication: return "minimizesToApplication=\(minimizesToApplication)"
         case .menuBarAutoHide: return "menuBarAutoHide=\(menuBarAutoHide.rawValue)"
+        case .doubleClickBehavior:
+            return "doubleClickBehavior=\(doubleClickBehavior.rawValue)"
         }
     }
 }
@@ -640,6 +730,8 @@ public final class UserPreferences {
         case .minimizesToApplication:
             defaults.set(config.minimizesToApplication, forKey: storage)
         case .menuBarAutoHide: defaults.set(config.menuBarAutoHide.rawValue, forKey: storage)
+        case .doubleClickBehavior:
+            defaults.set(config.doubleClickBehavior.rawValue, forKey: storage)
         }
     }
 
@@ -686,6 +778,10 @@ public final class UserPreferences {
         case .menuBarAutoHide:
             return config.with(
                 menuBarAutoHide: MenuBarAutoHide(rawValue: defaults.string(forKey: storage) ?? ""))
+        case .doubleClickBehavior:
+            return config.with(
+                doubleClickBehavior: DoubleClickBehavior(
+                    rawValue: defaults.string(forKey: storage) ?? ""))
         }
     }
 

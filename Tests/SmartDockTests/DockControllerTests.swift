@@ -101,6 +101,19 @@ struct DockControllerTests {
         #expect(!DockConfiguration(iconSize: 0.30).approximatelyEquals(DockConfiguration(iconSize: 0.50)))
     }
 
+    /// The narrow case for the drift that happened: the twelfth property reached
+    /// `differences(from:)` and not the hand-written list this function used to carry,
+    /// so a real System Settings edit read as SmartDock's own echo and was dropped
+    /// without a word. There is one list now — this function asks the diff — and
+    /// `anEditToEveryPropertyIsReported` drives every property through the observer.
+    @Test func approximatelyEqualsDetectsADoubleClickChange() {
+        let a = DockConfiguration(doubleClickBehavior: .fill)
+        let b = DockConfiguration(doubleClickBehavior: .minimize)
+
+        #expect(!a.approximatelyEquals(b))
+        #expect(!b.approximatelyEquals(a))
+    }
+
     @Test func approximatelyEqualsDetectsMagnificationSizeChange() {
         let a = DockConfiguration(magnification: true, magnificationSize: 0.40)
         let b = DockConfiguration(magnification: true, magnificationSize: 0.80)

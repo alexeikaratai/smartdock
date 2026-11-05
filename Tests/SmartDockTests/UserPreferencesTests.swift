@@ -141,6 +141,7 @@ struct UserPreferencesTests {
                 case .showsIndicators: "showsIndicators"
                 case .minimizesToApplication: "minimizesToApplication"
                 case .menuBarAutoHide: "menuBarAutoHide"
+                case .doubleClickBehavior: "doubleClickBehavior"
                 }
 
             #expect(property.rawValue == onDisk, "renaming this orphans keys already on disk")
@@ -534,7 +535,8 @@ struct UserPreferencesTests {
         showsRecents: false,
         showsIndicators: false,
         minimizesToApplication: true,
-        menuBarAutoHide: .always)
+        menuBarAutoHide: .always,
+        doubleClickBehavior: .minimize)
 
     /// One property taken from `other`, the rest left at `base`.
     private static func flip(
@@ -553,6 +555,8 @@ struct UserPreferencesTests {
         case .minimizesToApplication:
             base.with(minimizesToApplication: other.minimizesToApplication)
         case .menuBarAutoHide: base.with(menuBarAutoHide: other.menuBarAutoHide)
+        case .doubleClickBehavior:
+            base.with(doubleClickBehavior: other.doubleClickBehavior)
         }
     }
 }
