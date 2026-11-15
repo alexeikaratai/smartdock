@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.3] — 2026-11-15
+
 ### Fixed
 
 - Unplugging a monitor while an app was full screen left the Dock visible **and** quietly
