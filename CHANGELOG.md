@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Unplugging a monitor while an app was full screen left the Dock visible **and** quietly
+  rewrote the profile that should have hidden it. macOS will not hide the Dock while an app
+  is full screen; SmartDock notices that a second after applying and reports it without
+  touching the stored profile. But half a second earlier, the watcher that imports changes
+  made in System Settings read the Dock mid-apply, could not tell a refused setting from
+  somebody else's edit, and wrote the refusal into the profile. From then on the profile and
+  the Dock agreed, so Refresh found nothing to change and the only way back was to set
+  auto-hide by hand. That watcher now stands down while an apply is still being verified,
+  and verification reconciles what it compares against to what the Dock actually holds — so
+  which of the two runs first no longer matters.
+- An imported change now says in the log which properties moved. It is the one path that
+  rewrites a stored profile wholesale and was the only one that did not record what it had
+  written, which is why the fault above could not be established from a diagnostic report.
+
+## [3.0.2] — 2026-11-05
+
 ### Added
 
 - A twelfth Dock setting: what a double-click on a window's title bar does — Fill, Zoom,

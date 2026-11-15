@@ -69,6 +69,114 @@ struct DockSystemSyncTests {
         return (store, global, controller, log)
     }
 
+    /// The same controller with the two timers in **production's order**: verification
+    /// after the debounce, so the debounced check lands *inside* the window where the
+    /// Dock is still settling.
+    ///
+    /// `makeSubject` above inverts that — 0.01s against 0.05s — to keep the suite fast,
+    /// and an inverted fixture cannot reach the interleaving at all. Here the order is
+    /// the thing under test, not the speed, so it is spelled out rather than inherited.
+    ///
+    /// What keeps the order honest under load is not a wide window but waiting on the
+    /// verification *event* in each test — see `aHalfAppliedDockIsNotReportedAsAnExternalEdit`
+    /// for the vacuous pass a fixed wait produced here, and how `llvm-cov` caught it
+    /// while the suite stayed green.
+    /// `settleWindows` is how many debounce windows verification waits — eight, so the
+    /// debounced check at one window is comfortably first. It does not need to be wider
+    /// than that: the tests wait on the verification *event*, so a busy queue delays
+    /// both in order rather than running the clock out on either.
+    private func makeSettlingSubject(settleWindows: Double = 8) -> (
+        store: InMemoryDefaults, controller: DockController, log: ChangeLog
+    ) {
+        let store = InMemoryDefaults()
+        let log = ChangeLog()
+        let controller = DockController(
+            openDomain: { _ in store },
+            verificationDelay: debounce * settleWindows, externalChangeDebounce: debounce,
+            runScript: { _ in true })
+        controller.onExternalConfigChanged = { log.record($0) }
+        return (store, controller, log)
+    }
+
+    /// Applies a config the Dock takes only half of — the position lands, auto-hide
+    /// is refused, which is what the Dock does while an app is full screen.
+    private func applyAndRefuseAutohide(_ controller: DockController, into store: InMemoryDefaults) {
+        store.set(false, forKey: "autohide")
+        controller.startObservingSystemChanges()
+        controller.apply(DockConfiguration(autohide: true, position: .left))
+        // Only the position reaches the domain. `autohide` stays false: the refusal.
+        store.set("left", forKey: "orientation")
+    }
+
+    // MARK: - A Refusal Is Not An External Edit
+
+    /// A half-applied Dock is not somebody else's edit.
+    ///
+    /// The echo test compares the Dock against what was *asked* for, so inside the
+    /// verification window a property the Dock has not taken reads as an external
+    /// change — and the service then wrote the whole half-applied state into the
+    /// stored profile. Measured on 10 Nov: a disconnect while an app was full screen
+    /// put `autohide=false` into the built-in profile 0.5s after the apply, and the
+    /// three refreshes that followed each logged "unchanged — skipped", because the
+    /// profile and the Dock now agreed. Only editing the profile by hand brought it
+    /// back. Verification reports a refusal without storing it; this path must not
+    /// run before it.
+    @Test func aHalfAppliedDockIsNotReportedAsAnExternalEdit() async throws {
+        let (store, controller, log) = makeSettlingSubject()
+
+        applyAndRefuseAutohide(controller, into: store)
+        // Wait for the *event*, not the clock. A fixed window was here first and made
+        // the test vacuous under a full parallel suite: the wait ran out before the
+        // busy main queue reached the debounced check, the test returned, the
+        // controller went away, and the check then fired into a `nil` self — nothing
+        // reported, nothing proven. `llvm-cov` is how that was caught, not the suite,
+        // which was green either way: the guard's early return showed **zero** hits
+        // across the whole run and two when this suite ran alone. Waiting on
+        // verification keeps the controller alive, and the debounced check is due far
+        // earlier, so it is guaranteed to have run by the time this returns.
+        try await waitUntil { controller.lastApplyOutcome != nil }
+
+        #expect(log.configs.isEmpty, "A refusal is reported by verification, never stored")
+    }
+
+    /// And not after verification either, whichever of the two lands first.
+    ///
+    /// This fixture keeps the inverted order, where verification runs first and the
+    /// guard above cannot help. What does is verification reconciling the echo
+    /// baseline to what the Dock holds: the refused property stops being a difference
+    /// before the debounced check ever reads it. Without that the refusal is reported
+    /// as an external edit and the profile is overwritten with it — the same bug, one
+    /// timer ordering away.
+    @Test func aRefusalIsNotReportedWhenVerificationLandsFirst() async throws {
+        let (store, controller, log) = makeSubject()
+
+        applyAndRefuseAutohide(controller, into: store)
+        // Verification first here, so wait for it, then give the debounced check its
+        // window — for the same reason as above, the controller has to outlive both.
+        try await waitUntil { controller.lastApplyOutcome != nil }
+        try await waitForDebounce()
+
+        #expect(log.configs.isEmpty, "A property the Dock refused is not an external edit")
+    }
+
+    /// The guard stands down for a *pending* verification, not for ever: an edit that
+    /// arrives once the dust has settled is still the user's and still reported.
+    @Test func anEditAfterTheApplyHasSettledIsStillReported() async throws {
+        // Only needs verification to finish, not to be outrun, so it waits a short one.
+        let (store, controller, log) = makeSettlingSubject(settleWindows: 8)
+
+        applyAndRefuseAutohide(controller, into: store)
+        try await waitUntil { controller.lastApplyOutcome != nil }
+
+        // Now someone really does change the Dock in System Settings.
+        store.set(96, forKey: "tilesize")
+        try await waitForReport(in: log)
+
+        #expect(log.configs.count == 1, "A settled edit is the user's and must arrive")
+        let reported = try #require(log.configs.first)
+        expectClose(reported.iconSize, DockConfiguration.pixelsToScale(96))
+    }
+
     // MARK: - Observing
 
     /// A store that cannot be opened is observed by nobody — and stopping an

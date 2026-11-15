@@ -76,8 +76,12 @@ public final class DockController: DockControlling {
     private var pendingVerification: DispatchWorkItem?
 
     /// Long enough for the Dock to settle after System Events pokes it, and
-    /// deliberately later than the 0.5s KVO debounce so the two do not interleave.
-    /// Shortened in tests so the suite does not spend a second per apply waiting.
+    /// deliberately later than the 0.5s KVO debounce. Being later is not on its own
+    /// enough to keep the two apart: the debounced check ran *first* and wrote a
+    /// half-applied Dock into the stored profile, so `handleExternalChange` now stands
+    /// down while a verification is pending. Shortened in tests so the suite does not
+    /// spend a second per apply waiting — but a fixture that shortens it *below* the
+    /// debounce inverts production's order and cannot reach that path at all.
     private let verificationDelay: TimeInterval
 
     /// How long to wait after a KVO callback before reading the Dock back.
@@ -290,6 +294,17 @@ public final class DockController: DockControlling {
             let outcome = DockApplyOutcome.verifying(
                 config, against: actual, requested: requested)
             self.lastApplyOutcome = outcome
+
+            // The echo baseline becomes what the Dock *holds*, not what it was asked
+            // for. Left at the request, a property the Dock refused stays a standing
+            // difference, and whether that difference then reaches the stored profile
+            // depends on which of the two timers fires first — the guard in
+            // `handleExternalChange` only covers the order production uses. The two
+            // together make the order stop mattering. The stored profile is untouched
+            // either way, so a later apply pushes the refused value again once macOS
+            // is willing to take it.
+            self.lastAppliedConfig = actual
+
             self.onApplyVerified?(outcome, actual)
 
             if outcome.isComplete {
@@ -378,6 +393,22 @@ public final class DockController: DockControlling {
 
     /// Debounced handler for KVO callbacks. System Settings may change
     /// multiple keys at once — wait 0.5s after the last change before reading.
+    ///
+    /// Nothing is read while an apply is still being verified. The echo test below
+    /// compares the Dock against what we *asked* for, and in that window the Dock is
+    /// only half way there, so a property it has not taken yet reads as somebody
+    /// else's edit — and the half-applied state is then written into the stored
+    /// profile. Measured, not hypothetical: a disconnect while an app was full screen
+    /// had the Dock refuse `autohide`, this handler wrote `autohide=false` into the
+    /// built-in profile 0.5s later, and every refresh afterwards found nothing to
+    /// change, so the Dock stayed visible until the profile was edited by hand.
+    /// Verification is the one place that knows what landed, and it reports a refusal
+    /// without storing it, which is what the Principles ask for.
+    ///
+    /// The callback is dropped rather than rescheduled: run again after verification,
+    /// it would compare against the requested config and reach the same wrong
+    /// conclusion. The cost is an edit made in System Settings inside that one second,
+    /// which is not adopted — the next apply pushes the profile's value over it.
     private func handleExternalChange() {
         pendingExternalCheck?.cancel()
 
@@ -385,18 +416,30 @@ public final class DockController: DockControlling {
             guard let self else { return }
             self.pendingExternalCheck = nil
 
+            guard self.pendingVerification == nil else { return }
+
             let systemConfig = self.readSystemConfig()
+
+            // No baseline means nobody is observing, which the three callers below make
+            // impossible: `startObservingSystemChanges` seeds it before it creates them.
+            // Unreachable from here, so this line's early return is uncovered by
+            // construction — said plainly rather than given a value to report.
+            guard let lastApplied = self.lastAppliedConfig else { return }
 
             // If the system config matches what we last applied (within tolerance),
             // this is our own change echoing back — ignore it.
-            if let lastApplied = self.lastAppliedConfig,
-                systemConfig.approximatelyEquals(lastApplied)
-            {
-                return
-            }
+            if systemConfig.approximatelyEquals(lastApplied) { return }
 
             self.lastAppliedConfig = systemConfig
-            Log.info("External dock preferences change detected")
+
+            // Which properties moved, not just that something did. This is the one path
+            // that rewrites a stored profile wholesale, and it was the one path whose
+            // log line could not be read back afterwards to find out what it put there.
+            let moved =
+                systemConfig.differences(from: lastApplied)
+                .map { systemConfig.describe($0) }
+                .joined(separator: " ")
+            Log.info("External dock preferences change detected: \(moved)")
             self.onExternalConfigChanged?(systemConfig)
         }
         pendingExternalCheck = work
